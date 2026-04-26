@@ -9,6 +9,11 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_DIR="$( dirname "$SCRIPT_DIR" )"
 SERVICE_NAME="bigbox.service"
 
+# When the service runs as root but /opt/bigbox is owned by the install user
+# (e.g. 'kali'), git refuses to operate ("dubious ownership"). Mark the repo
+# as safe globally for the running user. Idempotent.
+git config --global --add safe.directory "$REPO_DIR" 2>/dev/null || true
+
 echo "Checking for updates..."
 cd "$REPO_DIR"
 

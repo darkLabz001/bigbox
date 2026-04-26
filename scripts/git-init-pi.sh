@@ -19,6 +19,9 @@ fi
 
 cd "$INSTALL_DIR"
 
+# Allow root to operate on this repo even if files are owned by another user.
+git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
+
 if [[ -d .git ]]; then
     echo "$INSTALL_DIR already has a .git directory."
     echo "    remote: $(git remote get-url origin 2>/dev/null || echo 'none')"
