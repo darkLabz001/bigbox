@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DaRkb0x Remote</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body {
+            background: #0a0c12;
+            color: #5ae6aa;
+            font-family: monospace;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            user-select: none;
+        }
+        .screen-container {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 10px;
+            border: 2px solid #282e3c;
+            background: #000;
+        }
+        .screen-container img {
+            width: 100%;
+            display: block;
+        }
+        .controls {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(3, 80px);
+            grid-gap: 15px;
+        }
+        .btn {
+            width: 70px;
+            height: 70px;
+            background: #121620;
+            border: 2px solid #5ae6aa;
+            color: #5ae6aa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 18px;
+            touch-action: manipulation;
+        }
+        .btn:active {
+            background: #5ae6aa;
+            color: #0a0c12;
+        }
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 70px);
+            grid-gap: 5px;
+        }
+        .face-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 70px);
+            grid-gap: 15px;
+        }
+        .system-buttons {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+        }
+        .btn-rect {
+            width: 100px;
+            height: 40px;
+            font-size: 14px;
+        }
+        .layout {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 40px;
+            padding: 20px;
+        }
+        h1 { font-size: 18px; margin: 10px 0; letter-spacing: 2px; }
+    </style>
+</head>
+<body>
+    <h1>DaRkb0x :: REMOTE_UI</h1>
+    
+    <div class="screen-container">
+        <img src="/video_feed" id="screen">
+    </div>
+
+    <div class="layout">
+        <!-- D-PAD -->
+        <div class="dpad">
+            <div></div><div class="btn" onmousedown="press('up')" ontouchstart="press('up')">UP</div><div></div>
+            <div class="btn" onmousedown="press('left')" ontouchstart="press('left')">LFT</div>
+            <div></div>
+            <div class="btn" onmousedown="press('right')" ontouchstart="press('right')">RGT</div>
+            <div></div><div class="btn" onmousedown="press('down')" ontouchstart="press('down')">DWN</div><div></div>
+        </div>
+
+        <!-- FACE BUTTONS -->
+        <div class="face-buttons">
+            <div class="btn" style="grid-column: 2" onmousedown="press('y')" ontouchstart="press('y')">Y</div>
+            <div class="btn" onmousedown="press('x')" ontouchstart="press('x')">X</div>
+            <div class="btn" onmousedown="press('b')" ontouchstart="press('b')">B</div>
+            <div class="btn" style="grid-column: 2" onmousedown="press('a')" ontouchstart="press('a')">A</div>
+        </div>
+    </div>
+
+    <div class="system-buttons">
+        <div class="btn btn-rect" onmousedown="press('select')" ontouchstart="press('select')">SELECT</div>
+        <div class="btn btn-rect" onmousedown="press('start')" ontouchstart="press('start')">START</div>
+    </div>
+
+    <script>
+        function press(btn) {
+            fetch('/press/' + btn).catch(e => console.error(e));
+        }
+        
+        // Prevent zoom on double tap for iOS
+        document.addEventListener('touchstart', function (event) {
+            if (event.touches.length > 1) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+    </script>
+</body>
+</html>

@@ -4,3 +4,7 @@ lgpio>=0.2
 tomli>=2.0; python_version < "3.11"
 requests
 PyTurboJPEG
+fastapi
+uvicorn
+jinja2
+python-multipart

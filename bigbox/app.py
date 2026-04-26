@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 import time
+from typing import Callable
 
 import pygame
 
@@ -36,6 +38,10 @@ class App:
         self.kb_view: KeyboardView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
+        
+        # Web UI state
+        self.last_frame: bytes | None = None
+        self._frame_counter = 0
 
     # ---------- lifecycle ----------
     def _init_display(self) -> pygame.Surface:
@@ -71,7 +77,9 @@ class App:
 
     def _start_input(self) -> None:
         if self.dev_mode:
+            self._start_web_server() # Still start web server in dev mode
             return    # keyboard events are pulled via pygame's event queue in run()
+        
         cfg = load_button_config()
         from bigbox.input.gpio import GPIOInput
         self._gpio = GPIOInput(self.bus, cfg)
@@ -82,6 +90,24 @@ class App:
             # so the device is still recoverable via a USB keyboard.
             print(f"[bigbox] GPIO init failed ({e}); keyboard input only")
             self._gpio = None
+        
+        self._start_web_server()
+
+    def _start_web_server(self) -> None:
+        """Starts the FastAPI web server in a background thread."""
+        try:
+            import uvicorn
+            from bigbox.web.server import app, set_app
+            set_app(self)
+            
+            def run_server():
+                uvicorn.run(app, host="0.0.0.0", port=8080, log_level="error")
+            
+            t = threading.Thread(target=run_server, daemon=True)
+            t.start()
+            print("[bigbox] Web UI started at http://0.0.0.0:8080")
+        except ImportError:
+            print("[bigbox] uvicorn not found; Web UI disabled")
 
     # ---------- SectionContext implementation ----------
     def show_result(self, title: str, text: str) -> None:
@@ -173,6 +199,23 @@ class App:
                 self.menu_view.render(screen)
                 if self.menu_view.dismissed:
                     self.menu_view = None
+
+            # 4. Web UI Screen Capture (approx 10 FPS at 60Hz loop)
+            self._frame_counter += 1
+            if self._frame_counter >= 6:
+                self._frame_counter = 0
+                try:
+                    # Capture current surface
+                    raw_data = pygame.image.tostring(screen, "RGB")
+                    img = pygame.image.fromstring(raw_data, (theme.SCREEN_W, theme.SCREEN_H), "RGB")
+                    
+                    # Encode to JPEG
+                    import io
+                    buf = io.BytesIO()
+                    pygame.image.save(img, buf, "jpg")
+                    self.last_frame = buf.getvalue()
+                except Exception:
+                    pass
 
             pygame.display.flip()
             clock.tick(60)
