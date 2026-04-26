@@ -57,9 +57,8 @@ def build() -> Section:
         icon_img=load_icon("recon"),
         background_img=load_background("recon"),
         actions=[
-            Action("Ping sweep (Improved)", _ping_sweep, "advanced host discovery"),
+            Action("Ping sweep", _ping_sweep, "host discovery"),
             Action("CCTV Viewer (KTOX)", _cctv_viewer, "live monitoring"),
-            Action("Ping sweep (local /24)", _nmap_ping_sweep, "nmap -sn"),
             Action("ARP scan (local)", _arp_scan, "arp-scan"),
             Action("Quick scan: localhost", _nmap_quick_self, "nmap -F"),
             Action("Whoami / kernel", _whoami),
