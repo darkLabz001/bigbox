@@ -33,8 +33,7 @@ def _nmap_quick_self(ctx: SectionContext) -> None:
 
 
 def _arp_scan(ctx: SectionContext) -> None:
-    subnet = _local_subnet()
-    ctx.run_streaming(f"arp-scan · {subnet}", ["arp-scan", "--localnet"])
+    ctx.show_arpscan()
 
 
 def _whoami(ctx: SectionContext) -> None:
@@ -58,8 +57,8 @@ def build() -> Section:
         background_img=load_background("recon"),
         actions=[
             Action("Ping sweep", _ping_sweep, "host discovery"),
+            Action("ARP scan", _arp_scan, "local discovery"),
             Action("CCTV Viewer", _cctv_viewer, "live monitoring"),
-            Action("ARP scan (local)", _arp_scan, "arp-scan"),
             Action("Quick scan: localhost", _nmap_quick_self, "nmap -F"),
             Action("Whoami / kernel", _whoami),
         ],

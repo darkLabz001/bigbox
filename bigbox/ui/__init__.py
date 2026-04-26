@@ -5,6 +5,7 @@ from bigbox.ui.widgets import MenuView, ResultView, StatusBar
 from bigbox.ui.cctv import CCTVView
 from bigbox.ui.pingsweep import PingSweepView
 from bigbox.ui.keyboard import KeyboardView
+from bigbox.ui.arpscan import ARPScanView
 
 __all__ = [
     "Action",
@@ -18,4 +19,5 @@ __all__ = [
     "CCTVView",
     "PingSweepView",
     "KeyboardView",
+    "ARPScanView",
 ]

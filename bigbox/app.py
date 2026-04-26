@@ -20,7 +20,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView
 
 
 class App:
@@ -32,6 +32,7 @@ class App:
         self.menu_view: MenuView | None = None
         self.cctv_view: CCTVView | None = None
         self.ping_view: PingSweepView | None = None
+        self.arp_view: ARPScanView | None = None
         self.kb_view: KeyboardView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
@@ -97,6 +98,9 @@ class App:
     def show_pingsweep(self) -> None:
         self.ping_view = PingSweepView()
 
+    def show_arpscan(self) -> None:
+        self.arp_view = ARPScanView()
+
     def get_input(self, title: str, callback: Callable[[str | None], None], initial: str = "") -> None:
         self.kb_view = KeyboardView(title, callback, initial)
 
@@ -104,6 +108,7 @@ class App:
         self.result_view = None
         self.cctv_view = None
         self.ping_view = None
+        self.arp_view = None
         self.kb_view = None
 
     def toast(self, msg: str) -> None:
@@ -151,6 +156,10 @@ class App:
                 self.ping_view.render(screen)
                 if self.ping_view.dismissed:
                     self.ping_view = None
+            elif self.arp_view is not None:
+                self.arp_view.render(screen)
+                if self.arp_view.dismissed:
+                    self.arp_view = None
             elif self.result_view is not None:
                 self.result_view.render(screen)
                 if self.result_view.dismissed:
@@ -218,6 +227,10 @@ class App:
 
         if self.ping_view is not None:
             self.ping_view.handle(bev, self)
+            return
+
+        if self.arp_view is not None:
+            self.arp_view.handle(bev, self)
             return
 
         if self.result_view is not None:
