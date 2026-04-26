@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView
 
 
 class App:
@@ -39,6 +39,7 @@ class App:
         self.flock_view: FlockScannerView | None = None
         self.wifi_view: WifiConnectView | None = None
         self.cam_scan_view: CamScannerView | None = None
+        self.wifi_attack_view: WifiAttackView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
         
@@ -139,6 +140,9 @@ class App:
     def show_camscan(self) -> None:
         self.cam_scan_view = CamScannerView()
 
+    def show_wifi_attack(self) -> None:
+        self.wifi_attack_view = WifiAttackView()
+
     def get_input(self, title: str, callback: Callable[[str | None], None], initial: str = "") -> None:
         self.kb_view = KeyboardView(title, callback, initial)
 
@@ -151,6 +155,7 @@ class App:
         self.flock_view = None
         self.wifi_view = None
         self.cam_scan_view = None
+        self.wifi_attack_view = None
 
     def toast(self, msg: str) -> None:
         # Lightweight: just print for now; could become an on-screen toast widget.
@@ -213,6 +218,10 @@ class App:
                 self.cam_scan_view.render(screen)
                 if self.cam_scan_view.dismissed:
                     self.cam_scan_view = None
+            elif self.wifi_attack_view is not None:
+                self.wifi_attack_view.render(screen)
+                if self.wifi_attack_view.dismissed:
+                    self.wifi_attack_view = None
             elif self.result_view is not None:
                 self.result_view.render(screen)
                 if self.result_view.dismissed:
@@ -308,6 +317,10 @@ class App:
 
         if self.cam_scan_view is not None:
             self.cam_scan_view.handle(bev, self)
+            return
+
+        if self.wifi_attack_view is not None:
+            self.wifi_attack_view.handle(bev, self)
             return
 
         if self.result_view is not None:

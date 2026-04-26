@@ -9,6 +9,7 @@ from bigbox.ui.arpscan import ARPScanView
 from bigbox.ui.flock import FlockScannerView
 from bigbox.ui.wifi_connect import WifiConnectView
 from bigbox.ui.cam_scanner import CamScannerView
+from bigbox.ui.wifi_attack import WifiAttackView
 
 __all__ = [
     "Action",
@@ -26,4 +27,5 @@ __all__ = [
     "FlockScannerView",
     "WifiConnectView",
     "CamScannerView",
+    "WifiAttackView",
 ]
