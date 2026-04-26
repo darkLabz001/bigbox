@@ -1,0 +1,33 @@
+[Unit]
+Description=bigbox pentesting firmware
+After=multi-user.target network.target
+ConditionPathExists=/opt/bigbox/bigbox/__main__.py
+
+[Service]
+Type=simple
+# Root so GPIO + raw sockets + reboot/poweroff actions just work. Tighten
+# later with capabilities (CAP_NET_RAW, CAP_NET_ADMIN, CAP_SYS_TIME) if you
+# want to drop to a non-root user.
+User=root
+Environment=PYTHONUNBUFFERED=1
+Environment=DISPLAY=:0
+WorkingDirectory=/opt/bigbox
+
+# Launch a single-purpose X server on vt3 and run bigbox as its only client.
+# This is the most portable path: works on legacy fbdev images (no KMS) and
+# on KMS images, with no config.txt changes needed. -nocursor hides the X
+# pointer, -nolisten tcp closes the X11 socket on the network.
+ExecStart=/usr/bin/xinit /opt/bigbox/.venv/bin/python -m bigbox -- :0 vt3 -nocursor -nolisten tcp
+
+TTYPath=/dev/tty3
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

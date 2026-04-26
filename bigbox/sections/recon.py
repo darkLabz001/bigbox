@@ -1,0 +1,53 @@
+"""Recon — host & service discovery."""
+from __future__ import annotations
+
+import ipaddress
+import socket
+
+from bigbox.runner import run_capture
+from bigbox.ui import Action, Section, SectionContext
+
+
+def _local_subnet() -> str:
+    """Best-effort guess of the /24 we're attached to. Falls back to localhost."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(0.2)
+            s.connect(("10.255.255.255", 1))
+            ip = s.getsockname()[0]
+        net = ipaddress.IPv4Network(f"{ip}/24", strict=False)
+        return str(net)
+    except OSError:
+        return "127.0.0.1/32"
+
+
+def _nmap_ping_sweep(ctx: SectionContext) -> None:
+    subnet = _local_subnet()
+    ctx.run_streaming(f"nmap ping sweep · {subnet}", ["nmap", "-sn", "-T4", subnet])
+
+
+def _nmap_quick_self(ctx: SectionContext) -> None:
+    ctx.run_streaming("nmap quick · 127.0.0.1", ["nmap", "-T4", "-F", "127.0.0.1"])
+
+
+def _arp_scan(ctx: SectionContext) -> None:
+    subnet = _local_subnet()
+    ctx.run_streaming(f"arp-scan · {subnet}", ["arp-scan", "--localnet"])
+
+
+def _whoami(ctx: SectionContext) -> None:
+    out = run_capture(["id"]) + "\n" + run_capture(["uname", "-a"])
+    ctx.show_result("identity", out)
+
+
+def build() -> Section:
+    return Section(
+        title="Recon",
+        icon="[*]",
+        actions=[
+            Action("Ping sweep (local /24)", _nmap_ping_sweep, "nmap -sn"),
+            Action("ARP scan (local)", _arp_scan, "arp-scan"),
+            Action("Quick scan: localhost", _nmap_quick_self, "nmap -F"),
+            Action("Whoami / kernel", _whoami),
+        ],
+    )

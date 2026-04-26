@@ -1,0 +1,41 @@
+"""Network — interfaces, routes, DNS."""
+from __future__ import annotations
+
+from bigbox.runner import run_capture
+from bigbox.ui import Action, Section, SectionContext
+
+
+def _interfaces(ctx: SectionContext) -> None:
+    ctx.show_result("interfaces", run_capture(["ip", "-c=never", "addr"]))
+
+
+def _routes(ctx: SectionContext) -> None:
+    ctx.show_result("routes", run_capture(["ip", "-c=never", "route"]))
+
+
+def _ping_gateway(ctx: SectionContext) -> None:
+    out = run_capture(["sh", "-c", "ip route | awk '/default/ {print $3; exit}' | xargs -r ping -c 4 -W 1"])
+    ctx.show_result("ping default gateway", out or "[no default route found]\n")
+
+
+def _resolv(ctx: SectionContext) -> None:
+    ctx.show_result("DNS config", run_capture(["sh", "-c", "cat /etc/resolv.conf"]))
+
+
+def _public_ip(ctx: SectionContext) -> None:
+    out = run_capture(["sh", "-c", "curl -s --max-time 4 https://api.ipify.org || echo offline"])
+    ctx.show_result("public IP", out)
+
+
+def build() -> Section:
+    return Section(
+        title="Network",
+        icon="[~]",
+        actions=[
+            Action("Interfaces (ip addr)", _interfaces),
+            Action("Routes (ip route)", _routes),
+            Action("Ping default gateway", _ping_gateway),
+            Action("DNS config", _resolv),
+            Action("Public IP", _public_ip),
+        ],
+    )

@@ -1,0 +1,30 @@
+# GamePi43 button -> BCM GPIO pin map.
+#
+# These defaults follow Waveshare's published reference for the GamePi43.
+# **Verify against your unit's silkscreen / wiki before relying on them** —
+# revisions of the GamePi43 have shipped with slightly different mappings.
+#
+# All buttons are active-low (pressed = pin pulled to GND) and use the Pi's
+# internal pull-up.
+
+[pins]
+UP     = 5
+DOWN   = 6
+LEFT   = 4
+RIGHT  = 27
+A      = 13
+B      = 19
+X      = 21
+Y      = 16
+START  = 17
+SELECT = 26
+HK     = 22   # TODO: Verify HK pin
+LL     = 12   # left shoulder
+RR     = 20   # right shoulder
+
+[behavior]
+# Debounce window in milliseconds.
+debounce_ms = 30
+# Repeat: how long to hold before key-repeat kicks in, and the repeat interval.
+repeat_delay_ms    = 400
+repeat_interval_ms = 90
