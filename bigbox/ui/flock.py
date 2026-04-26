@@ -65,38 +65,47 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        """Advanced BLE monitor using bluetoothctl monitor."""
+        \"\"\"Advanced BLE monitor using raw btmon for dual-adapter support.\"\"\"
         try:
-            # Power on and start scanning
-            subprocess.run(["sudo", "bluetoothctl", "power", "on"], capture_output=True)
-            subprocess.Popen(["sudo", "bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Ensure both adapters are powered and scanning
+            for hci in [\"hci0\", \"hci1\"]:
+                subprocess.run([\"sudo\", \"hciconfig\", hci, \"up\"], capture_output=True)
+                subprocess.run([\"sudo\", \"bluetoothctl\", \"select\", hci], capture_output=True)
+                subprocess.run([\"sudo\", \"bluetoothctl\", \"power\", \"on\"], capture_output=True)
+                subprocess.Popen([\"sudo\", \"bluetoothctl\", \"scan\", \"on\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            # monitor mode provides cleaner text output than raw btmon for our regex
-            proc = subprocess.Popen(["sudo", "bluetoothctl", "monitor"], stdout=subprocess.PIPE, text=True)
+            # Use btmon for raw access to all controllers
+            proc = subprocess.Popen([\"sudo\", \"btmon\"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: return
 
-            current_mac = ""
+            current_mac = \"\"
             for line in proc.stdout:
                 if self._stop_threads: break
                 
-                # bluetoothctl monitor output parsing
-                # [mgmt] [0x0001] Event: Device Found (0x01)
-                #        Address: 74:4C:A1:XX:XX:XX (Public)
-                #        RSSI: -72 dBm (0xb8)
+                # btmon captures:
+                # > HCI Event: LE Advertising Report (0x3e) ...
+                #         Address: 74:4C:A1:XX:XX:XX (Public)
+                #         RSSI: -72 dBm (0xb8)
                 
-                mac_match = re.search(r'Address: ([0-9A-F:]{17})', line)
-                if mac_match:
-                    current_mac = mac_match.group(1)
-                
-                rssi_match = re.search(r'RSSI: (-\d+)', line)
-                if rssi_match and current_mac:
-                    rssi = int(rssi_match.group(1))
+                m = re.search(r'Address: ([0-9A-F:]{17})', line)
+                if m:
+                    current_mac = m.group(1)
+                    continue
+
+                r = re.search(r'RSSI: (-\d+)', line)
+                if r and current_mac:
+                    rssi = int(r.group(1))
                     self._process_bt_hit(current_mac, rssi, line)
+                    # We don't clear current_mac yet because Manufacturer Data might follow
+
+                # If we see a new event start, clear the current context
+                if \"> HCI Event\" in line or \"@ MGMT Event\" in line:
+                    current_mac = \"\"
 
         except Exception as e:
-            self.status_msg = f"SENSORS OFFLINE: {e}"
+            self.status_msg = f\"SENSORS OFFLINE: {e}\"
         finally:
-            subprocess.run(["sudo", "bluetoothctl", "scan", "off"], capture_output=True)
+            subprocess.run([\"sudo\", \"bluetoothctl\", \"scan\", \"off\"], capture_output=True)
 
     def _process_bt_hit(self, mac: str, rssi: int, raw_line: str):
         oui = mac[:8].upper()
@@ -245,11 +254,13 @@ class FlockScannerView:
         elif ev.button is Button.UP:
             self.selected_idx = max(0, self.selected_idx - 1)
         elif ev.button is Button.DOWN:
-            self.selected_idx = min(len(self.signals) - 1, self.selected_idx + 1)
+            num_sigs = len(self.signals)
+            if num_sigs > 0:
+                self.selected_idx = min(num_sigs - 1, self.selected_idx + 1)
         elif ev.button is Button.A:
             # Manual Loot Save
             sorted_sigs = sorted(self.signals.values(), key=lambda x: x.last_seen, reverse=True)
-            if self.selected_idx < len(sorted_sigs):
+            if sorted_sigs and self.selected_idx < len(sorted_sigs):
                 self._save_loot(sorted_sigs[self.selected_idx])
                 if hasattr(ctx, "toast"):
                     ctx.toast("SAVED TO LOOT")
