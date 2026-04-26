@@ -33,6 +33,7 @@ apt-get install -y --no-install-recommends \
     aircrack-ng iw wireless-tools \
     bluez \
     alsa-utils \
+    mpv \
     curl ca-certificates \
     fonts-dejavu-core
 

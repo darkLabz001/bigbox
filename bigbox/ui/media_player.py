@@ -64,31 +64,36 @@ class MediaPlayerView:
     def _play(self, filename: str) -> None:
         self.playing_file = filename
         full_path = os.path.abspath(os.path.join(self.media_dir, filename))
-        
+
         print(f"[media] Playing: {full_path}")
-        
+
+        # mpv runs as root fine and uses ALSA directly when forced with
+        # --ao=alsa, so we skip VLC's sudo / Xauthority dance entirely.
+        env = os.environ.copy()
+        env.setdefault("DISPLAY", ":0")
+        env.setdefault("XAUTHORITY", "/root/.Xauthority")
+
+        cmd = [
+            "mpv",
+            "--fs",                  # fullscreen
+            "--ao=alsa",             # force ALSA backend (no PulseAudio session)
+            "--hwdec=auto-safe",     # hardware decode where supported (Pi v4l2m2m)
+            "--no-osc",              # no on-screen controller; we have hw buttons
+            "--really-quiet",        # suppress mpv's own status text
+            full_path,
+        ]
         try:
-            # We use 'sudo -u kali' because VLC refuses to run as root,
-            # but we must provide the Xauthority of the root user who started xinit.
-            # Also force output to hw:1,0 (Headphones/Speaker on GamePi43).
-            cmd = [
-                "sudo", "-u", "kali",
-                "DISPLAY=:0",
-                "XAUTHORITY=/root/.Xauthority",
-                "vlc",
-                "--fullscreen",
-                "--no-video-title-show",
-                "--play-and-exit",
-                "--alsa-audio-device", "hw:1,0",
-                full_path
-            ]
             self.proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
+                env=env,
             )
+        except FileNotFoundError:
+            print("[media] mpv not installed (apt install mpv)")
+            self.proc = None
         except Exception as e:
-            print(f"[media] VLC launch error: {e}")
+            print(f"[media] mpv launch error: {e}")
             self.proc = None
 
     def _stop(self) -> None:

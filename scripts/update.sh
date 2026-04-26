@@ -41,7 +41,7 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     # Check for missing system dependencies
     echo "STATUS: Checking system dependencies..."
     echo "PROGRESS: 60"
-    for pkg in libturbojpeg0 vlc; do
+    for pkg in libturbojpeg0 mpv; do
         if ! dpkg -l | grep -q "$pkg"; then
             echo "Installing missing system dependency: $pkg"
             apt-get update && apt-get install -y "$pkg"
