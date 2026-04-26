@@ -27,19 +27,29 @@ class Camera:
     location: str
     url: str
     ip: str = "UNKNOWN"
+    is_stream: bool = True  # Try MJPEG streaming first
 
 
 class CCTVView:
     """Full-screen CCTV monitoring using KTOX-style double buffering."""
 
     def __init__(self) -> None:
+        # A mix of traffic cams and public infrastructure feeds.
         self.cameras = [
-            Camera("CAM-01", "Public Feed 1", "http://82.113.153.22/axis-cgi/mjpg/video.cgi"),
-            Camera("CAM-02", "Public Feed 2", "http://208.80.154.224/mjpg/video.mjpg"),
-            Camera("CAM-03", "Public Feed 3", "http://87.245.83.189/axis-cgi/mjpg/video.cgi?resolution=320x240"),
-            Camera("CAM-04", "Public Feed 4", "http://213.218.26.109/stream.jpg"),
-            Camera("CAM-05", "Public Feed 5", "http://64.122.180.12/nphMotionJpeg?Resolution=320x240"),
-            Camera("CAM-RE", "RECON_MOCK", "MOCK"),
+            # Traffic / Street Cams
+            Camera("TRAF-SEA1", "Seattle: MLK & Jackson", "http://www.seattle.gov/trafficcams/images/MLK_S_Jackson_NS.jpg", "156.74.25.10", False),
+            Camera("TRAF-SEA2", "Seattle: 4th & Battery", "http://www.seattle.gov/trafficcams/images/4_Battery_NS.jpg", "156.74.25.11", False),
+            Camera("TRAF-WI", "Wisconsin: Cam 082", "https://projects.511wi.gov/milwaukee/cameras/cam082.jpg", "165.189.161.12", False),
+            Camera("TRAF-UK", "UK: High Street", "http://194.168.163.96/axis-cgi/mjpg/video.cgi?resolution=320x240", "194.168.163.96", True),
+            
+            # Public Streams (MJPEG)
+            Camera("CAM-UT", "Austin, TX (UT)", "http://porchcam.ece.utexas.edu/axis-cgi/mjpg/video.cgi?resolution=640x480", "128.83.120.20", True),
+            Camera("CAM-CH", "Schaffhausen, CH", "http://87.245.83.189/axis-cgi/mjpg/video.cgi?resolution=640x480", "87.245.83.189", True),
+            Camera("CAM-BER", "Berlin, DE", "http://213.218.26.109/stream.jpg", "213.218.26.109", True),
+            Camera("CAM-PUR", "Purdue Univ", "http://webcam01.ecn.purdue.edu/mjpg/video.mjpg", "128.46.154.21", True),
+            
+            # Recon Mock
+            Camera("RECON_MOCK", "Classified", "MOCK", "0.0.0.0", False),
         ]
         self.selected = 0
         self.dismissed = False
@@ -66,7 +76,7 @@ class CCTVView:
             self._noise_cache.append(surf)
 
     def _fetch_loop(self) -> None:
-        """KTOX-optimized fetch loop with aggressive reconnection."""
+        """KTOX-optimized fetch loop with MJPEG/JPEG auto-detection and fallback."""
         while not self._stop_thread:
             cam = self.cameras[self.selected]
             current_idx = self.selected
@@ -79,57 +89,63 @@ class CCTVView:
                 continue
 
             try:
-                # KTOX pattern: Long-lived streaming request
-                with requests.get(cam.url, stream=True, timeout=10) as resp:
-                    if resp.status_code != 200:
-                        self.error_msg = f"HTTP {resp.status_code}"
-                        time.sleep(3)
-                        continue
-                    
-                    self.is_loading = False
-                    bytes_buffer = bytes()
-                    last_fps_check = time.time()
-                    frames_this_sec = 0
-                    
-                    # 32KB chunks like KTOX_Pi
-                    for chunk in resp.iter_content(chunk_size=32768):
-                        if self._stop_thread or self.selected != current_idx:
-                            break
+                if cam.is_stream:
+                    # MJPEG Stream Mode
+                    with requests.get(cam.url, stream=True, timeout=8) as resp:
+                        if resp.status_code != 200:
+                            self.error_msg = f"HTTP {resp.status_code}"
+                            time.sleep(3)
+                            continue
                         
-                        bytes_buffer += chunk
+                        self.is_loading = False
+                        bytes_buffer = bytes()
+                        last_fps_check = time.time()
+                        frames_this_sec = 0
                         
-                        # Multipart JPEG boundary searching
-                        while True:
-                            a = bytes_buffer.find(b'\xff\xd8') # SOI
-                            b = bytes_buffer.find(b'\xff\xd9') # EOI
-                            if a != -1 and b != -1 and b > a:
-                                jpg_data = bytes_buffer[a:b+2]
-                                bytes_buffer = bytes_buffer[b+2:]
-                                
-                                try:
-                                    # KTOX uses TurboJPEG for 3x speedup on Pi
-                                    if _TJ:
-                                        # (simplified fallback to pygame for now as we need surface)
-                                        surf = pygame.image.load(io.BytesIO(jpg_data))
-                                    else:
-                                        surf = pygame.image.load(io.BytesIO(jpg_data))
-                                    
-                                    self._frame_buffer.append(surf)
-                                    frames_this_sec += 1
-                                    
-                                    now = time.time()
-                                    if now - last_fps_check > 1.0:
-                                        self.fps = frames_this_sec
-                                        frames_this_sec = 0
-                                        last_fps_check = now
-                                except Exception:
-                                    pass
-                            else:
+                        for chunk in resp.iter_content(chunk_size=32768):
+                            if self._stop_thread or self.selected != current_idx:
                                 break
+                            
+                            bytes_buffer += chunk
+                            while True:
+                                a = bytes_buffer.find(b'\xff\xd8') # SOI
+                                b = bytes_buffer.find(b'\xff\xd9') # EOI
+                                if a != -1 and b != -1 and b > a:
+                                    jpg_data = bytes_buffer[a:b+2]
+                                    bytes_buffer = bytes_buffer[b+2:]
+                                    
+                                    try:
+                                        surf = pygame.image.load(io.BytesIO(jpg_data))
+                                        self._frame_buffer.append(surf)
+                                        frames_this_sec += 1
+                                        
+                                        now = time.time()
+                                        if now - last_fps_check > 1.0:
+                                            self.fps = frames_this_sec
+                                            frames_this_sec = 0
+                                            last_fps_check = now
+                                    except Exception:
+                                        pass
+                                else:
+                                    break
+                            
+                            if len(bytes_buffer) > 1024 * 1024:
+                                bytes_buffer = bytes()
+                else:
+                    # Polling Mode (Static JPEGs)
+                    while not self._stop_thread and self.selected == current_idx:
+                        resp = requests.get(cam.url, timeout=5)
+                        if resp.status_code == 200:
+                            surf = pygame.image.load(io.BytesIO(resp.content))
+                            self._frame_buffer.append(surf)
+                            self.is_loading = False
+                        else:
+                            self.error_msg = f"HTTP {resp.status_code}"
                         
-                        # Buffer safety cap
-                        if len(bytes_buffer) > 1024 * 1024:
-                            bytes_buffer = bytes()
+                        # Wait for refresh
+                        start_poll = time.time()
+                        while time.time() - start_poll < 2.0 and self.selected == current_idx:
+                            time.sleep(0.1)
                             
             except Exception as e:
                 self.error_msg = str(e)
@@ -152,10 +168,10 @@ class CCTVView:
         head = pygame.Rect(0, 0, theme.SCREEN_W, theme.STATUS_BAR_H + theme.TAB_BAR_H)
         pygame.draw.rect(surf, theme.BG_ALT, head)
         title_font = pygame.font.Font(None, theme.FS_TITLE)
-        title = title_font.render("RECON :: LIVE_INTERCEPT", True, theme.ACCENT)
+        title = title_font.render("RECON :: TRAFFIC_INTERCEPT", True, theme.ACCENT)
         surf.blit(title, (theme.PADDING, (head.height - title.get_height()) // 2))
         
-        # Live Dot (blinking)
+        # LIVE indicator
         if int(time.time() * 2) % 2:
             pygame.draw.circle(surf, theme.ERR, (theme.SCREEN_W - 140, head.height // 2), 6)
             rec_text = pygame.font.Font(None, theme.FS_SMALL).render("RECEIVING", True, theme.FG)
@@ -181,13 +197,12 @@ class CCTVView:
         if self._frame_buffer:
             img = self._frame_buffer[0]
             try:
-                # Optimized scaling
                 scaled = pygame.transform.scale(img, (view.width, view.height))
                 surf.blit(scaled, view.topleft)
                 
-                # High-contrast overlay
+                # Digital tint
                 tint = pygame.Surface((view.width, view.height), pygame.SRCALPHA)
-                tint.fill((0, 255, 0, 15)) 
+                tint.fill((0, 255, 0, 10)) 
                 surf.blit(tint, view.topleft)
             except Exception:
                 self._frame_buffer.clear()
@@ -195,7 +210,7 @@ class CCTVView:
         # UI Overlays
         f = pygame.font.Font(None, theme.FS_SMALL)
         if self.is_loading:
-            msg = f.render("ESTABLISHING LINK...", True, theme.ACCENT)
+            msg = f.render("TUNING FREQUENCY...", True, theme.ACCENT)
             surf.blit(msg, (view.centerx - msg.get_width()//2, view.centery))
         elif self.error_msg and not self._frame_buffer:
             msg = f.render(f"LINK ERROR: {self.error_msg[:30]}", True, theme.ERR)
@@ -208,18 +223,18 @@ class CCTVView:
 
         # Post-Processing (Scanlines + Noise)
         for y in range(view.y, view.bottom, 4):
-            pygame.draw.line(surf, (0, 0, 0, 40), (view.x, y), (view.right, y))
+            pygame.draw.line(surf, (0, 0, 0, 30), (view.x, y), (view.right, y))
         
         noise_surf = pygame.transform.scale(random.choice(self._noise_cache), (view.width, view.height))
         surf.blit(noise_surf, view.topleft)
 
         # Signal Glitch
-        if random.random() < 0.05:
+        if random.random() < 0.04:
             gy = random.randint(view.y, view.bottom - 20)
-            gh = random.randint(2, 12)
-            if gy + gh <= view_rect.bottom:
+            gh = random.randint(2, 10)
+            if gy + gh <= view.bottom:
                 glitch_rect = pygame.Rect(view.x, gy, view.width, gh)
                 try:
                     sub = surf.subsurface(glitch_rect).copy()
-                    surf.blit(sub, (view.x + random.randint(-8, 8), gy))
+                    surf.blit(sub, (view.x + random.randint(-5, 5), gy))
                 except (ValueError, pygame.error): pass
