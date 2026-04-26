@@ -1,4 +1,4 @@
-"""CCTV Viewer — High-performance MJPEG streaming based on KTOX patterns."""
+"""CCTV Viewer — High-performance MJPEG streaming engine."""
 from __future__ import annotations
 
 import io
@@ -32,7 +32,7 @@ class Camera:
 
 
 class CCTVView:
-    """Full-screen CCTV monitoring based on KTOX_Pi architecture."""
+    """Full-screen CCTV monitoring based on optimized MJPEG architecture."""
 
     def __init__(self) -> None:
         # Verified WORKING URLs (as of this minute)
