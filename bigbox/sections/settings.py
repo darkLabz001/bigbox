@@ -29,6 +29,23 @@ def _poweroff(ctx: SectionContext) -> None:
     ctx.run_streaming("poweroff", ["sudo", "poweroff"])
 
 
+def _view_loot(ctx: SectionContext) -> None:
+    import os
+    fname = "loot/flock_intel.txt"
+    if not os.path.exists(fname):
+        ctx.show_result("Flock Loot", "No loot captured yet.\n\nRun FlockSeeker to gather intel.")
+        return
+        
+    try:
+        with open(fname, "r") as f:
+            content = f.read()
+            if not content.strip():
+                content = "Loot file is empty."
+            ctx.show_result("Flock Loot", content)
+    except Exception as e:
+        ctx.show_result("Error", f"Could not read loot: {e}")
+
+
 def _update(ctx: SectionContext) -> None:
     # Always resolve the script via the package layout, never via cwd.
     from pathlib import Path
@@ -44,6 +61,7 @@ def build() -> Section:
         background_img=load_background("settings"),
         actions=[
             Action("Check for updates (OTA)", _update),
+            Action("View Flock Loot", _view_loot, "intel gathered from FlockSeeker"),
             Action("Volume up", _vol_up),
             Action("Volume down", _vol_down),
             Action("Mute toggle", _vol_mute),
