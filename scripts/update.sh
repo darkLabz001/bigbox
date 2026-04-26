@@ -27,8 +27,10 @@ LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
 
 if [ "$LOCAL" != "$REMOTE" ]; then
-    echo "New updates found. Pulling..."
-    git pull origin "$BRANCH"
+    echo "New updates found. Syncing..."
+    # Reset is more robust than pull for an automated appliance; 
+    # it clears local modifications that might cause merge conflicts.
+    git reset --hard "origin/$BRANCH"
     
     # Check for missing system dependencies
     if ! dpkg -l | grep -q libturbojpeg0; then
