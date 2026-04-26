@@ -65,35 +65,27 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        \"\"\"Advanced BLE monitor using raw btmon for dual-adapter support.\"\"\"
+        """Advanced BLE monitor using raw btmon for dual-adapter support."""
         try:
             # Ensure both adapters are powered and scanning
-            # We prioritize hci1 (external USB) if it exists as it usually has better range
-            adapters = [\"hci1\", \"hci0\"]
+            adapters = ["hci1", "hci0"]
             for hci in adapters:
-                # Use sudo -n to avoid hanging on password prompts if any
-                subprocess.run([\"sudo\", \"-n\", \"hciconfig\", hci, \"up\"], capture_output=True)
-                subprocess.run([\"sudo\", \"-n\", \"bluetoothctl\", \"select\", hci], capture_output=True)
-                subprocess.run([\"sudo\", \"-n\", \"bluetoothctl\", \"power\", \"on\"], capture_output=True)
-                subprocess.Popen([\"sudo\", \"-n\", \"bluetoothctl\", \"scan\", \"on\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["sudo", "-n", "hciconfig", hci, "up"], capture_output=True)
+                subprocess.run(["sudo", "-n", "bluetoothctl", "select", hci], capture_output=True)
+                subprocess.run(["sudo", "-n", "bluetoothctl", "power", "on"], capture_output=True)
+                subprocess.Popen(["sudo", "-n", "bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            self.status_msg = \"SENSORS ACTIVE\"
+            self.status_msg = "SENSORS ACTIVE"
 
             # Use btmon for raw access to all controllers
-            proc = subprocess.Popen([\"sudo\", \"-n\", \"btmon\"], stdout=subprocess.PIPE, text=True)
+            proc = subprocess.Popen(["sudo", "-n", "btmon"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: 
-                self.status_msg = \"BTMON_START_FAILED\"
+                self.status_msg = "BTMON_START_FAILED"
                 return
-
 
             current_mac = ""
             for line in proc.stdout:
                 if self._stop_threads: break
-                
-                # btmon captures:
-                # > HCI Event: LE Advertising Report (0x3e) ...
-                #         Address: 74:4C:A1:XX:XX:XX (Public)
-                #         RSSI: -72 dBm (0xb8)
                 
                 m = re.search(r'Address: ([0-9A-F:]{17})', line)
                 if m:
@@ -104,16 +96,14 @@ class FlockScannerView:
                 if r and current_mac:
                     rssi = int(r.group(1))
                     self._process_bt_hit(current_mac, rssi, line)
-                    # We don't clear current_mac yet because Manufacturer Data might follow
 
-                # If we see a new event start, clear the current context
                 if "> HCI Event" in line or "@ MGMT Event" in line:
                     current_mac = ""
 
         except Exception as e:
             self.status_msg = f"SENSORS OFFLINE: {e}"
         finally:
-            subprocess.run(["sudo", "bluetoothctl", "scan", "off"], capture_output=True)
+            subprocess.run(["sudo", "-n", "bluetoothctl", "scan", "off"], capture_output=True)
 
     def _process_bt_hit(self, mac: str, rssi: int, raw_line: str):
         oui = mac[:8].upper()
@@ -123,20 +113,17 @@ class FlockScannerView:
         details = ""
         confidence = 10
         
-        # 1. Check Manufacturer ID (High Confidence)
         if self.MANUFACTURER_ID.upper() in line_up:
             is_flock = True
             details = "FLOCK_MFG_DATA_DETECTED"
             confidence += 60
             
-        # 2. Check Name (Medium-High Confidence)
         for name in self.KNOWN_NAMES:
             if name in line_up:
                 is_flock = True
                 details = f"SIGNATURE_MATCH: {name}"
                 confidence += 40
                 
-        # 3. Check OUI (Medium Confidence)
         if oui in OUI_DB:
             is_flock = True
             details = f"HARDWARE_MATCH: {OUI_DB[oui]}"
@@ -150,7 +137,6 @@ class FlockScannerView:
                     id=sig_id, mac=mac, type="BLE", rssi=rssi, 
                     last_seen=datetime.now(), details=details, confidence=min(100, confidence)
                 )
-                # Auto-loot high confidence hits
                 if confidence >= 80:
                     self._save_loot(self.signals[sig_id])
                     self._play_alert()
@@ -164,14 +150,12 @@ class FlockScannerView:
                 if len(s.history) > 20: s.history.pop(0)
 
     def _play_alert(self):
-        """Plays a short alert tone if high confidence detection occurs."""
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init()
-            # Simple beep using a square wave
             import array
             sample_rate = 44100
-            freq = 880 # A5
+            freq = 880
             duration = 0.1
             n_samples = int(sample_rate * duration)
             buf = array.array('h', [0] * n_samples)
@@ -185,7 +169,6 @@ class FlockScannerView:
             pass
 
     def _save_loot(self, sig: FlockSignal):
-        """Persists the detection to the loot folder."""
         import os
         loot_dir = "loot"
         if not os.path.exists(loot_dir):
@@ -200,7 +183,6 @@ class FlockScannerView:
             "--------------------------------------------------\n"
         )
         
-        # Avoid duplicate recent entries
         try:
             if os.path.exists(fname):
                 with open(fname, "r") as f:
@@ -214,67 +196,51 @@ class FlockScannerView:
             pass
 
     def _wifi_worker(self):
-        \"\"\"Optimized Wi-Fi Polling using nmcli across all adapters.\"\"\"
         while not self._stop_threads:
             try:
-                # 1. Ensure all wlan interfaces are up
-                # Find all wlan interfaces (wlan0, wlan1, ...)
-                ifaces_out = subprocess.check_output([\"ls\", \"/sys/class/net\"], text=True)
-                wlan_ifaces = [i for i in ifaces_out.split() if i.startswith(\"wlan\")]
+                ifaces_out = subprocess.check_output(["ls", "/sys/class/net"], text=True)
+                wlan_ifaces = [i for i in ifaces_out.split() if i.startswith("wlan")]
                 
                 for iface in wlan_ifaces:
-                    subprocess.run([\"sudo\", \"-n\", \"ip\", \"link\", \"set\", iface, \"up\"], capture_output=True)
+                    subprocess.run(["sudo", "-n", "ip", "link", "set", iface, "up"], capture_output=True)
 
-                # 2. Trigger a rescan on all interfaces
-                # nmcli dev wifi rescan can take a moment, run in background
-                subprocess.Popen([\"sudo\", \"-n\", \"nmcli\", \"dev\", \"wifi\", \"rescan\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(["sudo", "-n", "nmcli", "dev", "wifi", "rescan"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(2)
 
-                # 3. Pull results
-                # Format: BSSID:SSID:SIGNAL:CHAN:BARS:SECURITY
-                cmd = [\"nmcli\", \"-t\", \"-f\", \"BSSID,SSID,SIGNAL\", \"dev\", \"wifi\", \"list\"]
+                cmd = ["nmcli", "-t", "-f", "BSSID,SSID,SIGNAL", "dev", "wifi", "list"]
                 out = subprocess.check_output(cmd, text=True)
                 
                 for line in out.splitlines():
-                    # Handle BSSID with escaped colons: 6C\:4B\:B4\:FB\:CF\:34
-                    # We split and then reconstruct the first 6 segments as the MAC
                     raw_parts = line.split(':')
                     if len(raw_parts) < 3: continue
                     
-                    # Reconstruction logic for escaped MACs
                     mac_parts = []
                     idx = 0
                     while len(mac_parts) < 6 and idx < len(raw_parts):
-                        part = raw_parts[idx].replace(\"\\\\\", \"\")
+                        part = raw_parts[idx].replace("\\", "")
                         if len(part) == 2:
                             mac_parts.append(part)
                         idx += 1
                     
                     if len(mac_parts) < 6: continue
                     
-                    mac = \":\".join(mac_parts).upper()
-                    # The rest of the line contains SSID and SIGNAL
-                    # After the MAC, the next part is SSID
+                    mac = ":".join(mac_parts).upper()
                     ssid = raw_parts[idx]
-                    # The last part is SIGNAL
                     try:
                         rssi = int(raw_parts[-1])
-                        # nmcli 0-100 to dBm approx
                         rssi_dbm = (rssi / 2) - 100
                     except (ValueError, IndexError):
                         rssi_dbm = -70
                     
-                    if \"Flock-\" in ssid or \"PENGUIN\" in ssid.upper() or \"PIGVISION\" in ssid.upper():
+                    if "Flock-" in ssid or "PENGUIN" in ssid.upper() or "PIGVISION" in ssid.upper():
                         self._add_wifi_signal(ssid, mac, int(rssi_dbm))
                     
-                    # Also check MAC OUI for WiFi (some Flock cams don't broadcast specific SSIDs)
                     oui = mac[:8].upper()
                     if oui in OUI_DB:
-                        label = f\"{OUI_DB[oui]}_{mac[-5:].replace(':','')}\"
+                        label = f"{OUI_DB[oui]}_{mac[-5:].replace(':','')}"
                         self._add_wifi_signal(label, mac, int(rssi_dbm))
 
-            except Exception as e:
-                # Log error to status briefly if it's persistent
+            except Exception:
                 pass
             time.sleep(8)
 
@@ -302,7 +268,6 @@ class FlockScannerView:
             if num_sigs > 0:
                 self.selected_idx = min(num_sigs - 1, self.selected_idx + 1)
         elif ev.button is Button.A:
-            # Manual Loot Save
             sorted_sigs = sorted(self.signals.values(), key=lambda x: x.last_seen, reverse=True)
             if sorted_sigs and self.selected_idx < len(sorted_sigs):
                 self._save_loot(sorted_sigs[self.selected_idx])
@@ -311,65 +276,43 @@ class FlockScannerView:
 
     def render(self, surf: pygame.Surface) -> None:
         surf.fill(theme.BG)
-        
-        # Header with Scanner Line
         head_h = 44
         pygame.draw.rect(surf, theme.BG_ALT, (0, 0, theme.SCREEN_W, head_h))
         pygame.draw.line(surf, theme.ACCENT, (0, head_h-1), (theme.SCREEN_W, head_h-1), 2)
-        
         f_title = pygame.font.Font(None, 32)
         surf.blit(f_title.render("RECON :: FLOCK_SEEKER_ULTRA", True, theme.ACCENT), (theme.PADDING, 8))
-        
-        # Signal Count
         f_small = pygame.font.Font(None, 22)
         count_txt = f_small.render(f"ACTIVE_NODES: {len(self.signals)}", True, theme.FG)
         surf.blit(count_txt, (theme.SCREEN_W - 160, 12))
-
-        # Main Layout
         list_w = 480
         list_rect = pygame.Rect(theme.PADDING, head_h + 10, list_w, theme.SCREEN_H - head_h - 50)
         pygame.draw.rect(surf, (5, 5, 8), list_rect)
         pygame.draw.rect(surf, theme.DIVIDER, list_rect, 1)
-
         sorted_sigs = sorted(self.signals.values(), key=lambda x: x.last_seen, reverse=True)
-        
-        # List View
         for i, sig in enumerate(sorted_sigs):
             y = list_rect.y + i * 50
             if y > list_rect.bottom - 45: break
-            
             sel = i == self.selected_idx
             bg = (20, 35, 50) if sel else (10, 15, 25)
             row_rect = pygame.Rect(list_rect.x + 5, y + 5, list_rect.width - 10, 45)
             pygame.draw.rect(surf, bg, row_rect, border_radius=4)
             if sel: pygame.draw.rect(surf, theme.ACCENT, row_rect, 1, border_radius=4)
-            
-            # Confidence Bar
             conf_w = int((row_rect.width - 20) * (sig.confidence / 100))
             pygame.draw.rect(surf, (0, 40, 0), (row_rect.x + 10, row_rect.bottom - 4, row_rect.width - 20, 2))
             pygame.draw.rect(surf, theme.ACCENT, (row_rect.x + 10, row_rect.bottom - 4, conf_w, 2))
-
-            # ID and Type
             id_surf = f_small.render(f"{sig.id} ({sig.type})", True, theme.FG if sig.confidence > 50 else theme.FG_DIM)
             surf.blit(id_surf, (row_rect.x + 10, row_rect.y + 10))
-            
-            # RSSI Bar (Signal Strength)
             ss = max(0, min(100, (sig.rssi + 100) * 1.5))
             for b in range(5):
                 b_color = theme.ACCENT if ss > (b * 20) else (40, 40, 40)
                 pygame.draw.rect(surf, b_color, (row_rect.right - 60 + b*10, row_rect.y + 15, 6, 12))
-
-        # Right Side: Detail View & Proximity
         detail_x = list_rect.right + 20
         detail_w = theme.SCREEN_W - detail_x - theme.PADDING
-        
         if sorted_sigs and self.selected_idx < len(sorted_sigs):
             self._render_detail(surf, detail_x, head_h + 10, detail_w, sorted_sigs[self.selected_idx])
         else:
             msg = f_small.render("NO TARGET SELECTED", True, theme.FG_DIM)
             surf.blit(msg, (detail_x + 20, theme.SCREEN_H // 2))
-
-        # Footer
         pygame.draw.rect(surf, (10, 10, 15), (0, theme.SCREEN_H - 35, theme.SCREEN_W, 35))
         pygame.draw.line(surf, theme.DIVIDER, (0, theme.SCREEN_H - 35), (theme.SCREEN_W, theme.SCREEN_H - 35))
         hint = f_small.render("UP/DOWN: Navigate  A: SAVE TO LOOT  B: EXIT", True, theme.FG_DIM)
@@ -378,47 +321,24 @@ class FlockScannerView:
     def _render_detail(self, surf: pygame.Surface, x: int, y: int, w: int, sig: FlockSignal):
         f_med = pygame.font.Font(None, 24)
         f_bold = pygame.font.Font(None, 28)
-        
-        # Detail Header
         surf.blit(f_bold.render("TARGET_INTEL", True, theme.ACCENT), (x, y))
         pygame.draw.line(surf, theme.DIVIDER, (x, y+25), (x+w, y+25))
-        
-        # Info Block
-        rows = [
-            ("MAC:", sig.mac),
-            ("TYPE:", sig.type),
-            ("RSSI:", f"{sig.rssi} dBm"),
-            ("HITS:", str(sig.hits)),
-            ("SIGHTED:", sig.last_seen.strftime("%H:%M:%S")),
-        ]
-        
+        rows = [("MAC:", sig.mac), ("TYPE:", sig.type), ("RSSI:", f"{sig.rssi} dBm"), ("HITS:", str(sig.hits)), ("SIGHTED:", sig.last_seen.strftime("%H:%M:%S"))]
         for i, (label, val) in enumerate(rows):
             surf.blit(f_med.render(label, True, theme.FG_DIM), (x, y + 40 + i*25))
             surf.blit(f_med.render(val, True, theme.FG), (x + 80, y + 40 + i*25))
-
-        # Proximity Visualizer (Circle)
         prox_y = y + 200
         center_x = x + w // 2
-        
-        # Signal intensity (0.0 to 1.0)
         intensity = max(0.0, min(1.0, (sig.rssi + 90) / 60))
-        
-        # Outer rings
         for r in range(3):
-            alpha = int(50 * (intensity if r == 0 else (intensity * 0.5)))
             pygame.draw.circle(surf, theme.ACCENT_DIM, (center_x, prox_y), 60 - r*15, 1)
-        
-        # Core
         core_r = int(5 + 30 * intensity)
         pygame.draw.circle(surf, theme.ACCENT, (center_x, prox_y), core_r)
         if int(time.time() * 5 * intensity) % 2:
             pygame.draw.circle(surf, theme.FG, (center_x, prox_y), core_r + 5, 2)
-            
         dist_txt = "PROXIMITY_CRITICAL" if intensity > 0.8 else ("NEARBY" if intensity > 0.5 else "DISTANT")
         d_surf = f_med.render(dist_txt, True, theme.ERR if intensity > 0.8 else theme.ACCENT)
         surf.blit(d_surf, (center_x - d_surf.get_width()//2, prox_y + 70))
-
-        # Analysis
         surf.blit(f_med.render("ANALYSIS:", True, theme.FG_DIM), (x, prox_y + 110))
         detail_lines = self._wrap_text(sig.details, f_med, w)
         for i, line in enumerate(detail_lines):
