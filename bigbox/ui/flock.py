@@ -47,9 +47,11 @@ class FlockSignal:
 class FlockScannerView:
     def __init__(self) -> None:
         self.signals: dict[str, FlockSignal] = {}
+        self.total_bt_seen = 0
+        self.total_wifi_seen = 0
         self.dismissed = False
         self._stop_threads = False
-        self.status_msg = "ENGAGING SENSORS..."
+        self.status_msg = "INITIALIZING..."
         
         # Heuristics
         self.KNOWN_NAMES = ["PENGUIN", "PIGVISION", "FS EXT", "FLOCK", "RAVEN", "FALCON"]
@@ -59,6 +61,7 @@ class FlockScannerView:
         self._start_scan()
 
     def _start_scan(self):
+        print("[flock] starting scan threads...")
         self._bt_thread = threading.Thread(target=self._bt_worker, daemon=True)
         self._wifi_thread = threading.Thread(target=self._wifi_worker, daemon=True)
         self._bt_thread.start()
@@ -66,10 +69,12 @@ class FlockScannerView:
 
     def _bt_worker(self):
         """Advanced BLE monitor using raw btmon for dual-adapter support."""
+        print("[flock] bt_worker: started")
         try:
             # Ensure both adapters are powered and scanning
             adapters = ["hci1", "hci0"]
             for hci in adapters:
+                print(f"[flock] bringing up {hci}...")
                 subprocess.run(["sudo", "-n", "hciconfig", hci, "up"], capture_output=True)
                 subprocess.run(["sudo", "-n", "bluetoothctl", "select", hci], capture_output=True)
                 subprocess.run(["sudo", "-n", "bluetoothctl", "power", "on"], capture_output=True)
@@ -78,6 +83,7 @@ class FlockScannerView:
             self.status_msg = "SENSORS ACTIVE"
 
             # Use btmon for raw access to all controllers
+            print("[flock] bt_worker: launching btmon")
             proc = subprocess.Popen(["sudo", "-n", "btmon"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: 
                 self.status_msg = "BTMON_START_FAILED"
@@ -90,6 +96,7 @@ class FlockScannerView:
                 m = re.search(r'Address: ([0-9A-F:]{17})', line)
                 if m:
                     current_mac = m.group(1)
+                    self.total_bt_seen += 1
                     continue
 
                 r = re.search(r'RSSI: (-\d+)', line)
@@ -101,8 +108,10 @@ class FlockScannerView:
                     current_mac = ""
 
         except Exception as e:
-            self.status_msg = f"SENSORS OFFLINE: {e}"
+            print(f"[flock] bt_worker error: {e}")
+            self.status_msg = "BT_ERROR"
         finally:
+            print("[flock] bt_worker: stopping")
             subprocess.run(["sudo", "-n", "bluetoothctl", "scan", "off"], capture_output=True)
 
     def _process_bt_hit(self, mac: str, rssi: int, raw_line: str):
@@ -133,6 +142,7 @@ class FlockScannerView:
             sig_id = f"ALPR_{mac[-5:].replace(':','')}"
             new_hit = sig_id not in self.signals
             if new_hit:
+                print(f"[flock] ble hit: {sig_id} ({mac}) conf={confidence}")
                 self.signals[sig_id] = FlockSignal(
                     id=sig_id, mac=mac, type="BLE", rssi=rssi, 
                     last_seen=datetime.now(), details=details, confidence=min(100, confidence)
@@ -196,6 +206,7 @@ class FlockScannerView:
             pass
 
     def _wifi_worker(self):
+        print("[flock] wifi_worker: started")
         while not self._stop_threads:
             try:
                 ifaces_out = subprocess.check_output(["ls", "/sys/class/net"], text=True)
@@ -204,13 +215,17 @@ class FlockScannerView:
                 for iface in wlan_ifaces:
                     subprocess.run(["sudo", "-n", "ip", "link", "set", iface, "up"], capture_output=True)
 
+                self.status_msg = "SCANNING_WIFI"
                 subprocess.Popen(["sudo", "-n", "nmcli", "dev", "wifi", "rescan"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                time.sleep(2)
+                time.sleep(3)
 
                 cmd = ["nmcli", "-t", "-f", "BSSID,SSID,SIGNAL", "dev", "wifi", "list"]
                 out = subprocess.check_output(cmd, text=True)
                 
-                for line in out.splitlines():
+                lines = out.splitlines()
+                self.total_wifi_seen = len(lines)
+                
+                for line in lines:
                     raw_parts = line.split(':')
                     if len(raw_parts) < 3: continue
                     
@@ -233,15 +248,18 @@ class FlockScannerView:
                         rssi_dbm = -70
                     
                     if "Flock-" in ssid or "PENGUIN" in ssid.upper() or "PIGVISION" in ssid.upper():
+                        print(f"[flock] wifi hit: {ssid} ({mac})")
                         self._add_wifi_signal(ssid, mac, int(rssi_dbm))
                     
                     oui = mac[:8].upper()
                     if oui in OUI_DB:
                         label = f"{OUI_DB[oui]}_{mac[-5:].replace(':','')}"
+                        print(f"[flock] wifi OUI hit: {label} ({mac})")
                         self._add_wifi_signal(label, mac, int(rssi_dbm))
 
-            except Exception:
-                pass
+                self.status_msg = "SENSORS ACTIVE"
+            except Exception as e:
+                print(f"[flock] wifi_worker error: {e}")
             time.sleep(8)
 
     def _add_wifi_signal(self, ssid: str, mac: str, rssi: int):
@@ -282,10 +300,16 @@ class FlockScannerView:
         f_title = pygame.font.Font(None, 32)
         surf.blit(f_title.render("RECON :: FLOCK_SEEKER_ULTRA", True, theme.ACCENT), (theme.PADDING, 8))
         f_small = pygame.font.Font(None, 22)
+        
+        # Status and Device Counters
+        stat_txt = f"STATUS: {self.status_msg} | BLE_RAW: {self.total_bt_seen} | WIFI_RAW: {self.total_wifi_seen}"
+        surf.blit(f_small.render(stat_txt, True, theme.FG_DIM), (theme.PADDING, theme.SCREEN_H - 60))
+        
         count_txt = f_small.render(f"ACTIVE_NODES: {len(self.signals)}", True, theme.FG)
         surf.blit(count_txt, (theme.SCREEN_W - 160, 12))
+        
         list_w = 480
-        list_rect = pygame.Rect(theme.PADDING, head_h + 10, list_w, theme.SCREEN_H - head_h - 50)
+        list_rect = pygame.Rect(theme.PADDING, head_h + 10, list_w, theme.SCREEN_H - head_h - 75)
         pygame.draw.rect(surf, (5, 5, 8), list_rect)
         pygame.draw.rect(surf, theme.DIVIDER, list_rect, 1)
         sorted_sigs = sorted(self.signals.values(), key=lambda x: x.last_seen, reverse=True)
