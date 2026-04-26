@@ -89,8 +89,20 @@ class Carousel:
 
         # Indicator + label of current section, with subtle hints of neighbors.
         cur = self.sections[self.index]
-        label = title_font.render(f"{cur.icon}  {cur.title}".strip(), True, theme.ACCENT)
-        surf.blit(label, (theme.PADDING, bar.y + (bar.height - label.get_height()) // 2))
+        x = theme.PADDING
+        y = bar.y + (bar.height - title_font.get_height()) // 2
+
+        if cur.icon_img:
+            # Render image icon, then title
+            img_y = bar.y + (bar.height - cur.icon_img.get_height()) // 2
+            surf.blit(cur.icon_img, (x, img_y))
+            x += cur.icon_img.get_width() + 8
+            label = title_font.render(cur.title, True, theme.ACCENT)
+            surf.blit(label, (x, y))
+        else:
+            # Fallback to text icon
+            label = title_font.render(f"{cur.icon}  {cur.title}".strip(), True, theme.ACCENT)
+            surf.blit(label, (theme.PADDING, y))
 
         # "‹ prev / next ›" hints on the right.
         small = pygame.font.Font(None, theme.FS_SMALL)

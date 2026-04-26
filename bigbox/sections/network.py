@@ -1,5 +1,6 @@
 """Network — interfaces, routes, DNS."""
 from __future__ import annotations
+import pygame
 
 from bigbox.runner import run_capture
 from bigbox.ui import Action, Section, SectionContext
@@ -31,6 +32,7 @@ def build() -> Section:
     return Section(
         title="Network",
         icon="[~]",
+        icon_img=pygame.image.load("/home/sinxneo/Pictures/bigbox/network.png"),
         actions=[
             Action("Interfaces (ip addr)", _interfaces),
             Action("Routes (ip route)", _routes),

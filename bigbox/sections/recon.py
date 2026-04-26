@@ -1,5 +1,6 @@
 """Recon — host & service discovery."""
 from __future__ import annotations
+import pygame
 
 import ipaddress
 import socket
@@ -44,6 +45,7 @@ def build() -> Section:
     return Section(
         title="Recon",
         icon="[*]",
+        icon_img=pygame.image.load("/home/sinxneo/Pictures/bigbox/recon.png"),
         actions=[
             Action("Ping sweep (local /24)", _nmap_ping_sweep, "nmap -sn"),
             Action("ARP scan (local)", _arp_scan, "arp-scan"),

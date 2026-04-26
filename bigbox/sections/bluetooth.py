@@ -1,5 +1,6 @@
 """Bluetooth — controller info and discovery."""
 from __future__ import annotations
+import pygame
 
 from bigbox.runner import run_capture
 from bigbox.ui import Action, Section, SectionContext
@@ -22,6 +23,7 @@ def build() -> Section:
     return Section(
         title="Bluetooth",
         icon="[b]",
+        icon_img=pygame.image.load("/home/sinxneo/Pictures/bigbox/Bluetooth.png"),
         actions=[
             Action("Controller info", _ctl_show),
             Action("Known devices", _devices),

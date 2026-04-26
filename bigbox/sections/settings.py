@@ -1,5 +1,6 @@
 """Settings — system controls."""
 from __future__ import annotations
+import pygame
 
 from bigbox.runner import run_capture
 from bigbox.ui import Action, Section, SectionContext
@@ -39,6 +40,7 @@ def build() -> Section:
     return Section(
         title="Settings",
         icon="[=]",
+        icon_img=pygame.image.load("/home/sinxneo/Pictures/bigbox/settings.png"),
         actions=[
             Action("Check for updates (OTA)", _update),
             Action("Volume up", _vol_up),

@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
+import pygame.surface
+
 
 class SectionContext(Protocol):
     """What sections receive when their action handlers fire.
@@ -29,6 +31,7 @@ class Section:
     title: str
     actions: list[Action] = field(default_factory=list)
     icon: str = ""   # short string drawn beside title in the tab bar
+    icon_img: pygame.surface.Surface | None = None
 
     # Hooks — override in subclasses if needed.
     def on_enter(self, ctx: SectionContext) -> None: ...
