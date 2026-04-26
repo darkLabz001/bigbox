@@ -6,6 +6,7 @@ from bigbox.ui.cctv import CCTVView
 from bigbox.ui.pingsweep import PingSweepView
 from bigbox.ui.keyboard import KeyboardView
 from bigbox.ui.arpscan import ARPScanView
+from bigbox.ui.flock import FlockScannerView
 
 __all__ = [
     "Action",
@@ -20,4 +21,5 @@ __all__ = [
     "PingSweepView",
     "KeyboardView",
     "ARPScanView",
+    "FlockScannerView",
 ]
