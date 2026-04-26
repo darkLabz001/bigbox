@@ -30,6 +30,12 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     echo "New updates found. Pulling..."
     git pull origin "$BRANCH"
     
+    # Check for missing system dependencies
+    if ! dpkg -l | grep -q libturbojpeg0; then
+        echo "Installing missing system dependency: libturbojpeg0"
+        apt-get update && apt-get install -y libturbojpeg0
+    fi
+    
     echo "Updating dependencies..."
     if [ -f "requirements.txt" ]; then
         # Use the venv directory relative to the repo

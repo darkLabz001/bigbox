@@ -28,6 +28,7 @@ apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip \
     python3-pygame \
     python3-lgpio \
+    libturbojpeg0 \
     nmap arp-scan \
     aircrack-ng iw wireless-tools \
     bluez \
