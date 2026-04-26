@@ -54,7 +54,7 @@ def _update(ctx: SectionContext) -> None:
     # Always resolve the script via the package layout, never via cwd.
     from pathlib import Path
     script = Path(__file__).resolve().parents[2] / "scripts" / "update.sh"
-    ctx.run_streaming("OTA update", [str(script)])
+    ctx.show_update("OTA update", [str(script)])
 
 
 def build() -> Section:

@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, UpdateView
 
 
 class App:
@@ -31,6 +31,7 @@ class App:
         self.bus = EventBus()
         self.running = True
         self.result_view: ResultView | None = None
+        self.update_view: UpdateView | None = None
         self.menu_view: MenuView | None = None
         self.cctv_view: CCTVView | None = None
         self.ping_view: PingSweepView | None = None
@@ -151,11 +152,17 @@ class App:
     def show_media_player(self) -> None:
         self.media_view = MediaPlayerView()
 
+    def show_update(self, title: str, argv: list[str]) -> None:
+        view = UpdateView(title, "")
+        self.update_view = view
+        run_streaming(argv, view.append)
+
     def get_input(self, title: str, callback: Callable[[str | None], None], initial: str = "") -> None:
         self.kb_view = KeyboardView(title, callback, initial)
 
     def go_back(self) -> None:
         self.result_view = None
+        self.update_view = None
         self.cctv_view = None
         self.ping_view = None
         self.arp_view = None
@@ -240,6 +247,10 @@ class App:
                 self.media_view.render(screen)
                 if self.media_view.dismissed:
                     self.media_view = None
+            elif self.update_view is not None:
+                self.update_view.render(screen)
+                if self.update_view.dismissed:
+                    self.update_view = None
             elif self.result_view is not None:
                 self.result_view.render(screen)
                 if self.result_view.dismissed:
@@ -347,6 +358,10 @@ class App:
 
         if self.media_view is not None:
             self.media_view.handle(bev, self)
+            return
+
+        if self.update_view is not None:
+            self.update_view.handle(bev)
             return
 
         if self.result_view is not None:

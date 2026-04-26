@@ -12,6 +12,7 @@ from bigbox.ui.cam_scanner import CamScannerView
 from bigbox.ui.wifi_attack import WifiAttackView
 from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
+from bigbox.ui.update import UpdateView
 
 __all__ = [
     "Action",
@@ -32,4 +33,5 @@ __all__ = [
     "WifiAttackView",
     "OfflineCrackerView",
     "MediaPlayerView",
+    "UpdateView",
 ]
