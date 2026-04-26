@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from typing import TYPE_CHECKING
 
 import pygame
@@ -26,6 +27,7 @@ class MediaPlayerView:
 
         self.dismissed = False
         self.playing_file: str | None = None
+        self.proc: subprocess.Popen | None = None
         self.list = self._refresh_list()
         
         # Cache fonts to avoid re-loading every frame
@@ -57,6 +59,34 @@ class MediaPlayerView:
 
     def _play(self, filename: str) -> None:
         self.playing_file = filename
+        full_path = os.path.abspath(os.path.join(self.media_dir, filename))
+        
+        # Launch VLC. 
+        # --fullscreen: takes over the display
+        # --no-video-title-show: cleaner look
+        # --play-and-exit: returns when done
+        try:
+            # cvlc is the headless wrapper for vlc
+            self.proc = subprocess.Popen(
+                ["cvlc", "--fullscreen", "--no-video-title-show", "--play-and-exit", full_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            print(f"[media] VLC launch error: {e}")
+
+    def _stop(self) -> None:
+        if self.proc:
+            try:
+                self.proc.terminate()
+                self.proc.wait(timeout=1.0)
+            except Exception:
+                try:
+                    self.proc.kill()
+                except Exception:
+                    pass
+            self.proc = None
+        self.playing_file = None
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
         try:
@@ -65,7 +95,7 @@ class MediaPlayerView:
 
             if ev.button is Button.B:
                 if self.playing_file:
-                    self.playing_file = None
+                    self._stop()
                 else:
                     self.dismissed = True
                 return
@@ -73,7 +103,7 @@ class MediaPlayerView:
             if self.playing_file:
                 # Controls while playing
                 if ev.button is Button.A:
-                    self.playing_file = None # Stop
+                    self._stop()
                 return
 
             # File list handling
@@ -84,6 +114,12 @@ class MediaPlayerView:
             print(f"[media] Handle error: {e}")
 
     def render(self, surf: pygame.Surface) -> None:
+        # If playing, check if process finished
+        if self.playing_file and self.proc:
+            if self.proc.poll() is not None:
+                self.playing_file = None
+                self.proc = None
+
         try:
             surf.fill(theme.BG)
             
@@ -97,7 +133,7 @@ class MediaPlayerView:
             surf.blit(title, (theme.PADDING, (head_h - title.get_height()) // 2))
 
             if self.playing_file:
-                # Playback UI (Placeholder)
+                # Playback UI (Placeholder/Overlay while background player runs)
                 center_x, center_y = theme.SCREEN_W // 2, theme.SCREEN_H // 2
                 
                 # Draw a "TV" or "Screen" box
@@ -111,7 +147,7 @@ class MediaPlayerView:
                 surf.blit(icon, (center_x - icon.get_width() // 2, center_y - icon.get_height() // 2 + 20))
                 
                 # Instructions
-                hint = self.hint_font.render("Press A to Stop, B to Exit", True, theme.FG_DIM)
+                hint = self.hint_font.render("Playing in background. Press A or B to Stop.", True, theme.FG_DIM)
                 surf.blit(hint, (center_x - hint.get_width() // 2, box.bottom + 20))
                 
             else:
