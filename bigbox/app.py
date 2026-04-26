@@ -20,8 +20,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui.widgets import MenuView, ResultView, StatusBar
-from bigbox.ui.cctv import CCTVView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar
 
 
 class App:
