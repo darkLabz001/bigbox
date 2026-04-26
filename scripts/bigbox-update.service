@@ -1,0 +1,11 @@
+[Unit]
+Description=bigbox OTA update
+After=network-online.target
+Wants=network-online.target
+ConditionPathIsDirectory=/opt/bigbox/.git
+
+[Service]
+Type=oneshot
+ExecStart=/opt/bigbox/scripts/update.sh
+StandardOutput=journal
+StandardError=journal

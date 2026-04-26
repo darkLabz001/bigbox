@@ -10,3 +10,11 @@ dist/
 .pytest_cache/
 *.log
 results/
+
+# Dev/session-only — never ship to github or deploy to the device.
+.claude/
+.vscode/
+.idea/
+memory/
+*.swp
+.DS_Store

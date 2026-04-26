@@ -1,8 +1,8 @@
 """Settings — system controls."""
 from __future__ import annotations
-import pygame
 
 from bigbox.runner import run_capture
+from bigbox.sections._icons import load as load_icon
 from bigbox.ui import Action, Section, SectionContext
 
 
@@ -30,17 +30,17 @@ def _poweroff(ctx: SectionContext) -> None:
 
 
 def _update(ctx: SectionContext) -> None:
-    import os
-    # Assuming the app runs from the repo root
-    script_path = os.path.abspath("scripts/update.sh")
-    ctx.run_streaming("update", [script_path])
+    # Always resolve the script via the package layout, never via cwd.
+    from pathlib import Path
+    script = Path(__file__).resolve().parents[2] / "scripts" / "update.sh"
+    ctx.run_streaming("OTA update", [str(script)])
 
 
 def build() -> Section:
     return Section(
         title="Settings",
         icon="[=]",
-        icon_img=pygame.image.load("/home/sinxneo/Pictures/bigbox/settings.png"),
+        icon_img=load_icon("settings"),
         actions=[
             Action("Check for updates (OTA)", _update),
             Action("Volume up", _vol_up),

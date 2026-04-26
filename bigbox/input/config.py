@@ -21,13 +21,25 @@ class ButtonConfig:
     repeat_interval_ms: int = 90
 
 
-def _default_path() -> Path:
+_ETC_OVERRIDE = Path("/etc/bigbox/buttons.toml")
+
+
+def _bundled_path() -> Path:
     # config/buttons.toml relative to repo root (two levels up from this file).
     return Path(__file__).resolve().parents[2] / "config" / "buttons.toml"
 
 
+def _resolve_path() -> Path:
+    """Pick the active config file. /etc/bigbox/buttons.toml wins if present
+    so a user's hand-tuned pin map survives OTA git resets that overwrite the
+    bundled default."""
+    if _ETC_OVERRIDE.is_file():
+        return _ETC_OVERRIDE
+    return _bundled_path()
+
+
 def load_button_config(path: Path | None = None) -> ButtonConfig:
-    p = path or _default_path()
+    p = path or _resolve_path()
     raw = tomllib.loads(p.read_text())
     pins_raw = raw.get("pins", {})
     pins: dict[Button, int] = {}

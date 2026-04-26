@@ -1,0 +1,13 @@
+[Unit]
+Description=Run bigbox OTA update on a schedule
+
+[Timer]
+# Wait until 5min after boot (network has settled), then every hour.
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=2min
+# Catch up if the device was off when a tick was scheduled.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

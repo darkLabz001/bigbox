@@ -1,9 +1,9 @@
 """About — version & system info."""
 from __future__ import annotations
-import pygame
 
 from bigbox import __version__
 from bigbox.runner import run_capture
+from bigbox.sections._icons import load as load_icon
 from bigbox.ui import Action, Section, SectionContext
 
 
@@ -31,7 +31,7 @@ def build() -> Section:
     return Section(
         title="About",
         icon="[i]",
-        icon_img=pygame.image.load("/home/sinxneo/Pictures/bigbox/abot.png"),
+        icon_img=load_icon("about"),
         actions=[
             Action("bigbox version", _version),
             Action("System info", _sys),

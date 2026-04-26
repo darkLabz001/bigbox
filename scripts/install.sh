@@ -77,11 +77,17 @@ ensure_line "dtparam=audio=on"
 # script for your model. If the screen already works in raspi-config, you
 # do not need to do anything more.
 
-# --- 5. systemd service -------------------------------------------------------
-echo "==> systemd unit"
+# --- 5. systemd service + OTA update timer (timer is installed but disabled) -
+echo "==> systemd units"
 install -m 0644 "$REPO_DIR/scripts/bigbox.service" /etc/systemd/system/bigbox.service
+install -m 0644 "$REPO_DIR/scripts/bigbox-update.service" /etc/systemd/system/bigbox-update.service
+install -m 0644 "$REPO_DIR/scripts/bigbox-update.timer"   /etc/systemd/system/bigbox-update.timer
 systemctl daemon-reload
 systemctl enable bigbox.service
+
+# /etc/bigbox is the config-override directory — buttons.toml lives here so
+# OTA git resets never touch user-tuned pin maps.
+install -d -m 0755 /etc/bigbox
 
 # --- 6. record what we did ----------------------------------------------------
 {
@@ -101,6 +107,12 @@ Next steps:
   - reboot, or:  sudo systemctl start bigbox
   - inspect logs with:  journalctl -u bigbox -f
   - to stop autostart:  sudo systemctl disable bigbox
+
+OTA updates:
+  - one-shot now:    sudo systemctl start bigbox-update.service
+  - hourly auto:     sudo systemctl enable --now bigbox-update.timer
+  - manual via UI:   Settings -> Check for updates (OTA)
+  - your pin map:    /etc/bigbox/buttons.toml (overrides bundled default; survives updates)
 
 If the screen stays blank under bigbox but a desktop session works fine,
 you're probably on fbcon/legacy fbdev — switch to KMS in raspi-config

@@ -115,9 +115,42 @@ scripts/install.sh  apt deps + boot config + systemd
 scripts/bigbox.service
 ```
 
+## OTA updates
+
+The Pi can pull updates from `https://github.com/darkLabz001/bigbox` automatically.
+
+### One-time conversion (run once on the Pi)
+
+If `/opt/bigbox` was deployed via `sdcard-prepare.sh` or rsync, it's not yet a git checkout. Convert it:
+
+```bash
+sudo /opt/bigbox/scripts/git-init-pi.sh
+```
+
+This backs up `/opt/bigbox` to `/opt/bigbox.pre-git-<timestamp>`, copies your current `config/buttons.toml` to `/etc/bigbox/buttons.toml` (so OTA never overwrites your pin map), then makes `/opt/bigbox` a real clone of upstream.
+
+### Triggering updates
+
+| How | Command / step |
+|-----|------|
+| **From the device UI** | Settings → "Check for updates (OTA)" |
+| One-shot from SSH | `sudo systemctl start bigbox-update.service` |
+| Hourly auto-update | `sudo systemctl enable --now bigbox-update.timer` |
+| What it logs | `journalctl -u bigbox-update -e` |
+
+`scripts/update.sh` is what does the work: `git fetch`, hard-reset to `origin/main`, reinstall pip deps if `requirements.txt` changed, reinstall the systemd unit if `bigbox.service` changed, then `systemctl restart bigbox.service`.
+
+### Things that survive an OTA update
+
+- Your `.venv/` (gitignored).
+- `/etc/bigbox/buttons.toml` (lives outside `/opt/bigbox`; loaded with priority by `bigbox.input.config`).
+- Any backup directories named `/opt/bigbox.pre-*`.
+
+Anything else inside `/opt/bigbox` will be reset to the upstream tip on update.
+
 ## Status
 
-Early. UI engine, input router, install script and stubs are in. Real tools to follow.
+Early. UI engine, input router, install script, stubs and OTA mechanism are in. Real tools to follow.
 
 ## Legal
 

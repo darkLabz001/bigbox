@@ -1,2 +1,0 @@
-- [Project: bigbox](project_bigbox.md) — pentesting firmware for RPi4 + Waveshare GamePi43, Python+Pygame stack, sections-as-plugins UI
-- [User](user_dustin.md) — Dustin (dustincardin44@gmail.com), building bigbox from scratch in /home/sinxneo/projects/bigbox
