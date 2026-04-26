@@ -231,7 +231,8 @@ class CCTVView:
         pygame.draw.rect(surf, (10, 20, 30), head)
         pygame.draw.line(surf, theme.ACCENT, (0, head.bottom-1), (theme.SCREEN_W, head.bottom-1), 2)
         
-        title = pygame.font.Font(None, 32).render("CCTV :: VERIFIED_INTERCEPT", True, theme.ACCENT)
+        title = pygame.font.Font(None, 32).render("CCTV :: LIVE_INTERCEPT", True, theme.ACCENT)
+
         surf.blit(title, (theme.PADDING, (head_h - title.get_height()) // 2))
         
         if int(time.time() * 2) % 2:

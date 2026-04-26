@@ -34,6 +34,7 @@ class PingSweepView:
         
         self.input_mode = True 
         self._stop_scan = False
+        self._proc: subprocess.Popen | None = None
         self._scan_thread: threading.Thread | None = None
         self._scroll_y = 0
 
@@ -51,15 +52,13 @@ class PingSweepView:
         """Runs nmap and parses output in real-time."""
         try:
             cmd = ["nmap", "-sn", "-n", "-T4", self.target_range]
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             
             current_host = None
             
-            if proc.stdout:
-                for line in proc.stdout:
+            if self._proc.stdout:
+                for line in self._proc.stdout:
                     if self._stop_scan:
-                        proc.terminate()
-                        self.status_msg = "SCAN CANCELED"
                         break
                     
                     if "Nmap scan report for" in line:
@@ -67,10 +66,9 @@ class PingSweepView:
                         current_host = Host(ip=ip)
                         self.hosts.append(current_host)
                         # Keep view scrolled to bottom if we are at bottom
-                        if not self._stop_scan:
-                            max_scroll = max(0, len(self.hosts) * 35 - 300)
-                            if self._scroll_y >= max_scroll - 70:
-                                self._scroll_y = max_scroll
+                        max_scroll = max(0, len(self.hosts) * 35 - 300)
+                        if self._scroll_y >= max_scroll - 70:
+                            self._scroll_y = max_scroll
 
                     elif "Host is up" in line and current_host:
                         latency_match = re.search(r'\((.*?) latency\)', line)
@@ -80,11 +78,14 @@ class PingSweepView:
                     elif "Nmap done" in line:
                         self.status_msg = "SCAN COMPLETE"
                         
-            proc.wait()
+            if self._proc:
+                self._proc.wait(timeout=1.0)
         except Exception as e:
-            self.status_msg = f"ERROR: {str(e)[:20]}"
-        
-        self.scanning = False
+            if not self._stop_scan:
+                self.status_msg = f"ERROR: {str(e)[:20]}"
+        finally:
+            self.scanning = False
+            self._proc = None
 
     def handle(self, ev: ButtonEvent) -> None:
         if not ev.pressed: return
@@ -92,6 +93,12 @@ class PingSweepView:
         if ev.button is Button.B:
             if self.scanning:
                 self._stop_scan = True
+                if self._proc:
+                    try:
+                        self._proc.kill()
+                    except Exception: pass
+                self.status_msg = "SCAN CANCELED"
+                self.scanning = False
             elif not self.input_mode:
                 self.input_mode = True
                 self.hosts.clear()
