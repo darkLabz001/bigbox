@@ -20,7 +20,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView
 
 
 class App:
@@ -31,6 +31,7 @@ class App:
         self.result_view: ResultView | None = None
         self.menu_view: MenuView | None = None
         self.cctv_view: CCTVView | None = None
+        self.ping_view: PingSweepView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
 
@@ -92,9 +93,13 @@ class App:
     def show_cctv(self) -> None:
         self.cctv_view = CCTVView()
 
+    def show_pingsweep(self) -> None:
+        self.ping_view = PingSweepView()
+
     def go_back(self) -> None:
         self.result_view = None
         self.cctv_view = None
+        self.ping_view = None
 
     def toast(self, msg: str) -> None:
         # Lightweight: just print for now; could become an on-screen toast widget.
@@ -133,6 +138,10 @@ class App:
                 self.cctv_view.render(screen)
                 if self.cctv_view.dismissed:
                     self.cctv_view = None
+            elif self.ping_view is not None:
+                self.ping_view.render(screen)
+                if self.ping_view.dismissed:
+                    self.ping_view = None
             elif self.result_view is not None:
                 self.result_view.render(screen)
                 if self.result_view.dismissed:
@@ -192,6 +201,10 @@ class App:
 
         if self.cctv_view is not None:
             self.cctv_view.handle(bev)
+            return
+
+        if self.ping_view is not None:
+            self.ping_view.handle(bev)
             return
 
         if self.result_view is not None:
