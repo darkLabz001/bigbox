@@ -41,10 +41,12 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     # Check for missing system dependencies
     echo "STATUS: Checking system dependencies..."
     echo "PROGRESS: 60"
-    if ! dpkg -l | grep -q libturbojpeg0; then
-        echo "Installing missing system dependency: libturbojpeg0"
-        apt-get update && apt-get install -y libturbojpeg0
-    fi
+    for pkg in libturbojpeg0 vlc; do
+        if ! dpkg -l | grep -q "$pkg"; then
+            echo "Installing missing system dependency: $pkg"
+            apt-get update && apt-get install -y "$pkg"
+        fi
+    done
     
     echo "Updating dependencies..."
     echo "STATUS: Updating python packages..."
