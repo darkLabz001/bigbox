@@ -65,47 +65,38 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        """Advanced BLE monitor using btmon for raw attribute access."""
+        \"\"\"Advanced BLE monitor using bluetoothctl monitor.\"\"\"
         try:
-            # Ensure scan is on in the background
-            subprocess.Popen(["bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Power on and start scanning
+            subprocess.run([\"sudo\", \"bluetoothctl\", \"power\", \"on\"], capture_output=True)
+            subprocess.Popen([\"sudo\", \"bluetoothctl\", \"scan\", \"on\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            # btmon provides real-time HCI events including RSSI and ManufacturerData
-            proc = subprocess.Popen(["sudo", "btmon"], stdout=subprocess.PIPE, text=True)
+            # monitor mode provides cleaner text output than raw btmon for our regex
+            proc = subprocess.Popen([\"sudo\", \"bluetoothctl\", \"monitor\"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: return
 
-            current_mac = ""
-            current_rssi = -100
-            
+            current_mac = \"\"
             for line in proc.stdout:
                 if self._stop_threads: break
                 
-                # btmon output parsing
-                # > HCI Event: LE Advertising Report (0x3e) ...
-                #         Address: 74:4C:A1:XX:XX:XX (Public)
-                #         RSSI: -72 dBm (0xb8)
-                #         Data: 02 01 06 03 03 c8 09 ...
+                # bluetoothctl monitor output parsing
+                # [mgmt] [0x0001] Event: Device Found (0x01)
+                #        Address: 74:4C:A1:XX:XX:XX (Public)
+                #        RSSI: -72 dBm (0xb8)
                 
                 mac_match = re.search(r'Address: ([0-9A-F:]{17})', line)
                 if mac_match:
                     current_mac = mac_match.group(1)
                 
                 rssi_match = re.search(r'RSSI: (-\d+)', line)
-                if rssi_match:
-                    current_rssi = int(rssi_match.group(1))
-
-                # If we have a MAC and an RSSI, and we see Data or the end of a report
-                if current_mac and (current_rssi != -100):
-                    self._process_bt_hit(current_mac, current_rssi, line)
-                    # Don't reset MAC immediately as data might be on next lines
-                    if "RSSI:" in line:
-                        current_mac = ""
-                        current_rssi = -100
+                if rssi_match and current_mac:
+                    rssi = int(rssi_match.group(1))
+                    self._process_bt_hit(current_mac, rssi, line)
 
         except Exception as e:
-            self.status_msg = f"SENSORS OFFLINE: {e}"
+            self.status_msg = f\"SENSORS OFFLINE: {e}\"
         finally:
-            subprocess.run(["sudo", "bluetoothctl", "scan", "off"], capture_output=True)
+            subprocess.run([\"sudo\", \"bluetoothctl\", \"scan\", \"off\"], capture_output=True)
 
     def _process_bt_hit(self, mac: str, rssi: int, raw_line: str):
         oui = mac[:8].upper()
