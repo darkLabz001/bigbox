@@ -27,7 +27,7 @@ def set_app(bb_app: App):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 @app.get("/press/{button_name}")
 async def press_button(button_name: str):
