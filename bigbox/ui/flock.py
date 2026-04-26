@@ -65,18 +65,26 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        """Advanced BLE monitor using raw btmon for dual-adapter support."""
+        \"\"\"Advanced BLE monitor using raw btmon for dual-adapter support.\"\"\"
         try:
             # Ensure both adapters are powered and scanning
-            for hci in ["hci0", "hci1"]:
-                subprocess.run(["sudo", "hciconfig", hci, "up"], capture_output=True)
-                subprocess.run(["sudo", "bluetoothctl", "select", hci], capture_output=True)
-                subprocess.run(["sudo", "bluetoothctl", "power", "on"], capture_output=True)
-                subprocess.Popen(["sudo", "bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
+            # We prioritize hci1 (external USB) if it exists as it usually has better range
+            adapters = [\"hci1\", \"hci0\"]
+            for hci in adapters:
+                # Use sudo -n to avoid hanging on password prompts if any
+                subprocess.run([\"sudo\", \"-n\", \"hciconfig\", hci, \"up\"], capture_output=True)
+                subprocess.run([\"sudo\", \"-n\", \"bluetoothctl\", \"select\", hci], capture_output=True)
+                subprocess.run([\"sudo\", \"-n\", \"bluetoothctl\", \"power\", \"on\"], capture_output=True)
+                subprocess.Popen([\"sudo\", \"-n\", \"bluetoothctl\", \"scan\", \"on\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            self.status_msg = \"SENSORS ACTIVE\"
+
             # Use btmon for raw access to all controllers
-            proc = subprocess.Popen(["sudo", "btmon"], stdout=subprocess.PIPE, text=True)
-            if not proc.stdout: return
+            proc = subprocess.Popen([\"sudo\", \"-n\", \"btmon\"], stdout=subprocess.PIPE, text=True)
+            if not proc.stdout: 
+                self.status_msg = \"BTMON_START_FAILED\"
+                return
+
 
             current_mac = ""
             for line in proc.stdout:
@@ -206,33 +214,69 @@ class FlockScannerView:
             pass
 
     def _wifi_worker(self):
-        """Optimized Wi-Fi Polling using nmcli."""
+        \"\"\"Optimized Wi-Fi Polling using nmcli across all adapters.\"\"\"
         while not self._stop_threads:
             try:
-                # nmcli is more likely to be present on modern Kali/Debian
-                # Format: BSSID:SSID:SIGNAL
-                cmd = ["nmcli", "-t", "-f", "BSSID,SSID,SIGNAL", "dev", "wifi", "list"]
+                # 1. Ensure all wlan interfaces are up
+                # Find all wlan interfaces (wlan0, wlan1, ...)
+                ifaces_out = subprocess.check_output([\"ls\", \"/sys/class/net\"], text=True)
+                wlan_ifaces = [i for i in ifaces_out.split() if i.startswith(\"wlan\")]
+                
+                for iface in wlan_ifaces:
+                    subprocess.run([\"sudo\", \"-n\", \"ip\", \"link\", \"set\", iface, \"up\"], capture_output=True)
+
+                # 2. Trigger a rescan on all interfaces
+                # nmcli dev wifi rescan can take a moment, run in background
+                subprocess.Popen([\"sudo\", \"-n\", \"nmcli\", \"dev\", \"wifi\", \"rescan\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(2)
+
+                # 3. Pull results
+                # Format: BSSID:SSID:SIGNAL:CHAN:BARS:SECURITY
+                cmd = [\"nmcli\", \"-t\", \"-f\", \"BSSID,SSID,SIGNAL\", \"dev\", \"wifi\", \"list\"]
                 out = subprocess.check_output(cmd, text=True)
                 
                 for line in out.splitlines():
-                    parts = line.split(':')
-                    if len(parts) < 3: continue
+                    # Handle BSSID with escaped colons: 6C\:4B\:B4\:FB\:CF\:34
+                    # We split and then reconstruct the first 6 segments as the MAC
+                    raw_parts = line.split(':')
+                    if len(raw_parts) < 3: continue
                     
-                    # nmcli BSSID often has backslashes before colons
-                    mac = ":".join(parts[0:6]).replace("\\", "").upper()
-                    ssid = parts[6]
+                    # Reconstruction logic for escaped MACs
+                    mac_parts = []
+                    idx = 0
+                    while len(mac_parts) < 6 and idx < len(raw_parts):
+                        part = raw_parts[idx].replace(\"\\\\\", \"\")
+                        if len(part) == 2:
+                            mac_parts.append(part)
+                        idx += 1
+                    
+                    if len(mac_parts) < 6: continue
+                    
+                    mac = \":\".join(mac_parts).upper()
+                    # The rest of the line contains SSID and SIGNAL
+                    # After the MAC, the next part is SSID
+                    ssid = raw_parts[idx]
+                    # The last part is SIGNAL
                     try:
-                        rssi = int(parts[-1])
-                        # Convert nmcli 0-100 to dBm approx
+                        rssi = int(raw_parts[-1])
+                        # nmcli 0-100 to dBm approx
                         rssi_dbm = (rssi / 2) - 100
-                    except ValueError:
+                    except (ValueError, IndexError):
                         rssi_dbm = -70
                     
-                    if "Flock-" in ssid or "PENGUIN" in ssid.upper():
+                    if \"Flock-\" in ssid or \"PENGUIN\" in ssid.upper() or \"PIGVISION\" in ssid.upper():
                         self._add_wifi_signal(ssid, mac, int(rssi_dbm))
+                    
+                    # Also check MAC OUI for WiFi (some Flock cams don't broadcast specific SSIDs)
+                    oui = mac[:8].upper()
+                    if oui in OUI_DB:
+                        label = f\"{OUI_DB[oui]}_{mac[-5:].replace(':','')}\"
+                        self._add_wifi_signal(label, mac, int(rssi_dbm))
+
             except Exception as e:
+                # Log error to status briefly if it's persistent
                 pass
-            time.sleep(10)
+            time.sleep(8)
 
     def _add_wifi_signal(self, ssid: str, mac: str, rssi: int):
         if ssid not in self.signals:
