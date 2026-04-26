@@ -2,3 +2,4 @@ pygame>=2.5,<3
 gpiozero>=2.0
 lgpio>=0.2
 tomli>=2.0; python_version < "3.11"
+requests
