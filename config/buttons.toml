@@ -14,13 +14,13 @@ LEFT   = 4
 RIGHT  = 27
 A      = 13
 B      = 19
-X      = 21
+X      = 23
 Y      = 16
 START  = 17
 SELECT = 26
 HK     = 22   # TODO: Verify HK pin
-LL     = 12   # left shoulder
-RR     = 20   # right shoulder
+LL     = 14   # left shoulder
+RR     = 15   # right shoulder
 
 [behavior]
 # Debounce window in milliseconds.
