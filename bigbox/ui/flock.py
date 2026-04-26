@@ -65,74 +65,87 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        """Advanced BLE monitor with RSSI tracking."""
+        \"\"\"Advanced BLE monitor using btmon for raw attribute access.\"\"\"
         try:
-            # Ensure scan is on
-            subprocess.run(["bluetoothctl", "scan", "on"], capture_output=True)
+            # Ensure scan is on in the background
+            subprocess.Popen([\"bluetoothctl\", \"scan\", \"on\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            # monitor mode provides raw attributes including RSSI and ManufacturerData
-            proc = subprocess.Popen(["bluetoothctl", "monitor"], stdout=subprocess.PIPE, text=True)
+            # btmon provides real-time HCI events including RSSI and ManufacturerData
+            proc = subprocess.Popen([\"sudo\", \"btmon\"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: return
 
-            current_mac = ""
+            current_mac = \"\"
+            current_rssi = -100
+            
             for line in proc.stdout:
                 if self._stop_threads: break
                 
-                # Extract MAC and RSSI from monitor output
-                # Example: [mgmt] [0x0001] Event: Device Found (0x01)
-                #          Address: 74:4C:A1:XX:XX:XX (Public)
-                #          RSSI: -72 dBm (0xb8)
+                # btmon output parsing
+                # > HCI Event: LE Advertising Report (0x3e) ...
+                #         Address: 74:4C:A1:XX:XX:XX (Public)
+                #         RSSI: -72 dBm (0xb8)
+                #         Data: 02 01 06 03 03 c8 09 ...
+                
                 mac_match = re.search(r'Address: ([0-9A-F:]{17})', line)
                 if mac_match:
                     current_mac = mac_match.group(1)
                 
                 rssi_match = re.search(r'RSSI: (-\d+)', line)
-                if rssi_match and current_mac:
-                    rssi = int(rssi_match.group(1))
-                    self._process_bt_hit(current_mac, rssi, line)
+                if rssi_match:
+                    current_rssi = int(rssi_match.group(1))
+
+                # If we have a MAC and an RSSI, and we see Data or the end of a report
+                if current_mac and (current_rssi != -100):
+                    self._process_bt_hit(current_mac, current_rssi, line)
+                    # Don't reset MAC immediately as data might be on next lines
+                    if \"RSSI:\" in line:
+                        current_mac = \"\"
+                        current_rssi = -100
 
         except Exception as e:
-            self.status_msg = "SENSORS OFFLINE"
+            self.status_msg = f\"SENSORS OFFLINE: {e}\"
         finally:
-            subprocess.run(["bluetoothctl", "scan", "off"], capture_output=True)
+            subprocess.run([\"sudo\", \"bluetoothctl\", \"scan\", \"off\"], capture_output=True)
 
     def _process_bt_hit(self, mac: str, rssi: int, raw_line: str):
         oui = mac[:8].upper()
         line_up = raw_line.upper()
         
         is_flock = False
-        details = ""
+        details = \"\"
         confidence = 10
         
         # 1. Check Manufacturer ID (High Confidence)
         if self.MANUFACTURER_ID.upper() in line_up:
             is_flock = True
-            details = "FLOCK_MFG_DATA_DETECTED"
+            details = \"FLOCK_MFG_DATA_DETECTED\"
             confidence += 60
             
         # 2. Check Name (Medium-High Confidence)
         for name in self.KNOWN_NAMES:
             if name in line_up:
                 is_flock = True
-                details = f"SIGNATURE_MATCH: {name}"
+                details = f\"SIGNATURE_MATCH: {name}\"
                 confidence += 40
                 
         # 3. Check OUI (Medium Confidence)
         if oui in OUI_DB:
             is_flock = True
-            details = f"HARDWARE_MATCH: {OUI_DB[oui]}"
+            details = f\"HARDWARE_MATCH: {OUI_DB[oui]}\"
             confidence += 30
 
         if is_flock:
-            sig_id = f"ALPR_{mac[-5:].replace(':','')}"
-            if sig_id not in self.signals:
+            sig_id = f\"ALPR_{mac[-5:].replace(':','')}\"
+            new_hit = sig_id not in self.signals
+            if new_hit:
                 self.signals[sig_id] = FlockSignal(
-                    id=sig_id, mac=mac, type="BLE", rssi=rssi, 
+                    id=sig_id, mac=mac, type=\"BLE\", rssi=rssi, 
                     last_seen=datetime.now(), details=details, confidence=min(100, confidence)
                 )
                 # Auto-loot high confidence hits
                 if confidence >= 80:
                     self._save_loot(self.signals[sig_id])
+                    self._play_alert()
             else:
                 s = self.signals[sig_id]
                 s.rssi = rssi
@@ -141,6 +154,27 @@ class FlockScannerView:
                 s.confidence = min(100, s.confidence + 2)
                 s.history.append(rssi)
                 if len(s.history) > 20: s.history.pop(0)
+
+    def _play_alert(self):
+        \"\"\"Plays a short alert tone if high confidence detection occurs.\"\"\"
+        try:
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+            # Simple beep using a square wave
+            import array
+            sample_rate = 44100
+            freq = 880 # A5
+            duration = 0.1
+            n_samples = int(sample_rate * duration)
+            buf = array.array('h', [0] * n_samples)
+            for i in range(n_samples):
+                t = i / sample_rate
+                buf[i] = 16384 if (int(t * freq * 2) % 2) else -16384
+            sound = pygame.mixer.Sound(buffer=buf)
+            sound.set_volume(0.3)
+            sound.play()
+        except Exception:
+            pass
 
     def _save_loot(self, sig: FlockSignal):
         """Persists the detection to the loot folder."""
@@ -172,30 +206,33 @@ class FlockScannerView:
             pass
 
     def _wifi_worker(self):
-        """Optimized Wi-Fi Polling."""
+        \"\"\"Optimized Wi-Fi Polling using nmcli.\"\"\"
         while not self._stop_threads:
             try:
-                # iw scan is more detailed than iwlist
-                out = subprocess.check_output(["sudo", "iw", "dev", "wlan0", "scan"], text=True)
+                # nmcli is more likely to be present on modern Kali/Debian
+                # Format: BSSID:SSID:SIGNAL
+                cmd = [\"nmcli\", \"-t\", \"-f\", \"BSSID,SSID,SIGNAL\", \"dev\", \"wifi\", \"list\"]
+                out = subprocess.check_output(cmd, text=True)
                 
-                # Scan chunks by BSS
-                chunks = out.split("BSS ")
-                for chunk in chunks:
-                    # Look for Flock SSID
-                    ssid_match = re.search(r'SSID: (Flock-[0-9A-F]{6})', chunk)
-                    mac_match = re.search(r'([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})', chunk)
+                for line in out.splitlines():
+                    parts = line.split(':')
+                    if len(parts) < 3: continue
                     
-                    if ssid_match and mac_match:
-                        ssid = ssid_match.group(1)
-                        mac = mac_match.group(1).upper()
-                        # Extract RSSI (signal)
-                        sig_match = re.search(r'signal: (-\d+\.\d+)', chunk)
-                        rssi = int(float(sig_match.group(1))) if sig_match else -70
-                        
-                        self._add_wifi_signal(ssid, mac, rssi)
-            except Exception:
+                    # nmcli BSSID often has backslashes before colons
+                    mac = \":\".join(parts[0:6]).replace(\"\\\\\", \"\").upper()
+                    ssid = parts[6]
+                    try:
+                        rssi = int(parts[-1])
+                        # Convert nmcli 0-100 to dBm approx
+                        rssi_dbm = (rssi / 2) - 100
+                    except ValueError:
+                        rssi_dbm = -70
+                    
+                    if \"Flock-\" in ssid or \"PENGUIN\" in ssid.upper():
+                        self._add_wifi_signal(ssid, mac, int(rssi_dbm))
+            except Exception as e:
                 pass
-            time.sleep(8)
+            time.sleep(10)
 
     def _add_wifi_signal(self, ssid: str, mac: str, rssi: int):
         if ssid not in self.signals:
