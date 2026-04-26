@@ -69,9 +69,21 @@ class MediaPlayerView:
         
         try:
             # We use 'sudo -u kali' because VLC refuses to run as root,
-            # but our service runs as root.
+            # but we must provide the Xauthority of the root user who started xinit.
+            # Also force output to hw:1,0 (Headphones/Speaker on GamePi43).
+            cmd = [
+                "sudo", "-u", "kali",
+                "DISPLAY=:0",
+                "XAUTHORITY=/root/.Xauthority",
+                "vlc",
+                "--fullscreen",
+                "--no-video-title-show",
+                "--play-and-exit",
+                "--alsa-audio-device", "hw:1,0",
+                full_path
+            ]
             self.proc = subprocess.Popen(
-                ["sudo", "-u", "kali", "DISPLAY=:0", "vlc", "--fullscreen", "--no-video-title-show", "--play-and-exit", full_path],
+                cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
