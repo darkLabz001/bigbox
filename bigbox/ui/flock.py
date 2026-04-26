@@ -65,17 +65,17 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        \"\"\"Advanced BLE monitor using bluetoothctl monitor.\"\"\"
+        """Advanced BLE monitor using bluetoothctl monitor."""
         try:
             # Power on and start scanning
-            subprocess.run([\"sudo\", \"bluetoothctl\", \"power\", \"on\"], capture_output=True)
-            subprocess.Popen([\"sudo\", \"bluetoothctl\", \"scan\", \"on\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["sudo", "bluetoothctl", "power", "on"], capture_output=True)
+            subprocess.Popen(["sudo", "bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             # monitor mode provides cleaner text output than raw btmon for our regex
-            proc = subprocess.Popen([\"sudo\", \"bluetoothctl\", \"monitor\"], stdout=subprocess.PIPE, text=True)
+            proc = subprocess.Popen(["sudo", "bluetoothctl", "monitor"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: return
 
-            current_mac = \"\"
+            current_mac = ""
             for line in proc.stdout:
                 if self._stop_threads: break
                 
@@ -94,9 +94,9 @@ class FlockScannerView:
                     self._process_bt_hit(current_mac, rssi, line)
 
         except Exception as e:
-            self.status_msg = f\"SENSORS OFFLINE: {e}\"
+            self.status_msg = f"SENSORS OFFLINE: {e}"
         finally:
-            subprocess.run([\"sudo\", \"bluetoothctl\", \"scan\", \"off\"], capture_output=True)
+            subprocess.run(["sudo", "bluetoothctl", "scan", "off"], capture_output=True)
 
     def _process_bt_hit(self, mac: str, rssi: int, raw_line: str):
         oui = mac[:8].upper()
