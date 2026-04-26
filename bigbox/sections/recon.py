@@ -45,6 +45,10 @@ def _cctv_viewer(ctx: SectionContext) -> None:
     ctx.show_cctv()
 
 
+def _cam_scanner(ctx: SectionContext) -> None:
+    ctx.show_camscan()
+
+
 def _ping_sweep(ctx: SectionContext) -> None:
     ctx.show_pingsweep()
 
@@ -64,6 +68,7 @@ def build() -> Section:
             Action("Ping sweep", _ping_sweep, "host discovery"),
             Action("ARP scan", _arp_scan, "local discovery"),
             Action("CCTV Viewer", _cctv_viewer, "live monitoring"),
+            Action("IP Camera Scanner", _cam_scanner, "find cameras on the LAN"),
             Action("Quick scan: localhost", _nmap_quick_self, "nmap -F"),
             Action("Whoami / kernel", _whoami),
         ],
