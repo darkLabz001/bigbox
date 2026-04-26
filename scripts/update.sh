@@ -38,12 +38,20 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     
     echo "Updating dependencies..."
     if [ -f "requirements.txt" ]; then
-        # Use the venv directory relative to the repo
-        "$REPO_DIR/.venv/bin/pip" install -r requirements.txt
+        if [ -d "$REPO_DIR/.venv" ]; then
+            "$REPO_DIR/.venv/bin/pip" install -r requirements.txt
+        else
+            echo "Warning: .venv not found in $REPO_DIR. Skipping pip install."
+            echo "Try running scripts/install.sh first."
+        fi
     fi
 
-    echo "Restarting $SERVICE_NAME..."
-    sudo systemctl restart "$SERVICE_NAME"
+    if systemctl is-active --quiet "$SERVICE_NAME" || systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+        echo "Restarting $SERVICE_NAME..."
+        sudo systemctl restart "$SERVICE_NAME"
+    else
+        echo "Service $SERVICE_NAME not found or not active. Skipping restart."
+    fi
     echo "Update complete."
 else
     echo "Already up to date."
