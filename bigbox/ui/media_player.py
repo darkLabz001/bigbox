@@ -68,16 +68,26 @@ class MediaPlayerView:
         print(f"[media] Playing: {full_path}")
         
         try:
-            # Check if cvlc exists
-            vlc_path = subprocess.check_output(["which", "cvlc"], text=True).strip()
+            # Check if vlc exists
+            vlc_path = subprocess.check_output(["which", "vlc"], text=True).strip()
+            
+            # Create a clean environment for VLC
+            env = os.environ.copy()
+            env["DISPLAY"] = ":0"
+            
+            # Launch VLC. 
+            # --allow-run-as-root: REQUIRED when running as root service
+            # --fullscreen: takes over the display
+            # --no-video-title-show: cleaner look
+            # --play-and-exit: returns when done
             self.proc = subprocess.Popen(
-                [vlc_path, "--fullscreen", "--no-video-title-show", "--play-and-exit", full_path],
+                [vlc_path, "--allow-run-as-root", "--fullscreen", "--no-video-title-show", "--play-and-exit", full_path],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
+                env=env
             )
         except Exception as e:
             print(f"[media] VLC launch error: {e}")
-            # If VLC fails, we don't set proc, so render will show an error or the placeholder
             self.proc = None
 
     def _stop(self) -> None:
