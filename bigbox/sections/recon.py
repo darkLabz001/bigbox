@@ -42,6 +42,10 @@ def _whoami(ctx: SectionContext) -> None:
     ctx.show_result("identity", out)
 
 
+def _cctv_viewer(ctx: SectionContext) -> None:
+    ctx.show_cctv()
+
+
 def build() -> Section:
     return Section(
         title="Recon",
@@ -49,6 +53,7 @@ def build() -> Section:
         icon_img=load_icon("recon"),
         background_img=load_background("recon"),
         actions=[
+            Action("CCTV Viewer (Mock)", _cctv_viewer, "live monitoring"),
             Action("Ping sweep (local /24)", _nmap_ping_sweep, "nmap -sn"),
             Action("ARP scan (local)", _arp_scan, "arp-scan"),
             Action("Quick scan: localhost", _nmap_quick_self, "nmap -F"),

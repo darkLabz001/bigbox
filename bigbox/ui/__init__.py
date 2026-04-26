@@ -2,6 +2,7 @@ from bigbox.ui.section import Action, Section, SectionContext
 from bigbox.ui.carousel import Carousel
 from bigbox.ui.scroll_list import ScrollList
 from bigbox.ui.widgets import MenuView, ResultView, StatusBar
+from bigbox.ui.cctv import CCTVView
 
 __all__ = [
     "Action",
@@ -12,4 +13,5 @@ __all__ = [
     "MenuView",
     "StatusBar",
     "ResultView",
+    "CCTVView",
 ]
