@@ -68,23 +68,12 @@ class MediaPlayerView:
         print(f"[media] Playing: {full_path}")
         
         try:
-            # Check if vlc exists
-            vlc_path = subprocess.check_output(["which", "vlc"], text=True).strip()
-            
-            # Create a clean environment for VLC
-            env = os.environ.copy()
-            env["DISPLAY"] = ":0"
-            
-            # Launch VLC. 
-            # --allow-run-as-root: REQUIRED when running as root service
-            # --fullscreen: takes over the display
-            # --no-video-title-show: cleaner look
-            # --play-and-exit: returns when done
+            # We use 'sudo -u kali' because VLC refuses to run as root,
+            # but our service runs as root.
             self.proc = subprocess.Popen(
-                [vlc_path, "--allow-run-as-root", "--fullscreen", "--no-video-title-show", "--play-and-exit", full_path],
+                ["sudo", "-u", "kali", "DISPLAY=:0", "vlc", "--fullscreen", "--no-video-title-show", "--play-and-exit", full_path],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=env
+                stderr=subprocess.DEVNULL
             )
         except Exception as e:
             print(f"[media] VLC launch error: {e}")
