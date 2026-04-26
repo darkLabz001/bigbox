@@ -65,20 +65,20 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        \"\"\"Advanced BLE monitor using raw btmon for dual-adapter support.\"\"\"
+        """Advanced BLE monitor using raw btmon for dual-adapter support."""
         try:
             # Ensure both adapters are powered and scanning
-            for hci in [\"hci0\", \"hci1\"]:
-                subprocess.run([\"sudo\", \"hciconfig\", hci, \"up\"], capture_output=True)
-                subprocess.run([\"sudo\", \"bluetoothctl\", \"select\", hci], capture_output=True)
-                subprocess.run([\"sudo\", \"bluetoothctl\", \"power\", \"on\"], capture_output=True)
-                subprocess.Popen([\"sudo\", \"bluetoothctl\", \"scan\", \"on\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for hci in ["hci0", "hci1"]:
+                subprocess.run(["sudo", "hciconfig", hci, "up"], capture_output=True)
+                subprocess.run(["sudo", "bluetoothctl", "select", hci], capture_output=True)
+                subprocess.run(["sudo", "bluetoothctl", "power", "on"], capture_output=True)
+                subprocess.Popen(["sudo", "bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             # Use btmon for raw access to all controllers
-            proc = subprocess.Popen([\"sudo\", \"btmon\"], stdout=subprocess.PIPE, text=True)
+            proc = subprocess.Popen(["sudo", "btmon"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: return
 
-            current_mac = \"\"
+            current_mac = ""
             for line in proc.stdout:
                 if self._stop_threads: break
                 
@@ -99,13 +99,13 @@ class FlockScannerView:
                     # We don't clear current_mac yet because Manufacturer Data might follow
 
                 # If we see a new event start, clear the current context
-                if \"> HCI Event\" in line or \"@ MGMT Event\" in line:
-                    current_mac = \"\"
+                if "> HCI Event" in line or "@ MGMT Event" in line:
+                    current_mac = ""
 
         except Exception as e:
-            self.status_msg = f\"SENSORS OFFLINE: {e}\"
+            self.status_msg = f"SENSORS OFFLINE: {e}"
         finally:
-            subprocess.run([\"sudo\", \"bluetoothctl\", \"scan\", \"off\"], capture_output=True)
+            subprocess.run(["sudo", "bluetoothctl", "scan", "off"], capture_output=True)
 
     def _process_bt_hit(self, mac: str, rssi: int, raw_line: str):
         oui = mac[:8].upper()
