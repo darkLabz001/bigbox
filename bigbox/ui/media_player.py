@@ -89,7 +89,7 @@ class MediaPlayerView:
             
             # Header
             head_h = 60
-            pygame.draw.rect(surf, theme.BG_DIM, (0, 0, theme.SCREEN_W, head_h))
+            pygame.draw.rect(surf, theme.BG_ALT, (0, 0, theme.SCREEN_W, head_h))
             pygame.draw.line(surf, theme.ACCENT, (0, head_h - 1), (theme.SCREEN_W, head_h - 1), 2)
             
             title_text = "MEDIA PLAYER" if not self.playing_file else f"PLAYING: {self.playing_file}"
