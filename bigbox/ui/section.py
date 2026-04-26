@@ -32,6 +32,7 @@ class Section:
     actions: list[Action] = field(default_factory=list)
     icon: str = ""   # short string drawn beside title in the tab bar
     icon_img: pygame.surface.Surface | None = None
+    background_img: pygame.surface.Surface | None = None  # full page bg
 
     # Hooks — override in subclasses if needed.
     def on_enter(self, ctx: SectionContext) -> None: ...

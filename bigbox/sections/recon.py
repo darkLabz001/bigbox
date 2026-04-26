@@ -4,7 +4,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 
-from bigbox.sections._icons import load as load_icon
+from bigbox.sections._icons import load as load_icon, load_background
 
 from bigbox.runner import run_capture
 from bigbox.ui import Action, Section, SectionContext
@@ -47,6 +47,7 @@ def build() -> Section:
         title="Recon",
         icon="[*]",
         icon_img=load_icon("recon"),
+        background_img=load_background("recon"),
         actions=[
             Action("Ping sweep (local /24)", _nmap_ping_sweep, "nmap -sn"),
             Action("ARP scan (local)", _arp_scan, "arp-scan"),

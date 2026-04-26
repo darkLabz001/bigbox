@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from bigbox.runner import run_capture
-from bigbox.sections._icons import load as load_icon
+from bigbox.sections._icons import load as load_icon, load_background
 from bigbox.ui import Action, Section, SectionContext
 
 
@@ -33,6 +33,7 @@ def build() -> Section:
         title="Network",
         icon="[~]",
         icon_img=load_icon("network"),
+        background_img=load_background("network"),
         actions=[
             Action("Interfaces (ip addr)", _interfaces),
             Action("Routes (ip route)", _routes),

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from bigbox import __version__
 from bigbox.runner import run_capture
-from bigbox.sections._icons import load as load_icon
+from bigbox.sections._icons import load as load_icon, load_background
 from bigbox.ui import Action, Section, SectionContext
 
 
@@ -32,6 +32,7 @@ def build() -> Section:
         title="About",
         icon="[i]",
         icon_img=load_icon("about"),
+        background_img=load_background("about"),
         actions=[
             Action("bigbox version", _version),
             Action("System info", _sys),

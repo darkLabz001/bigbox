@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from bigbox.runner import run_capture
-from bigbox.sections._icons import load as load_icon
+from bigbox.sections._icons import load as load_icon, load_background
 from bigbox.ui import Action, Section, SectionContext
 
 
@@ -41,6 +41,7 @@ def build() -> Section:
         title="Settings",
         icon="[=]",
         icon_img=load_icon("settings"),
+        background_img=load_background("settings"),
         actions=[
             Action("Check for updates (OTA)", _update),
             Action("Volume up", _vol_up),

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from bigbox.runner import run_capture
-from bigbox.sections._icons import load as load_icon
+from bigbox.sections._icons import load as load_icon, load_background
 from bigbox.ui import Action, Section, SectionContext
 
 
@@ -24,6 +24,7 @@ def build() -> Section:
         title="Bluetooth",
         icon="[b]",
         icon_img=load_icon("bluetooth"),
+        background_img=load_background("bluetooth"),
         actions=[
             Action("Controller info", _ctl_show),
             Action("Known devices", _devices),

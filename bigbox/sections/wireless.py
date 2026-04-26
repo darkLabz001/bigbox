@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from bigbox.runner import run_capture
-from bigbox.sections._icons import load as load_icon
+from bigbox.sections._icons import load as load_icon, load_background
 from bigbox.ui import Action, Section, SectionContext
 
 
@@ -35,6 +35,7 @@ def build() -> Section:
         title="Wireless",
         icon="[w]",
         icon_img=load_icon("wireless"),
+        background_img=load_background("wireless"),
         actions=[
             Action("List Wi-Fi interfaces", _wifi_interfaces),
             Action("Current link", _link),

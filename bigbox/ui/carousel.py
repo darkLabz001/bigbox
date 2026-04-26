@@ -134,8 +134,14 @@ class Carousel:
         font: pygame.font.Font,
         title_font: pygame.font.Font,
     ) -> None:
-        # Page background + a 1px left divider so the slide animation reads.
-        pygame.draw.rect(surf, theme.BG, rect)
+        # Page background: image if the section has one, else solid theme color.
+        if section.background_img is not None:
+            # background was sized at theme.SCREEN_W x page-height; blit at the
+            # rect origin so the slide animation carries it sideways.
+            surf.blit(section.background_img, (rect.x, rect.y))
+        else:
+            pygame.draw.rect(surf, theme.BG, rect)
+        # 1px left divider so the slide animation reads cleanly between pages.
         if rect.x > 0:
             pygame.draw.line(surf, theme.DIVIDER, (rect.x, rect.y), (rect.x, rect.bottom))
 
