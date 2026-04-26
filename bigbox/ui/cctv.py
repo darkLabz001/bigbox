@@ -234,6 +234,7 @@ class CCTVView:
             gh = random.randint(2, 10)
             if gy + gh <= view.bottom:
                 glitch_rect = pygame.Rect(view.x, gy, view.width, gh)
+
                 try:
                     sub = surf.subsurface(glitch_rect).copy()
                     surf.blit(sub, (view.x + random.randint(-5, 5), gy))
