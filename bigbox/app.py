@@ -20,7 +20,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView
 
 
 class App:
@@ -32,6 +32,7 @@ class App:
         self.menu_view: MenuView | None = None
         self.cctv_view: CCTVView | None = None
         self.ping_view: PingSweepView | None = None
+        self.kb_view: KeyboardView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
 
@@ -96,10 +97,14 @@ class App:
     def show_pingsweep(self) -> None:
         self.ping_view = PingSweepView()
 
+    def get_input(self, title: str, callback: Callable[[str | None], None], initial: str = "") -> None:
+        self.kb_view = KeyboardView(title, callback, initial)
+
     def go_back(self) -> None:
         self.result_view = None
         self.cctv_view = None
         self.ping_view = None
+        self.kb_view = None
 
     def toast(self, msg: str) -> None:
         # Lightweight: just print for now; could become an on-screen toast widget.
@@ -134,7 +139,11 @@ class App:
 
             # 3. Render.
             screen.fill(theme.BG)
-            if self.cctv_view is not None:
+            if self.kb_view is not None:
+                self.kb_view.render(screen)
+                if self.kb_view.dismissed:
+                    self.kb_view = None
+            elif self.cctv_view is not None:
                 self.cctv_view.render(screen)
                 if self.cctv_view.dismissed:
                     self.cctv_view = None
@@ -199,12 +208,16 @@ class App:
             self.menu_view.handle(bev)
             return
 
+        if self.kb_view is not None:
+            self.kb_view.handle(bev)
+            return
+
         if self.cctv_view is not None:
             self.cctv_view.handle(bev)
             return
 
         if self.ping_view is not None:
-            self.ping_view.handle(bev)
+            self.ping_view.handle(bev, self)
             return
 
         if self.result_view is not None:

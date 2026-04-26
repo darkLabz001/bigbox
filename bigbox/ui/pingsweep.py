@@ -87,7 +87,7 @@ class PingSweepView:
             self.scanning = False
             self._proc = None
 
-    def handle(self, ev: ButtonEvent) -> None:
+    def handle(self, ev: ButtonEvent, ctx: SectionContext | None = None) -> None:
         if not ev.pressed: return
         
         if ev.button is Button.B:
@@ -119,6 +119,11 @@ class PingSweepView:
                 self.target_range = presets[(idx + 1) % len(presets)]
             elif ev.button is Button.A:
                 self._start_scan()
+            elif ev.button is Button.X and ctx:
+                def _on_input(val: str | None):
+                    if val:
+                        self.target_range = val
+                ctx.get_input("ENTER TARGET RANGE", _on_input, self.target_range)
         
         else: # Results mode
             if ev.button is Button.UP:
@@ -173,7 +178,7 @@ class PingSweepView:
         range_txt = f_big.render(self.target_range, True, theme.ACCENT)
         surf.blit(range_txt, (theme.SCREEN_W//2 - range_txt.get_width()//2, box_y + 20))
         
-        hint = f_med.render("UP/DOWN: Cycle Presets  A: START  B: BACK", True, theme.FG_DIM)
+        hint = f_med.render("UP/DOWN: Cycle Presets  X: EDIT  A: START  B: BACK", True, theme.FG_DIM)
         surf.blit(hint, (theme.SCREEN_W//2 - hint.get_width()//2, theme.SCREEN_H - 80))
 
     def _render_results(self, surf: pygame.Surface, offset_y: int):

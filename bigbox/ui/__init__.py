@@ -4,6 +4,7 @@ from bigbox.ui.scroll_list import ScrollList
 from bigbox.ui.widgets import MenuView, ResultView, StatusBar
 from bigbox.ui.cctv import CCTVView
 from bigbox.ui.pingsweep import PingSweepView
+from bigbox.ui.keyboard import KeyboardView
 
 __all__ = [
     "Action",
@@ -16,4 +17,5 @@ __all__ = [
     "ResultView",
     "CCTVView",
     "PingSweepView",
+    "KeyboardView",
 ]
