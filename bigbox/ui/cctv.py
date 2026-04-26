@@ -35,24 +35,31 @@ class CCTVView:
     """Full-screen CCTV monitoring based on KTOX_Pi architecture."""
 
     def __init__(self) -> None:
-        # Default KTOX_Pi feeds
+        # Expanded camera list (KTOX + New 2026 Feeds)
         self.cameras = [
-            Camera("AVALON-GOLF", "Avalon Golf Club", "http://74.95.172.65:8100/axis-cgi/mjpg/video.cgi"),
-            Camera("ANDALSNES", "Norway Coast", "http://78.31.82.246/mjpg/video.mjpg"),
-            Camera("LEVANTE", "Playa de Levante", "http://212.170.100.189/mjpg/video.mjpg"),
-            Camera("PRESCOTT-AP", "Prescott Airport", "http://199.104.253.4/mjpg/video.mjpg"),
-            Camera("MADRID-CITY", "Madrid, ESP", "http://83.48.75.113:8320/axis-cgi/mjpg/video.cgi"),
-            Camera("STELVIO", "Stelvio Pass", "http://jpeg.popso.it/webcam/webcam_online/stelviolive_05.jpg"),
-            Camera("SCHAFF", "Schaffhausen, CH", "http://87.245.83.189/axis-cgi/mjpg/video.cgi?resolution=640x480"),
+            # --- KTOX CLASSICS ---
+            Camera("KTOX-GOLF", "Avalon Golf Club", "http://74.95.172.65:8100/axis-cgi/mjpg/video.cgi"),
+            Camera("KTOX-NOR", "Norway Coast", "http://78.31.82.246/mjpg/video.mjpg"),
+            Camera("KTOX-ESP", "Playa de Levante", "http://212.170.100.189/mjpg/video.mjpg"),
+            Camera("KTOX-AP", "Prescott Airport", "http://199.104.253.4/mjpg/video.mjpg"),
+            Camera("KTOX-MAD", "Madrid, ESP", "http://83.48.75.113:8320/axis-cgi/mjpg/video.cgi"),
+            
+            # --- NEW 2026 FEEDS ---
+            Camera("TRAF-SEA1", "Seattle: MLK & Jackson", "http://www.seattle.gov/trafficcams/images/MLK_S_Jackson_NS.jpg"),
+            Camera("TRAF-SEA2", "Seattle: 4th & Battery", "http://www.seattle.gov/trafficcams/images/4_Battery_NS.jpg"),
+            Camera("CITY-PUR", "Purdue University", "http://webcam01.ecn.purdue.edu/mjpg/video.mjpg"),
+            Camera("CITY-BER", "Berlin, DE", "http://213.218.26.109/stream.jpg"),
+            Camera("CITY-MOS", "Moscow: Butovo", "http://camera.butovo.com/mjpg/video.mjpg"),
+            Camera("NAT-PINE", "Pinetop Nature", "http://wmccpinetop.axiscam.net/mjpg/video.mjpg"),
+            Camera("NAT-STEL", "Stelvio Pass", "http://jpeg.popso.it/webcam/webcam_online/stelviolive_05.jpg"),
+            Camera("IND-BUFF", "Buffalo Trace", "http://camera.buffalotrace.com/mjpg/video.mjpg"),
         ]
         
-        # Try to load local manual URLs if they exist
         self._load_manual_urls()
-        
         self.selected = 0
         self.dismissed = False
         
-        # UI dimensions (800x480 screen)
+        # UI dimensions
         self.list_w = 220
         self.view_w = 540
         self.view_h = 380
@@ -103,7 +110,6 @@ class CCTVView:
         self._fetch_thread.start()
 
     def _fetch_loop(self) -> None:
-        """KTOX-optimized fetch loop with 32KB chunks."""
         CHUNK_SIZE = 32768
         MAX_BUF = 1024 * 1024
         
@@ -114,59 +120,78 @@ class CCTVView:
             self.error_msg = None
             
             try:
-                # Extract IP from URL for OSD
                 ip_match = re.search(r'://([^:/]+)', cam.url)
                 cam_ip = ip_match.group(1) if ip_match else "UNKNOWN"
                 
-                with requests.get(cam.url, stream=True, timeout=10) as resp:
-                    if resp.status_code != 200:
-                        self.error_msg = f"HTTP {resp.status_code}"
-                        time.sleep(2)
-                        continue
-                    
-                    self.is_loading = False
-                    buf = bytearray()
-                    last_fps_check = time.time()
-                    frames_this_sec = 0
-                    
-                    for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
-                        if self._stop_thread or self.selected != current_idx:
-                            break
+                # HEAD request to check if it's MJPEG or single image
+                content_type = ""
+                try:
+                    r = requests.head(cam.url, timeout=5, allow_redirects=True)
+                    content_type = r.headers.get("Content-Type", "").lower()
+                except Exception: pass
+
+                if "multipart" in content_type or "mjpeg" in cam.url.lower() or cam.url.endswith(".mjpg"):
+                    # --- MJPEG STREAMING MODE ---
+                    with requests.get(cam.url, stream=True, timeout=10) as resp:
+                        if resp.status_code != 200:
+                            self.error_msg = f"HTTP {resp.status_code}"
+                            time.sleep(2)
+                            continue
                         
-                        buf.extend(chunk)
+                        self.is_loading = False
+                        buf = bytearray()
+                        last_fps_check = time.time()
+                        frames_this_sec = 0
                         
-                        while True:
-                            a = buf.find(b'\xff\xd8') # SOI
-                            b = buf.find(b'\xff\xd9', a + 2) # EOI
-                            if a != -1 and b != -1:
-                                jpg_data = bytes(buf[a:b+2])
-                                del buf[:b+2]
-                                
-                                try:
-                                    raw_surf = pygame.image.load(io.BytesIO(jpg_data))
-                                    
-                                    if self.zoom > 1:
-                                        w, h = raw_surf.get_size()
-                                        cw, ch = w // self.zoom, h // self.zoom
-                                        cx, cy = (w - cw) // 2, (h - ch) // 2
-                                        raw_surf = raw_surf.subsurface((cx, cy, cw, ch))
-                                    
-                                    final_surf = pygame.transform.scale(raw_surf, (self.view_w, self.view_h))
-                                    self._frame_buffer.append((final_surf, cam_ip))
-                                    frames_this_sec += 1
-                                    
-                                    now = time.time()
-                                    if now - last_fps_check > 1.0:
-                                        self.fps = frames_this_sec
-                                        frames_this_sec = 0
-                                        last_fps_check = now
-                                except Exception: pass
-                            else:
+                        for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
+                            if self._stop_thread or self.selected != current_idx:
                                 break
-                        
-                        if len(buf) > MAX_BUF:
-                            buf = bytearray()
                             
+                            buf.extend(chunk)
+                            while True:
+                                a = buf.find(b'\xff\xd8')
+                                b = buf.find(b'\xff\xd9', a + 2)
+                                if a != -1 and b != -1:
+                                    jpg_data = bytes(buf[a:b+2])
+                                    del buf[:b+2]
+                                    try:
+                                        raw_surf = pygame.image.load(io.BytesIO(jpg_data))
+                                        if self.zoom > 1:
+                                            w, h = raw_surf.get_size()
+                                            cw, ch = w // self.zoom, h // self.zoom
+                                            cx, cy = (w - cw) // 2, (h - ch) // 2
+                                            raw_surf = raw_surf.subsurface((cx, cy, cw, ch))
+                                        
+                                        final_surf = pygame.transform.scale(raw_surf, (self.view_w, self.view_h))
+                                        self._frame_buffer.append((final_surf, cam_ip))
+                                        frames_this_sec += 1
+                                        now = time.time()
+                                        if now - last_fps_check > 1.0:
+                                            self.fps = frames_this_sec
+                                            frames_this_sec = 0
+                                            last_fps_check = now
+                                    except Exception: pass
+                                else:
+                                    break
+                            if len(buf) > MAX_BUF: buf = bytearray()
+                else:
+                    # --- SINGLE SNAPSHOT POLLING MODE ---
+                    while not self._stop_thread and self.selected == current_idx:
+                        resp = requests.get(cam.url, timeout=5)
+                        if resp.status_code == 200:
+                            raw_surf = pygame.image.load(io.BytesIO(resp.content))
+                            final_surf = pygame.transform.scale(raw_surf, (self.view_w, self.view_h))
+                            self._frame_buffer.append((final_surf, cam_ip))
+                            self.is_loading = False
+                            self.fps = 1.0
+                        else:
+                            self.error_msg = f"HTTP {resp.status_code}"
+                        
+                        # Poll static cams every 1.5s
+                        poll_start = time.time()
+                        while time.time() - poll_start < 1.5 and self.selected == current_idx:
+                            time.sleep(0.1)
+
             except Exception as e:
                 self.error_msg = str(e)
                 time.sleep(2)
@@ -198,7 +223,7 @@ class CCTVView:
         pygame.draw.rect(surf, (10, 20, 30), head)
         pygame.draw.line(surf, theme.ACCENT, (0, head.bottom-1), (theme.SCREEN_W, head.bottom-1), 2)
         
-        title = pygame.font.Font(None, 32).render("CCTV :: KTOX_INTERCEPT", True, theme.ACCENT)
+        title = pygame.font.Font(None, 32).render("CCTV :: GLOBAL_INTERCEPT", True, theme.ACCENT)
         surf.blit(title, (theme.PADDING, (head_h - title.get_height()) // 2))
         
         if int(time.time() * 2) % 2:
@@ -214,14 +239,14 @@ class CCTVView:
         list_y = head.bottom + 10
         for i, cam in enumerate(self.cameras):
             sel = i == self.selected
-            y = list_y + i * 42
+            y = list_y + i * 32 # Tighter list
             if y > theme.SCREEN_H - 40: break
             if sel:
-                pygame.draw.rect(surf, (20, 40, 60), (0, y, self.list_w, 38))
-                pygame.draw.line(surf, theme.ACCENT, (0, y), (0, y+38), 4)
+                pygame.draw.rect(surf, (20, 40, 60), (0, y, self.list_w, 28))
+                pygame.draw.line(surf, theme.ACCENT, (0, y), (0, y+28), 4)
             color = theme.ACCENT if sel else theme.FG_DIM
-            name = pygame.font.Font(None, 24).render(cam.id, True, color)
-            surf.blit(name, (20, y + 8))
+            name = pygame.font.Font(None, 20).render(cam.id, True, color)
+            surf.blit(name, (15, y + 6))
 
         # Viewport
         view = pygame.Rect(self.list_w + 20, head.bottom + 20, self.view_w, self.view_h)
@@ -247,11 +272,11 @@ class CCTVView:
         surf.blit(ts_surf, (view.right - ts_surf.get_width() - 10, view.y + 10))
 
         if self.is_loading:
-            msg = f_small.render("SEARCHING FOR FREQUENCY...", True, theme.ACCENT)
+            msg = f_small.render("ESTABLISHING FREQUENCY...", True, theme.ACCENT)
             surf.blit(msg, (view.centerx - msg.get_width()//2, view.centery))
         elif self.error_msg and not self._frame_buffer:
             err = f_small.render(f"SIGNAL_LOST: {self.error_msg[:32]}", True, theme.ERR)
             surf.blit(err, (view.centerx - err.get_width()//2, view.centery))
         
-        hint = f_small.render("L/R: Switch Cam  UP: Zoom  B: Back", True, theme.FG_DIM)
+        hint = f_small.render("L/R: Cam  UP: Zoom  DOWN: Next  B: Back", True, theme.FG_DIM)
         surf.blit(hint, (view.x, view.bottom + 10))
