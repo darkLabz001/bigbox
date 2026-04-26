@@ -28,11 +28,19 @@ def _poweroff(ctx: SectionContext) -> None:
     ctx.run_streaming("poweroff", ["sudo", "poweroff"])
 
 
+def _update(ctx: SectionContext) -> None:
+    import os
+    # Assuming the app runs from the repo root
+    script_path = os.path.abspath("scripts/update.sh")
+    ctx.run_streaming("update", [script_path])
+
+
 def build() -> Section:
     return Section(
         title="Settings",
         icon="[=]",
         actions=[
+            Action("Check for updates (OTA)", _update),
             Action("Volume up", _vol_up),
             Action("Volume down", _vol_down),
             Action("Mute toggle", _vol_mute),

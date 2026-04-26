@@ -17,6 +17,18 @@ LEFT shoulder   <-- [Recon] [Network] [Wireless] [Bluetooth] [Settings] [About] 
                   A activates, B goes back
 ```
 
+## OTA Updates
+
+The tool supports Over-The-Air updates via GitHub. 
+
+1.  **Initialize your remote** (if not done by the prep script):
+    ```bash
+    git remote add origin https://github.com/darklabz001/bigbox.git
+    git branch -M main
+    ```
+2.  **Go to Settings > Check for updates (OTA)** in the UI. 
+    The tool will pull the latest changes from `main`, install new dependencies, and restart the `bigbox` service automatically.
+
 ## Hardware
 
 - Raspberry Pi 4 (2GB+ recommended)
