@@ -10,15 +10,23 @@ KEYMAP: dict[int, Button] = {
     pygame.K_DOWN: Button.DOWN,
     pygame.K_LEFT: Button.LEFT,
     pygame.K_RIGHT: Button.RIGHT,
+    
+    # Primary mappings (letter-to-letter)
+    pygame.K_a: Button.A,
+    pygame.K_b: Button.B,
+    pygame.K_x: Button.X,
+    pygame.K_y: Button.Y,
+    
+    # Secondary mappings (comfort/retro style)
     pygame.K_z: Button.A,
-    pygame.K_x: Button.B,
-    pygame.K_a: Button.X,
-    pygame.K_s: Button.Y,
+    pygame.K_c: Button.B,
+    
     pygame.K_q: Button.LL,
     pygame.K_w: Button.RR,
     pygame.K_h: Button.HK,
     pygame.K_RETURN: Button.START,
     pygame.K_RSHIFT: Button.SELECT,
+    pygame.K_SPACE: Button.START,
 }
 
 

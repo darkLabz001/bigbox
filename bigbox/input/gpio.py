@@ -38,8 +38,11 @@ class GPIOInput:
                 pull_up=True,
                 bounce_time=self._cfg.debounce_ms / 1000.0,
             )
-            gz.when_pressed = lambda b=btn: self._on_press(b)
-            gz.when_released = lambda b=btn: self._on_release(b)
+            # We use a default-arg lambda to capture 'btn' from the loop scope.
+            # We also take an optional 'device' arg to ignore the GZButton
+            # instance that gpiozero passes to its callbacks.
+            gz.when_pressed = lambda _d, b=btn: self._on_press(b)
+            gz.when_released = lambda _d, b=btn: self._on_release(b)
             self._buttons[btn] = gz
 
         self._repeater = threading.Thread(target=self._repeat_loop, daemon=True)

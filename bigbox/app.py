@@ -198,7 +198,7 @@ class App:
                 self.go_back()
                 return
 
-        # Global hotkeys.
+        # Global hotkeys (high priority).
         if not bev.repeat:
             if bev.button is Button.START:
                 self._open_system_menu()
@@ -206,13 +206,8 @@ class App:
             if bev.button is Button.SELECT:
                 print(f"[bigbox] section={carousel.current.title}")
                 return
-            if bev.button is Button.X:
-                self.show_status = not self.show_status
-                return
-            if bev.button is Button.Y:
-                self._take_screenshot()
-                return
 
+        # Specialized View Handling (Modal views)
         if self.menu_view is not None:
             self.menu_view.handle(bev)
             return
@@ -236,6 +231,15 @@ class App:
         if self.result_view is not None:
             self.result_view.handle(bev)
             return
+
+        # Global hotkeys (low priority/contextual).
+        if not bev.repeat:
+            if bev.button is Button.X:
+                self.show_status = not self.show_status
+                return
+            if bev.button is Button.Y:
+                self._take_screenshot()
+                return
 
         action = carousel.handle(bev, self)   # self satisfies SectionContext
         if action and action.handler:
