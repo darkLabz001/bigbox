@@ -65,16 +65,16 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        \"\"\"Advanced BLE monitor using btmon for raw attribute access.\"\"\"
+        """Advanced BLE monitor using btmon for raw attribute access."""
         try:
             # Ensure scan is on in the background
-            subprocess.Popen([\"bluetoothctl\", \"scan\", \"on\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             # btmon provides real-time HCI events including RSSI and ManufacturerData
-            proc = subprocess.Popen([\"sudo\", \"btmon\"], stdout=subprocess.PIPE, text=True)
+            proc = subprocess.Popen(["sudo", "btmon"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: return
 
-            current_mac = \"\"
+            current_mac = ""
             current_rssi = -100
             
             for line in proc.stdout:
@@ -98,48 +98,48 @@ class FlockScannerView:
                 if current_mac and (current_rssi != -100):
                     self._process_bt_hit(current_mac, current_rssi, line)
                     # Don't reset MAC immediately as data might be on next lines
-                    if \"RSSI:\" in line:
-                        current_mac = \"\"
+                    if "RSSI:" in line:
+                        current_mac = ""
                         current_rssi = -100
 
         except Exception as e:
-            self.status_msg = f\"SENSORS OFFLINE: {e}\"
+            self.status_msg = f"SENSORS OFFLINE: {e}"
         finally:
-            subprocess.run([\"sudo\", \"bluetoothctl\", \"scan\", \"off\"], capture_output=True)
+            subprocess.run(["sudo", "bluetoothctl", "scan", "off"], capture_output=True)
 
     def _process_bt_hit(self, mac: str, rssi: int, raw_line: str):
         oui = mac[:8].upper()
         line_up = raw_line.upper()
         
         is_flock = False
-        details = \"\"
+        details = ""
         confidence = 10
         
         # 1. Check Manufacturer ID (High Confidence)
         if self.MANUFACTURER_ID.upper() in line_up:
             is_flock = True
-            details = \"FLOCK_MFG_DATA_DETECTED\"
+            details = "FLOCK_MFG_DATA_DETECTED"
             confidence += 60
             
         # 2. Check Name (Medium-High Confidence)
         for name in self.KNOWN_NAMES:
             if name in line_up:
                 is_flock = True
-                details = f\"SIGNATURE_MATCH: {name}\"
+                details = f"SIGNATURE_MATCH: {name}"
                 confidence += 40
                 
         # 3. Check OUI (Medium Confidence)
         if oui in OUI_DB:
             is_flock = True
-            details = f\"HARDWARE_MATCH: {OUI_DB[oui]}\"
+            details = f"HARDWARE_MATCH: {OUI_DB[oui]}"
             confidence += 30
 
         if is_flock:
-            sig_id = f\"ALPR_{mac[-5:].replace(':','')}\"
+            sig_id = f"ALPR_{mac[-5:].replace(':','')}"
             new_hit = sig_id not in self.signals
             if new_hit:
                 self.signals[sig_id] = FlockSignal(
-                    id=sig_id, mac=mac, type=\"BLE\", rssi=rssi, 
+                    id=sig_id, mac=mac, type="BLE", rssi=rssi, 
                     last_seen=datetime.now(), details=details, confidence=min(100, confidence)
                 )
                 # Auto-loot high confidence hits
@@ -156,7 +156,7 @@ class FlockScannerView:
                 if len(s.history) > 20: s.history.pop(0)
 
     def _play_alert(self):
-        \"\"\"Plays a short alert tone if high confidence detection occurs.\"\"\"
+        """Plays a short alert tone if high confidence detection occurs."""
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init()
@@ -206,12 +206,12 @@ class FlockScannerView:
             pass
 
     def _wifi_worker(self):
-        \"\"\"Optimized Wi-Fi Polling using nmcli.\"\"\"
+        """Optimized Wi-Fi Polling using nmcli."""
         while not self._stop_threads:
             try:
                 # nmcli is more likely to be present on modern Kali/Debian
                 # Format: BSSID:SSID:SIGNAL
-                cmd = [\"nmcli\", \"-t\", \"-f\", \"BSSID,SSID,SIGNAL\", \"dev\", \"wifi\", \"list\"]
+                cmd = ["nmcli", "-t", "-f", "BSSID,SSID,SIGNAL", "dev", "wifi", "list"]
                 out = subprocess.check_output(cmd, text=True)
                 
                 for line in out.splitlines():
@@ -219,7 +219,7 @@ class FlockScannerView:
                     if len(parts) < 3: continue
                     
                     # nmcli BSSID often has backslashes before colons
-                    mac = \":\".join(parts[0:6]).replace(\"\\\\\", \"\").upper()
+                    mac = ":".join(parts[0:6]).replace("\\", "").upper()
                     ssid = parts[6]
                     try:
                         rssi = int(parts[-1])
@@ -228,7 +228,7 @@ class FlockScannerView:
                     except ValueError:
                         rssi_dbm = -70
                     
-                    if \"Flock-\" in ssid or \"PENGUIN\" in ssid.upper():
+                    if "Flock-" in ssid or "PENGUIN" in ssid.upper():
                         self._add_wifi_signal(ssid, mac, int(rssi_dbm))
             except Exception as e:
                 pass
