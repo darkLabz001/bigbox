@@ -49,6 +49,10 @@ def _ping_sweep(ctx: SectionContext) -> None:
     ctx.show_pingsweep()
 
 
+def _flock_seeker(ctx: SectionContext) -> None:
+    ctx.show_flock()
+
+
 def build() -> Section:
     return Section(
         title="Recon",
@@ -56,6 +60,7 @@ def build() -> Section:
         icon_img=load_icon("recon"),
         background_img=load_background("recon"),
         actions=[
+            Action("FlockSeeker", _flock_seeker, "detect ALPR infrastructure"),
             Action("Ping sweep", _ping_sweep, "host discovery"),
             Action("ARP scan", _arp_scan, "local discovery"),
             Action("CCTV Viewer", _cctv_viewer, "live monitoring"),
