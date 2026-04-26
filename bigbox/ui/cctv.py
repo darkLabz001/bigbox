@@ -35,24 +35,17 @@ class CCTVView:
     """Full-screen CCTV monitoring based on KTOX_Pi architecture."""
 
     def __init__(self) -> None:
-        # Expanded camera list (KTOX + New 2026 Feeds)
+        # Verified WORKING URLs (as of this minute)
         self.cameras = [
-            # --- KTOX CLASSICS ---
-            Camera("KTOX-GOLF", "Avalon Golf Club", "http://74.95.172.65:8100/axis-cgi/mjpg/video.cgi"),
-            Camera("KTOX-NOR", "Norway Coast", "http://78.31.82.246/mjpg/video.mjpg"),
-            Camera("KTOX-ESP", "Playa de Levante", "http://212.170.100.189/mjpg/video.mjpg"),
-            Camera("KTOX-AP", "Prescott Airport", "http://199.104.253.4/mjpg/video.mjpg"),
-            Camera("KTOX-MAD", "Madrid, ESP", "http://83.48.75.113:8320/axis-cgi/mjpg/video.cgi"),
-            
-            # --- NEW 2026 FEEDS ---
-            Camera("TRAF-SEA1", "Seattle: MLK & Jackson", "http://www.seattle.gov/trafficcams/images/MLK_S_Jackson_NS.jpg"),
-            Camera("TRAF-SEA2", "Seattle: 4th & Battery", "http://www.seattle.gov/trafficcams/images/4_Battery_NS.jpg"),
-            Camera("CITY-PUR", "Purdue University", "http://webcam01.ecn.purdue.edu/mjpg/video.mjpg"),
-            Camera("CITY-BER", "Berlin, DE", "http://213.218.26.109/stream.jpg"),
-            Camera("CITY-MOS", "Moscow: Butovo", "http://camera.butovo.com/mjpg/video.mjpg"),
-            Camera("NAT-PINE", "Pinetop Nature", "http://wmccpinetop.axiscam.net/mjpg/video.mjpg"),
-            Camera("NAT-STEL", "Stelvio Pass", "http://jpeg.popso.it/webcam/webcam_online/stelviolive_05.jpg"),
-            Camera("IND-BUFF", "Buffalo Trace", "http://camera.buffalotrace.com/mjpg/video.mjpg"),
+            Camera("AVALON", "Avalon Golf", "http://74.95.172.65:8100/axis-cgi/mjpg/video.cgi"),
+            Camera("NORWAY", "Norway Coast", "http://78.31.82.246/mjpg/video.mjpg"),
+            Camera("PLAYA", "Playa Levante", "http://212.170.100.189/mjpg/video.mjpg"),
+            Camera("PRESCOTT", "Airport USA", "http://199.104.253.4/mjpg/video.mjpg"),
+            Camera("MADRID", "Madrid, ESP", "http://83.48.75.113:8320/axis-cgi/mjpg/video.cgi"),
+            Camera("STELVIO", "Stelvio Pass", "https://jpeg.popso.it/webcam/webcam_online/stelviolive_05.jpg"),
+            Camera("MARINA", "Fair Harbor", "http://webcam.fairharbormarina.com/nphMotionJpeg?Resolution=640x480"),
+            Camera("SEATTLE1", "MLK & Jackson", "http://www.seattle.gov/trafficcams/images/MLK_S_Jackson_NS.jpg"),
+            Camera("SEATTLE2", "4th & Battery", "http://www.seattle.gov/trafficcams/images/4_Battery_NS.jpg"),
         ]
         
         self._load_manual_urls()
@@ -123,61 +116,77 @@ class CCTVView:
                 ip_match = re.search(r'://([^:/]+)', cam.url)
                 cam_ip = ip_match.group(1) if ip_match else "UNKNOWN"
                 
-                # HEAD request to check if it's MJPEG or single image
+                # Check stream type with redirects followed
                 content_type = ""
                 try:
-                    r = requests.head(cam.url, timeout=5, allow_redirects=True)
+                    r = requests.get(cam.url, timeout=5, stream=True, allow_redirects=True)
                     content_type = r.headers.get("Content-Type", "").lower()
-                except Exception: pass
+                    # We keep the response object if it's MJPEG
+                    resp = r
+                except Exception as e:
+                    self.error_msg = str(e)
+                    time.sleep(2)
+                    continue
 
-                if "multipart" in content_type or "mjpeg" in cam.url.lower() or cam.url.endswith(".mjpg"):
+                if "multipart" in content_type or "mjpeg" in cam.url.lower():
                     # --- MJPEG STREAMING MODE ---
-                    with requests.get(cam.url, stream=True, timeout=10) as resp:
-                        if resp.status_code != 200:
-                            self.error_msg = f"HTTP {resp.status_code}"
-                            time.sleep(2)
-                            continue
+                    if resp.status_code != 200:
+                        self.error_msg = f"HTTP {resp.status_code}"
+                        time.sleep(2)
+                        continue
+                    
+                    self.is_loading = False
+                    buf = bytearray()
+                    last_fps_check = time.time()
+                    frames_this_sec = 0
+                    
+                    for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
+                        if self._stop_thread or self.selected != current_idx:
+                            break
                         
-                        self.is_loading = False
-                        buf = bytearray()
-                        last_fps_check = time.time()
-                        frames_this_sec = 0
-                        
-                        for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
-                            if self._stop_thread or self.selected != current_idx:
+                        buf.extend(chunk)
+                        while True:
+                            a = buf.find(b'\xff\xd8') # SOI
+                            b = buf.find(b'\xff\xd9', a + 2) # EOI
+                            if a != -1 and b != -1:
+                                jpg_data = bytes(buf[a:b+2])
+                                del buf[:b+2]
+                                try:
+                                    raw_surf = pygame.image.load(io.BytesIO(jpg_data))
+                                    if self.zoom > 1:
+                                        w, h = raw_surf.get_size()
+                                        cw, ch = w // self.zoom, h // self.zoom
+                                        cx, cy = (w - cw) // 2, (h - ch) // 2
+                                        raw_surf = raw_surf.subsurface((cx, cy, cw, ch))
+                                    
+                                    final_surf = pygame.transform.scale(raw_surf, (self.view_w, self.view_h))
+                                    self._frame_buffer.append((final_surf, cam_ip))
+                                    frames_this_sec += 1
+                                    now = time.time()
+                                    if now - last_fps_check > 1.0:
+                                        self.fps = frames_this_sec
+                                        frames_this_sec = 0
+                                        last_fps_check = now
+                                except Exception: pass
+                            else:
                                 break
-                            
-                            buf.extend(chunk)
-                            while True:
-                                a = buf.find(b'\xff\xd8')
-                                b = buf.find(b'\xff\xd9', a + 2)
-                                if a != -1 and b != -1:
-                                    jpg_data = bytes(buf[a:b+2])
-                                    del buf[:b+2]
-                                    try:
-                                        raw_surf = pygame.image.load(io.BytesIO(jpg_data))
-                                        if self.zoom > 1:
-                                            w, h = raw_surf.get_size()
-                                            cw, ch = w // self.zoom, h // self.zoom
-                                            cx, cy = (w - cw) // 2, (h - ch) // 2
-                                            raw_surf = raw_surf.subsurface((cx, cy, cw, ch))
-                                        
-                                        final_surf = pygame.transform.scale(raw_surf, (self.view_w, self.view_h))
-                                        self._frame_buffer.append((final_surf, cam_ip))
-                                        frames_this_sec += 1
-                                        now = time.time()
-                                        if now - last_fps_check > 1.0:
-                                            self.fps = frames_this_sec
-                                            frames_this_sec = 0
-                                            last_fps_check = now
-                                    except Exception: pass
-                                else:
-                                    break
-                            if len(buf) > MAX_BUF: buf = bytearray()
+                        if len(buf) > MAX_BUF: buf = bytearray()
+                    resp.close()
                 else:
                     # --- SINGLE SNAPSHOT POLLING MODE ---
+                    # The response we already got might have the image data
+                    if resp.status_code == 200:
+                        try:
+                            raw_surf = pygame.image.load(io.BytesIO(resp.content))
+                            final_surf = pygame.transform.scale(raw_surf, (self.view_w, self.view_h))
+                            self._frame_buffer.append((final_surf, cam_ip))
+                            self.is_loading = False
+                            self.fps = 1.0
+                        except Exception: pass
+                    resp.close()
+
                     while not self._stop_thread and self.selected == current_idx:
-                        resp = requests.get(cam.url, timeout=5)
+                        resp = requests.get(cam.url, timeout=5, allow_redirects=True)
                         if resp.status_code == 200:
                             raw_surf = pygame.image.load(io.BytesIO(resp.content))
                             final_surf = pygame.transform.scale(raw_surf, (self.view_w, self.view_h))
@@ -187,9 +196,8 @@ class CCTVView:
                         else:
                             self.error_msg = f"HTTP {resp.status_code}"
                         
-                        # Poll static cams every 1.5s
                         poll_start = time.time()
-                        while time.time() - poll_start < 1.5 and self.selected == current_idx:
+                        while time.time() - poll_start < 2.0 and self.selected == current_idx:
                             time.sleep(0.1)
 
             except Exception as e:
@@ -223,14 +231,14 @@ class CCTVView:
         pygame.draw.rect(surf, (10, 20, 30), head)
         pygame.draw.line(surf, theme.ACCENT, (0, head.bottom-1), (theme.SCREEN_W, head.bottom-1), 2)
         
-        title = pygame.font.Font(None, 32).render("CCTV :: GLOBAL_INTERCEPT", True, theme.ACCENT)
+        title = pygame.font.Font(None, 32).render("CCTV :: VERIFIED_INTERCEPT", True, theme.ACCENT)
         surf.blit(title, (theme.PADDING, (head_h - title.get_height()) // 2))
         
         if int(time.time() * 2) % 2:
             pygame.draw.circle(surf, theme.ERR, (theme.SCREEN_W - 160, head_h // 2), 6)
             msg = "LINK_ACTIVE"
         else:
-            msg = "RECEIVING..."
+            msg = "TUNING..."
         
         stat_text = pygame.font.Font(None, 24).render(msg, True, theme.FG)
         surf.blit(stat_text, (theme.SCREEN_W - 145, (head_h - stat_text.get_height()) // 2))
@@ -239,13 +247,13 @@ class CCTVView:
         list_y = head.bottom + 10
         for i, cam in enumerate(self.cameras):
             sel = i == self.selected
-            y = list_y + i * 32 # Tighter list
+            y = list_y + i * 36
             if y > theme.SCREEN_H - 40: break
             if sel:
-                pygame.draw.rect(surf, (20, 40, 60), (0, y, self.list_w, 28))
-                pygame.draw.line(surf, theme.ACCENT, (0, y), (0, y+28), 4)
+                pygame.draw.rect(surf, (20, 40, 60), (0, y, self.list_w, 32))
+                pygame.draw.line(surf, theme.ACCENT, (0, y), (0, y+32), 4)
             color = theme.ACCENT if sel else theme.FG_DIM
-            name = pygame.font.Font(None, 20).render(cam.id, True, color)
+            name = pygame.font.Font(None, 22).render(cam.id, True, color)
             surf.blit(name, (15, y + 6))
 
         # Viewport
@@ -272,11 +280,11 @@ class CCTVView:
         surf.blit(ts_surf, (view.right - ts_surf.get_width() - 10, view.y + 10))
 
         if self.is_loading:
-            msg = f_small.render("ESTABLISHING FREQUENCY...", True, theme.ACCENT)
+            msg = f_small.render("ESTABLISHING LINK...", True, theme.ACCENT)
             surf.blit(msg, (view.centerx - msg.get_width()//2, view.centery))
         elif self.error_msg and not self._frame_buffer:
-            err = f_small.render(f"SIGNAL_LOST: {self.error_msg[:32]}", True, theme.ERR)
+            err = f_small.render(f"ERR: {self.error_msg[:30]}", True, theme.ERR)
             surf.blit(err, (view.centerx - err.get_width()//2, view.centery))
         
-        hint = f_small.render("L/R: Cam  UP: Zoom  DOWN: Next  B: Back", True, theme.FG_DIM)
+        hint = f_small.render("L/R: Cam  UP: Zoom  DOWN: Cycle  B: Back", True, theme.FG_DIM)
         surf.blit(hint, (view.x, view.bottom + 10))
