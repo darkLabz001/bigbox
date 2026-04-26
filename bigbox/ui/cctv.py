@@ -21,22 +21,21 @@ class Camera:
     location: str
     url: str  # URL to a JPEG snapshot or MJPEG stream
     ip: str = "UNKNOWN"
-    status: str = "ONLINE"
+    is_stream: bool = False
 
 
 class CCTVView:
     """Full-screen CCTV monitoring interface with real public feeds."""
 
     def __init__(self) -> None:
-        # A selection of public cameras that provide JPEG snapshots or MJPEG streams.
+        # A selection of public cameras. MJPEG streams provide "live" video.
         self.cameras = [
-            Camera("CAM-MTN", "Stelvio, Italy", "http://jpeg.popso.it/webcam/webcam_online/stelviolive_05.jpg", "80.82.17.40"),
-            Camera("CAM-UT", "Austin, TX (UT)", "http://porchcam.ece.utexas.edu/axis-cgi/mjpg/video.cgi?resolution=320x240", "128.83.120.20"),
-            Camera("CAM-CH", "Schaffhausen, CH", "http://87.245.83.189/axis-cgi/mjpg/video.cgi?resolution=320x240", "87.245.83.189"),
-            Camera("CAM-WI", "Milwaukee Traffic", "https://projects.511wi.gov/milwaukee/cameras/cam082.jpg", "165.189.161.12"),
-            Camera("CAM-DE", "Berlin, Germany", "http://213.218.26.109/stream.jpg", "213.218.26.109"),
-            Camera("CAM-MAR", "Fair Harbor Marina", "http://webcam.fairharbormarina.com/nphMotionJpeg?Resolution=320x240", "64.122.180.12"),
-            Camera("CAM-RE", "Recon Mock 1", "MOCK", "192.168.1.101"),
+            Camera("CAM-UT", "Austin, TX (UT)", "http://porchcam.ece.utexas.edu/axis-cgi/mjpg/video.cgi?resolution=640x480", "128.83.120.20", True),
+            Camera("CAM-CH", "Schaffhausen, CH", "http://87.245.83.189/axis-cgi/mjpg/video.cgi?resolution=640x480", "87.245.83.189", True),
+            Camera("CAM-BER", "Berlin, Germany", "http://213.218.26.109/stream.jpg", "213.218.26.109", True),
+            Camera("CAM-MAR", "Marina View", "http://webcam.fairharbormarina.com/nphMotionJpeg?Resolution=640x480", "64.122.180.12", True),
+            Camera("CAM-MTN", "Stelvio Pass, Italy", "http://jpeg.popso.it/webcam/webcam_online/stelviolive_05.jpg", "80.82.17.40", False),
+            Camera("CAM-WI", "Milwaukee Traffic", "https://projects.511wi.gov/milwaukee/cameras/cam082.jpg", "165.189.161.12", False),
         ]
         self.selected = 0
         self.dismissed = False
@@ -45,11 +44,13 @@ class CCTVView:
         self.current_surface: pygame.Surface | None = None
         self.is_loading = False
         self.error_msg: str | None = None
+        self.fps = 0
+        self._frame_count = 0
+        self._fps_time = time.time()
         
         self._noise_cache: list[pygame.Surface] = []
         self._generate_noise()
         
-        self._last_cam_index = -1
         self._stop_thread = False
         self._fetch_thread = threading.Thread(target=self._fetch_loop, daemon=True)
         self._fetch_thread.start()
@@ -68,42 +69,75 @@ class CCTVView:
             self._noise_cache.append(surf)
 
     def _fetch_loop(self) -> None:
-        """Background thread to fetch snapshots periodically."""
-        # For MJPEG streams, we might need more complex parsing, but for simple
-        # static-refreshing URLs this loop works well.
+        """Background thread to handle streaming and snapshots."""
         while not self._stop_thread:
             cam = self.cameras[self.selected]
-            
-            if cam.url == "MOCK":
-                self.current_surface = None
-                self.error_msg = None
-                self.is_loading = False
-                time.sleep(0.5)
-                continue
-
+            current_idx = self.selected
             self.is_loading = True
+            self.current_surface = None
+            
             try:
-                # stream=True handles both JPEG and MJPEG (we just grab the first frame of the MJPEG for now)
-                resp = requests.get(cam.url, timeout=5, stream=True)
-                if resp.status_code == 200:
-                    # For MJPEG, this might grab a chunk. For simplicity in a mock-ish tool,
-                    # we just try to load the buffer.
-                    img_data = io.BytesIO(resp.raw.read(1024*256)) # Read up to 256KB
-                    surf = pygame.image.load(img_data)
-                    self.current_surface = surf
+                if cam.is_stream:
+                    # Handle MJPEG Stream
+                    resp = requests.get(cam.url, stream=True, timeout=10)
+                    if resp.status_code != 200:
+                        self.error_msg = f"HTTP {resp.status_code}"
+                        self.is_loading = False
+                        time.sleep(2)
+                        continue
+                    
+                    self.is_loading = False
                     self.error_msg = None
+                    
+                    bytes_buffer = bytes()
+                    for chunk in resp.iter_content(chunk_size=4096):
+                        if self._stop_thread or self.selected != current_idx:
+                            break
+                        
+                        bytes_buffer += chunk
+                        a = bytes_buffer.find(b'\xff\xd8') # JPEG Start
+                        b = bytes_buffer.find(b'\xff\xd9') # JPEG End
+                        
+                        if a != -1 and b != -1:
+                            jpg = bytes_buffer[a:b+2]
+                            bytes_buffer = bytes_buffer[b+2:]
+                            
+                            try:
+                                stream = io.BytesIO(jpg)
+                                surf = pygame.image.load(stream)
+                                self.current_surface = surf
+                                self._frame_count += 1
+                                
+                                # Update FPS
+                                now = time.time()
+                                if now - self._fps_time > 1.0:
+                                    self.fps = self._frame_count
+                                    self._frame_count = 0
+                                    self._fps_time = now
+                                    
+                            except Exception:
+                                pass
                 else:
-                    self.error_msg = f"HTTP {resp.status_code}"
+                    # Handle Static Snapshots
+                    self.error_msg = None
+                    resp = requests.get(cam.url, timeout=10)
+                    if resp.status_code == 200:
+                        stream = io.BytesIO(resp.content)
+                        self.current_surface = pygame.image.load(stream)
+                    else:
+                        self.error_msg = f"HTTP {resp.status_code}"
+                    
+                    self.is_loading = False
+                    # Wait before next refresh for static cams
+                    for _ in range(30): # 3 second wait
+                        if self._stop_thread or self.selected != current_idx:
+                            break
+                        time.sleep(0.1)
+                        
             except Exception as e:
                 self.error_msg = str(e)
-            
-            self.is_loading = False
-            
-            # Wait 2 seconds (faster for live feel) or until camera change
-            start_wait = time.time()
-            current_sel = self.selected
-            while time.time() - start_wait < 2 and current_sel == self.selected and not self._stop_thread:
-                time.sleep(0.1)
+                self.is_loading = False
+                time.sleep(2)
 
     def handle(self, ev: ButtonEvent) -> None:
         if not ev.pressed:
@@ -119,21 +153,21 @@ class CCTVView:
     def render(self, surf: pygame.Surface) -> None:
         surf.fill(theme.BG)
         
-        # Draw Header
+        # Header
         title_font = pygame.font.Font(None, theme.FS_TITLE)
         head = pygame.Rect(0, 0, theme.SCREEN_W, theme.STATUS_BAR_H + theme.TAB_BAR_H)
         pygame.draw.rect(surf, theme.BG_ALT, head)
         pygame.draw.line(surf, theme.DIVIDER, (0, head.bottom - 1), (head.right, head.bottom - 1))
         
-        title = title_font.render("RECON :: LIVE_CCTV", True, theme.ACCENT)
+        title = title_font.render("RECON :: LIVE_INTERCEPT", True, theme.ACCENT)
         surf.blit(title, (theme.PADDING, (head.height - title.get_height()) // 2))
         
         # LIVE indicator
         if int(time.time() * 2) % 2 == 0:
-            pygame.draw.circle(surf, theme.ERR, (theme.SCREEN_W - 120, head.height // 2), 6)
+            pygame.draw.circle(surf, theme.ERR, (theme.SCREEN_W - 140, head.height // 2), 6)
             rec_font = pygame.font.Font(None, theme.FS_SMALL)
-            rec_text = rec_font.render("LIVE", True, theme.FG)
-            surf.blit(rec_text, (theme.SCREEN_W - 105, (head.height - rec_text.get_height()) // 2))
+            rec_text = rec_font.render("LIVE FEED", True, theme.FG)
+            surf.blit(rec_text, (theme.SCREEN_W - 125, (head.height - rec_text.get_height()) // 2))
 
         # Camera List (Left Side)
         list_w = 250
@@ -168,61 +202,66 @@ class CCTVView:
         surf.blit(info_text, (view_rect.x, view_rect.y - 30))
         
         # Render Video Content
-        if self.current_surface and cur.url != "MOCK":
+        if self.current_surface:
             try:
                 scaled = pygame.transform.scale(self.current_surface, (view_rect.width, view_rect.height))
                 surf.blit(scaled, view_rect.topleft)
-                # Tint overlay
-                overlay = pygame.Surface((view_rect.width, view_rect.height), pygame.SRCALPHA)
-                overlay.fill((0, 20, 0, 30)) 
-                surf.blit(overlay, view_rect.topleft)
+                
+                # Digital tint (subtle)
+                tint = pygame.Surface((view_rect.width, view_rect.height), pygame.SRCALPHA)
+                tint.fill((0, 30, 0, 20)) 
+                surf.blit(tint, view_rect.topleft)
             except Exception:
-                self.current_surface = None # Reset on error
+                self.current_surface = None
         else:
-            # Mock or Empty View
-            random.seed(self.selected)
-            for _ in range(5):
-                rw = random.randint(50, 150)
-                rh = random.randint(50, 150)
-                rx = view_rect.x + random.randint(0, view_rect.width - rw)
-                ry = view_rect.y + random.randint(0, view_rect.height - rh)
-                pygame.draw.rect(surf, (20, 20, 30), (rx, ry, rw, rh))
-                pygame.draw.rect(surf, (40, 40, 50), (rx, ry, rw, rh), 1)
+            # Signal Search / Empty
+            random.seed(int(time.time() * 5))
+            for _ in range(3):
+                rw = random.randint(100, 300)
+                rh = random.randint(2, 20)
+                rx = view_rect.x + random.randint(-50, view_rect.width)
+                ry = view_rect.y + random.randint(0, view_rect.height)
+                pygame.draw.rect(surf, (20, 40, 30), (rx, ry, rw, rh))
 
-        # Loading / Error Overlays
-        if self.is_loading and not self.current_surface:
-            loading_text = small_font.render("ESTABLISHING LINK...", True, theme.ACCENT)
+        # Status Overlays
+        if self.is_loading:
+            loading_text = small_font.render("SEARCHING FOR SIGNAL...", True, theme.ACCENT)
             surf.blit(loading_text, (view_rect.centerx - loading_text.get_width()//2, view_rect.centery))
         elif self.error_msg and not self.current_surface:
-            err_text = small_font.render(f"SIGNAL LOST: {self.error_msg[:24]}", True, theme.ERR)
+            err_text = small_font.render(f"ENCRYPTION ERROR: {self.error_msg[:30]}", True, theme.ERR)
             surf.blit(err_text, (view_rect.centerx - err_text.get_width()//2, view_rect.centery))
         
-        # Scanlines
+        # Signal Strength Bars
+        if self.current_surface:
+            strength = random.randint(3, 5) if random.random() > 0.1 else 1
+            for i in range(5):
+                color = theme.ACCENT if i < strength else theme.DIVIDER
+                pygame.draw.rect(surf, color, (view_rect.right - 60 + i*10, view_rect.y + 10, 6, 12))
+
+        # OSD / Stats
+        osd_font = pygame.font.Font(None, theme.FS_SMALL)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        ts_surf = osd_font.render(f"DATE: {timestamp}", True, (220, 220, 220))
+        surf.blit(ts_surf, (view_rect.x + 10, view_rect.y + 10))
+        
+        ip_surf = osd_font.render(f"TARGET: {cur.ip} | {self.fps} FPS", True, theme.ACCENT)
+        surf.blit(ip_surf, (view_rect.x + 10, view_rect.bottom - 25))
+
+        # Scanlines & Noise
         for y in range(view_rect.y, view_rect.bottom, 4):
-            pygame.draw.line(surf, (0, 0, 0, 80), (view_rect.x, y), (view_rect.right, y))
+            pygame.draw.line(surf, (0, 0, 0, 60), (view_rect.x, y), (view_rect.right, y))
             
-        # Noise
         noise = random.choice(self._noise_cache)
         noise_scaled = pygame.transform.scale(noise, (view_rect.width, view_rect.height))
         surf.blit(noise_scaled, view_rect.topleft)
-        
-        # OSD
-        osd_font = pygame.font.Font(None, theme.FS_SMALL)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ts_surf = osd_font.render(timestamp, True, (200, 200, 200))
-        surf.blit(ts_surf, (view_rect.right - ts_surf.get_width() - 10, view_rect.bottom - 25))
-        
-        ip_surf = osd_font.render(f"IP: {cur.ip}", True, (200, 200, 200))
-        surf.blit(ip_surf, (view_rect.x + 10, view_rect.bottom - 25))
 
-        # Glitch effect occasionally
-        if random.random() < 0.05:
-            gy = random.randint(view_rect.y, view_rect.bottom - 10)
-            gh = random.randint(2, 10)
+        # Intermittent Glitch
+        if random.random() < 0.04:
+            gy = random.randint(view_rect.y, view_rect.bottom - 20)
+            gh = random.randint(5, 15)
             if gy + gh <= view_rect.bottom:
                 glitch_rect = pygame.Rect(view_rect.x, gy, view_rect.width, gh)
                 try:
                     sub = surf.subsurface(glitch_rect).copy()
-                    surf.blit(sub, (view_rect.x + random.randint(-5, 5), gy))
-                except ValueError:
-                    pass
+                    surf.blit(sub, (view_rect.x + random.randint(-10, 10), gy))
+                except ValueError: pass
