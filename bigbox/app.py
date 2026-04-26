@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView
 
 
 class App:
@@ -40,6 +40,8 @@ class App:
         self.wifi_view: WifiConnectView | None = None
         self.cam_scan_view: CamScannerView | None = None
         self.wifi_attack_view: WifiAttackView | None = None
+        self.cracker_view: OfflineCrackerView | None = None
+        self.media_view: MediaPlayerView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
         
@@ -143,6 +145,12 @@ class App:
     def show_wifi_attack(self) -> None:
         self.wifi_attack_view = WifiAttackView()
 
+    def show_cracker(self) -> None:
+        self.cracker_view = OfflineCrackerView()
+
+    def show_media_player(self) -> None:
+        self.media_view = MediaPlayerView()
+
     def get_input(self, title: str, callback: Callable[[str | None], None], initial: str = "") -> None:
         self.kb_view = KeyboardView(title, callback, initial)
 
@@ -156,6 +164,8 @@ class App:
         self.wifi_view = None
         self.cam_scan_view = None
         self.wifi_attack_view = None
+        self.cracker_view = None
+        self.media_view = None
 
     def toast(self, msg: str) -> None:
         # Lightweight: just print for now; could become an on-screen toast widget.
@@ -222,6 +232,14 @@ class App:
                 self.wifi_attack_view.render(screen)
                 if self.wifi_attack_view.dismissed:
                     self.wifi_attack_view = None
+            elif self.cracker_view is not None:
+                self.cracker_view.render(screen)
+                if self.cracker_view.dismissed:
+                    self.cracker_view = None
+            elif self.media_view is not None:
+                self.media_view.render(screen)
+                if self.media_view.dismissed:
+                    self.media_view = None
             elif self.result_view is not None:
                 self.result_view.render(screen)
                 if self.result_view.dismissed:
@@ -321,6 +339,14 @@ class App:
 
         if self.wifi_attack_view is not None:
             self.wifi_attack_view.handle(bev, self)
+            return
+
+        if self.cracker_view is not None:
+            self.cracker_view.handle(bev, self)
+            return
+
+        if self.media_view is not None:
+            self.media_view.handle(bev, self)
             return
 
         if self.result_view is not None:

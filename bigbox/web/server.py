@@ -5,10 +5,12 @@ import io
 from typing import TYPE_CHECKING
 
 import pygame
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
+import os
+import shutil
 
 from bigbox.events import Button, ButtonEvent
 
@@ -17,6 +19,8 @@ if TYPE_CHECKING:
 
 app = FastAPI()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+MEDIA_DIR = Path("media")
+MEDIA_DIR.mkdir(exist_ok=True)
 
 # Global reference to the running Bigbox App
 _bb_app: App | None = None
@@ -28,6 +32,18 @@ def set_app(bb_app: App):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    file_path = MEDIA_DIR / file.filename
+    with file_path.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # If media view is active, refresh it
+    if _bb_app and _bb_app.media_view:
+        _bb_app.media_view.list = _bb_app.media_view._refresh_list()
+        
+    return {"filename": file.filename, "status": "uploaded"}
 
 @app.get("/press/{button_name}")
 async def press_button(button_name: str):

@@ -23,6 +23,10 @@ def _handshake_deauth(ctx: SectionContext) -> None:
     ctx.show_wifi_attack()
 
 
+def _crack_handshake(ctx: SectionContext) -> None:
+    ctx.show_cracker()
+
+
 def _airodump_hint(ctx: SectionContext) -> None:
     ctx.show_result(
         "airodump-ng",
@@ -42,6 +46,7 @@ def build() -> Section:
         background_img=load_background("wireless"),
         actions=[
             Action("Handshake / Deauth", _handshake_deauth, "capture WPA handshakes"),
+            Action("Crack Handshake (offline)", _crack_handshake, "aircrack-ng + wordlist"),
             Action("List Wi-Fi interfaces", _wifi_interfaces),
             Action("Current link", _link),
             Action("Scan APs (wlan0)", _wifi_scan, "iw dev wlan0 scan"),
