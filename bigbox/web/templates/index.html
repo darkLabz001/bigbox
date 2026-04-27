@@ -139,6 +139,61 @@
         </div>
     </div>
 
+    <div style="margin-top: 20px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px;">
+        <h2 style="font-size: 14px; margin-bottom: 15px; text-align: center;">GAMES :: ROMS</h2>
+
+        <div style="margin-bottom: 12px; font-size: 12px; text-align: center;">
+            <label style="margin-right: 10px;">
+                <input type="radio" name="romSystem" value="gbc" checked> GBC
+            </label>
+            <label style="margin-right: 10px;">
+                <input type="radio" name="romSystem" value="gba"> GBA
+            </label>
+            <label style="margin-right: 10px;">
+                <input type="radio" name="romSystem" value="ps1"> PS1
+            </label>
+            <label>
+                <input type="radio" name="romSystem" value="ps1-bios"> PS1-BIOS
+            </label>
+        </div>
+
+        <input type="file" id="romFileInput" style="display: none;">
+        <div style="text-align: center;">
+            <button onclick="document.getElementById('romFileInput').click()"
+                    style="background: transparent; border: 1px solid #5ae6aa; color: #5ae6aa; padding: 8px 18px; cursor: pointer; font-family: monospace;">
+                CHOOSE ROM
+            </button>
+        </div>
+        <div id="romStatus" style="margin-top: 10px; font-size: 12px; text-align: center;"></div>
+
+        <div id="romLibrary" style="margin-top: 18px; font-size: 11px;"></div>
+
+        <h3 style="font-size: 13px; margin: 22px 0 10px; text-align: center;">RETROACHIEVEMENTS</h3>
+
+        <div id="raSignedOut" style="display:none;">
+            <div style="font-size:11px; color:#828ba0; margin-bottom:8px; text-align:center;">
+                Sign in once with your retroachievements.org account.
+            </div>
+            <input type="text" id="raUser" placeholder="Username"
+                   style="width:100%; box-sizing:border-box; margin-bottom:6px; padding:8px; background:#0a0c12; color:#5ae6aa; border:1px solid #282e3c; font-family:monospace;">
+            <input type="password" id="raPass" placeholder="Password"
+                   style="width:100%; box-sizing:border-box; margin-bottom:8px; padding:8px; background:#0a0c12; color:#5ae6aa; border:1px solid #282e3c; font-family:monospace;">
+            <button onclick="raLogin()"
+                    style="background:transparent; border:1px solid #5ae6aa; color:#5ae6aa; padding:8px 18px; cursor:pointer; font-family:monospace; width:100%;">
+                SIGN IN
+            </button>
+            <div id="raMsg" style="margin-top:8px; font-size:11px; text-align:center;"></div>
+        </div>
+
+        <div id="raSignedIn" style="display:none; text-align:center;">
+            <div style="font-size:12px; color:#5ae6aa;">
+                Signed in as <span id="raUserShown">?</span>
+                <a href="#" onclick="raLogout(); return false;"
+                   style="color:#828ba0; margin-left:8px;">[sign out]</a>
+            </div>
+        </div>
+    </div>
+
     <div style="margin-top: 20px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px; text-align: center;">
         <h2 style="font-size: 14px; margin-bottom: 15px;">UPLOAD MEDIA</h2>
 
@@ -339,6 +394,139 @@
 
         refreshWigleStatus();
         setInterval(refreshWardriveFiles, 30000);
+
+        // ---------------- Games / ROMs / RA --------------------------------
+        function selectedRomSystem() {
+            const r = document.querySelector('input[name="romSystem"]:checked');
+            return r ? r.value : 'gbc';
+        }
+
+        function refreshRomLibrary() {
+            fetch('/roms')
+                .then(r => r.json())
+                .then(data => {
+                    const lib = document.getElementById('romLibrary');
+                    let html = '';
+                    const labels = {gbc: 'GBC', gba: 'GBA', ps1: 'PS1', 'ps1-bios': 'PS1-BIOS'};
+                    for (const sys of ['gbc', 'gba', 'ps1', 'ps1-bios']) {
+                        const items = data[sys] || [];
+                        html += '<div style="margin-top:6px;">'
+                              + '<div style="color:#5ae6aa;">[ ' + labels[sys]
+                              + ' &mdash; ' + items.length + ' ]</div>';
+                        if (items.length) {
+                            html += '<ul style="margin:4px 0 0 14px; padding:0; color:#828ba0; list-style:none;">';
+                            for (const f of items) {
+                                const safe = f.replace(/[<>&"]/g, '');
+                                html += '<li style="display:flex; justify-content:space-between; padding:2px 0;">'
+                                     + '<span>' + safe + '</span>'
+                                     + '<a href="#" onclick="romDelete(\''
+                                     + sys + '\', \'' + encodeURIComponent(f) + '\'); return false;"'
+                                     + ' style="color:#eb5a5a;">[x]</a>'
+                                     + '</li>';
+                            }
+                            html += '</ul>';
+                        }
+                        html += '</div>';
+                    }
+                    lib.innerHTML = html;
+                })
+                .catch(() => {});
+        }
+
+        document.getElementById('romFileInput').onchange = function() {
+            const file = this.files[0];
+            if (!file) return;
+
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('system', selectedRomSystem());
+
+            const status = document.getElementById('romStatus');
+            status.style.color = '#828ba0';
+            status.innerText = 'UPLOADING ' + file.name + ' -> ' + selectedRomSystem() + '...';
+
+            fetch('/roms/upload', {method: 'POST', body: fd})
+                .then(r => r.json().then(j => ({ok: r.ok, body: j})))
+                .then(({ok, body}) => {
+                    if (ok) {
+                        status.style.color = '#5ae6aa';
+                        status.innerText = 'UPLOADED: ' + body.filename + ' (' + body.system + ')';
+                        refreshRomLibrary();
+                    } else {
+                        status.style.color = '#eb5a5a';
+                        status.innerText = 'FAILED: ' + (body.detail || 'unknown error');
+                    }
+                    setTimeout(() => { status.innerText = ''; }, 4000);
+                })
+                .catch(e => {
+                    status.style.color = '#eb5a5a';
+                    status.innerText = 'UPLOAD ERROR';
+                });
+            this.value = '';
+        };
+
+        function romDelete(system, encodedName) {
+            if (!confirm('Delete this ROM?')) return;
+            fetch('/roms/' + system + '/' + encodedName, {method: 'DELETE'})
+                .then(() => refreshRomLibrary());
+        }
+
+        function refreshRaStatus() {
+            fetch('/retroachievements/status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.logged_in) {
+                        document.getElementById('raSignedIn').style.display = 'block';
+                        document.getElementById('raSignedOut').style.display = 'none';
+                        document.getElementById('raUserShown').innerText = data.username;
+                    } else {
+                        document.getElementById('raSignedIn').style.display = 'none';
+                        document.getElementById('raSignedOut').style.display = 'block';
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function raLogin() {
+            const u = document.getElementById('raUser').value.trim();
+            const p = document.getElementById('raPass').value;
+            const msg = document.getElementById('raMsg');
+            if (!u || !p) {
+                msg.style.color = '#eb5a5a';
+                msg.innerText = 'username and password required';
+                return;
+            }
+            const fd = new FormData();
+            fd.append('username', u);
+            fd.append('password', p);
+            msg.style.color = '#828ba0';
+            msg.innerText = 'verifying with retroachievements.org...';
+            fetch('/retroachievements/login', {method: 'POST', body: fd})
+                .then(r => r.json().then(j => ({ok: r.ok, body: j})))
+                .then(({ok, body}) => {
+                    if (ok) {
+                        msg.style.color = '#5ae6aa';
+                        msg.innerText = body.message || 'signed in';
+                        document.getElementById('raPass').value = '';
+                        refreshRaStatus();
+                    } else {
+                        msg.style.color = '#eb5a5a';
+                        msg.innerText = body.detail || 'login failed';
+                    }
+                })
+                .catch(e => {
+                    msg.style.color = '#eb5a5a';
+                    msg.innerText = 'request failed: ' + e;
+                });
+        }
+
+        function raLogout() {
+            fetch('/retroachievements/logout', {method: 'POST'})
+                .then(() => refreshRaStatus());
+        }
+
+        refreshRomLibrary();
+        refreshRaStatus();
         
         // Prevent zoom on double tap for iOS
         document.addEventListener('touchstart', function (event) {

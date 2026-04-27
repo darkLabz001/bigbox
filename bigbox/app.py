@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView
 
 
 class App:
@@ -54,6 +54,7 @@ class App:
         self.theme_manager_view: ThemeManagerView | None = None
         self.wardrive_view: WardriveView | None = None
         self.eviltwin_view: EvilTwinView | None = None
+        self.games_view: GamesView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
         self._last_vol_enforce = 0
@@ -180,6 +181,9 @@ class App:
     def show_eviltwin(self) -> None:
         self.eviltwin_view = EvilTwinView()
 
+    def show_games(self) -> None:
+        self.games_view = GamesView()
+
     def show_chat(self) -> None:
         self.chat_view = ChatView()
 
@@ -236,6 +240,7 @@ class App:
         self.theme_manager_view = None
         self.wardrive_view = None
         self.eviltwin_view = None
+        self.games_view = None
 
     def toast(self, msg: str) -> None:
         # Lightweight: just print for now; could become an on-screen toast widget.
@@ -371,6 +376,10 @@ class App:
                 self.eviltwin_view.render(screen)
                 if self.eviltwin_view.dismissed:
                     self.eviltwin_view = None
+            elif self.games_view is not None:
+                self.games_view.render(screen)
+                if self.games_view.dismissed:
+                    self.games_view = None
             elif self.update_view is not None:
                 self.update_view.render(screen)
                 if self.update_view.dismissed:
@@ -526,6 +535,10 @@ class App:
 
         if self.eviltwin_view is not None:
             self.eviltwin_view.handle(bev, self)
+            return
+
+        if self.games_view is not None:
+            self.games_view.handle(bev, self)
             return
 
         if self.update_view is not None:

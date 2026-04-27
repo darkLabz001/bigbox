@@ -14,6 +14,8 @@ import shutil
 
 from bigbox.events import Button, ButtonEvent
 from bigbox import wigle as wigle_mod
+from bigbox import emulator as emu_mod
+from bigbox import retroachievements as ra_mod
 
 if TYPE_CHECKING:
     from bigbox.app import App
@@ -188,3 +190,108 @@ async def wardrive_upload(name: str):
     if not ok:
         raise HTTPException(status_code=502, detail=msg)
     return {"status": "uploaded", "message": msg, "filename": safe}
+
+
+# ---------------- Games / ROMs ---------------------------------------------
+
+@app.get("/roms")
+async def list_roms():
+    """Per-system rom listing (and the ps1-bios bucket)."""
+    return emu_mod.list_all_roms()
+
+
+@app.post("/roms/upload")
+async def roms_upload(
+    file: UploadFile = File(...),
+    system: str = Form(...),
+):
+    if system not in emu_mod.WEB_SYSTEMS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"system must be one of {emu_mod.WEB_SYSTEMS}",
+        )
+    target_dir = emu_mod.upload_target_dir(system)
+    if target_dir is None:
+        raise HTTPException(status_code=400, detail="invalid system")
+    safe_name = os.path.basename(file.filename or "")
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="missing filename")
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    file_path = target_dir / safe_name
+    try:
+        with file_path.open("wb") as buffer:
+            while chunk := await file.read(1024 * 1024):
+                buffer.write(chunk)
+    except Exception as e:
+        if file_path.exists():
+            file_path.unlink()
+        raise HTTPException(status_code=500, detail=f"write failed: {e}")
+    finally:
+        await file.close()
+
+    if _bb_app and getattr(_bb_app, "games_view", None):
+        try:
+            _bb_app.games_view.refresh()
+        except Exception as e:
+            print(f"[web] games refresh failed: {e}")
+
+    return {"status": "uploaded", "system": system, "filename": safe_name}
+
+
+@app.delete("/roms/{system}/{name}")
+async def roms_delete(system: str, name: str):
+    target_dir = emu_mod.upload_target_dir(system)
+    if target_dir is None:
+        raise HTTPException(status_code=400, detail="invalid system")
+    safe = os.path.basename(name)
+    target = target_dir / safe
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="rom not found")
+    try:
+        target.unlink()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"delete failed: {e}")
+    if _bb_app and getattr(_bb_app, "games_view", None):
+        try:
+            _bb_app.games_view.refresh()
+        except Exception:
+            pass
+    return {"status": "deleted", "system": system, "filename": safe}
+
+
+# ---------------- RetroAchievements ----------------------------------------
+
+@app.get("/retroachievements/status")
+async def ra_status():
+    creds = ra_mod.load_creds()
+    if not creds:
+        return {"logged_in": False}
+    return {"logged_in": True, "username": creds.username}
+
+
+@app.post("/retroachievements/login")
+async def ra_login(username: str = Form(...), password: str = Form(...)):
+    username = username.strip()
+    if not username or not password:
+        raise HTTPException(status_code=400,
+                            detail="username and password required")
+    ok, msg, creds = ra_mod.login(username, password)
+    if not ok or not creds:
+        raise HTTPException(status_code=401, detail=msg)
+    try:
+        ra_mod.save_creds(creds)
+        ra_mod.apply_to_mgba_config(creds)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"persist failed: {e}")
+    return {"logged_in": True, "username": creds.username, "message": msg}
+
+
+@app.post("/retroachievements/logout")
+async def ra_logout():
+    ra_mod.clear_creds()
+    try:
+        ra_mod.remove_from_mgba_config()
+    except Exception:
+        pass
+    return {"logged_in": False}
