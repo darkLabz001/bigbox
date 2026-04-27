@@ -35,6 +35,7 @@ apt-get install -y --no-install-recommends \
     alsa-utils \
     mpv \
     mgba-sdl \
+    mednafen \
     pcsxr \
     python3-serial rfkill \
     curl ca-certificates \

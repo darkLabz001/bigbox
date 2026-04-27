@@ -90,15 +90,18 @@ SYSTEMS: dict[str, SystemDef] = {
         rom_subdir="ps1",
         # .pbp is the eboot format; .chd is compressed. duckstation eats them all.
         extensions=(".bin", ".cue", ".iso", ".img", ".pbp", ".chd", ".ecm", ".m3u"),
-        # duckstation-nogui (qt-less) preferred; pcsxr / pcsx-rearmed as
-        # fallbacks. On Kali / Debian trixie the real package name is
-        # `pcsxr` (1.9.94) — `pcsx-rearmed` doesn't exist there.
+        # mednafen is the most reliable PS1 path on Debian/Kali — single
+        # binary, ALSA audio works out of the box, fullscreen via -fs 1.
+        # DuckStation is preferred when present (RA support); pcsxr is a
+        # last resort because its plugin audio defaults are flaky.
         binary_candidates=("duckstation-nogui", "duckstation-qt",
+                           "mednafen",
                            "pcsxr", "pcsx_rearmed", "pcsx-rearmed"),
-        # DuckStation flag for fullscreen launch is `-fullscreen`; pcsx-rearmed
-        # runs fullscreen by default. We append both — pcsx-rearmed ignores
-        # unknown flags so it's safe.
-        extra_args=("-fullscreen",),
+        # mednafen takes "-fs 1" (two args) for fullscreen; DuckStation
+        # uses "-fullscreen". Each of these is harmless to the others
+        # because mednafen ignores unknown flags and DuckStation accepts
+        # extras.
+        extra_args=("-fs", "1", "-fullscreen"),
     ),
 }
 
@@ -152,9 +155,14 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
         candidates = ", ".join(sd.binary_candidates)
         return None, f"no emulator installed (tried {candidates})"
 
-    # Apply RetroAchievements creds to mGBA before launch (no-op if no
-    # creds saved). Best-effort, never fatal.
-    if binary.startswith("mgba"):
+    # mGBA setup: pre-write display + audio config, then layer in any
+    # RetroAchievements creds. Both are best-effort.
+    bin_name = os.path.basename(binary)
+    if "mgba" in bin_name:
+        try:
+            _write_mgba_display_config()
+        except Exception:
+            pass
         try:
             from bigbox import retroachievements as _ra
             creds = _ra.load_creds()
@@ -166,6 +174,15 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", "/root/.Xauthority")
+    # Force the emulator's ALSA usage onto card 1 (BCM2835 Headphones —
+    # the GamePi43's speaker output). Without this, SDL audio falls back
+    # to ALSA's default device which on this hardware is HDMI (silent).
+    # Per-process env so the wider system audio policy stays whatever
+    # the user has set.
+    env.setdefault("SDL_AUDIODRIVER", "alsa")
+    env.setdefault("ALSA_PCM_CARD", "1")
+    env.setdefault("ALSA_CARD", "Headphones")
+    env.setdefault("AUDIODEV", "plughw:1,0")
 
     cmd = [binary, *sd.extra_args, str(rom_path.resolve())]
 
@@ -191,6 +208,49 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
                 log_fd.close()  # type: ignore[union-attr]
             except Exception:
                 pass
+
+
+def _write_mgba_display_config() -> None:
+    """Pre-write ~/.config/mgba/config.ini display + audio settings so
+    the emulator goes fullscreen + scales up + plays audio. Idempotent;
+    leaves any existing keys alone. Compatible with the
+    retroachievements.py patcher — both write to the same file."""
+    import configparser
+    cfg_dir = Path("/root/.config/mgba")
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg_path = cfg_dir / "config.ini"
+
+    cp = configparser.ConfigParser()
+    cp.optionxform = str
+    if cfg_path.exists():
+        try:
+            cp.read(cfg_path)
+        except Exception:
+            cp = configparser.ConfigParser()
+            cp.optionxform = str
+
+    # Apply to both qt and sdl ports — whichever build the user's mgba
+    # binary is, it'll find its own section.
+    for section in ("ports.qt", "ports.sdl"):
+        if not cp.has_section(section):
+            cp.add_section(section)
+        # Fullscreen + 4x integer scale = ~960x640 for GBA, the SDL
+        # backend will fit-to-screen. Aspect ratio locked so the GB / GBC
+        # 10:9 frame doesn't stretch into a fat smear on the 5:3 panel.
+        cp.set(section, "fullscreen", "1")
+        cp.set(section, "videoScale", "4")
+        cp.set(section, "lockAspectRatio", "1")
+        cp.set(section, "lockIntegerScaling", "0")
+        cp.set(section, "resampleVideo", "1")
+        cp.set(section, "audioBuffers", "2048")
+        cp.set(section, "sampleRate", "44100")
+        # mGBA volume is 0..0x100 (256). 0x100 = 100%.
+        cp.set(section, "volume", "0x100")
+        cp.set(section, "fastForwardVolume", "0x100")
+        cp.set(section, "mute", "0")
+
+    with cfg_path.open("w") as f:
+        cp.write(f, space_around_delimiters=False)
 
 
 def read_emulator_log_tail(n: int = 8) -> list[str]:
