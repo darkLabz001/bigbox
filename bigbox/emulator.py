@@ -49,9 +49,18 @@ class SystemDef:
             return []
 
     def find_binary(self) -> str | None:
+        # Search PATH first, then Debian's /usr/games/ (which isn't on
+        # bigbox.service's PATH — apt installs emulators there). Returns
+        # an absolute path when found via /usr/games so subprocess.Popen
+        # doesn't have to know about it.
         for cand in self.binary_candidates:
-            if shutil.which(cand):
-                return cand
+            found = shutil.which(cand)
+            if found:
+                return found
+            for prefix in ("/usr/games/", "/usr/local/games/"):
+                p = prefix + cand
+                if os.access(p, os.X_OK):
+                    return p
         return None
 
 
@@ -61,8 +70,10 @@ SYSTEMS: dict[str, SystemDef] = {
         label="GAME BOY / GBC",
         rom_subdir="gbc",
         extensions=(".gb", ".gbc", ".zip"),
-        # mGBA handles both classic GB and GBC.
-        binary_candidates=("mgba-sdl", "mgba-qt", "mgba"),
+        # mGBA handles both classic GB and GBC. Debian's `mgba-sdl` package
+        # installs the binary as plain `mgba` (not `mgba-sdl`); check both
+        # to support upstream + distro builds.
+        binary_candidates=("mgba", "mgba-sdl", "mgba-qt"),
         extra_args=("-f",),  # fullscreen
     ),
     "gba": SystemDef(
@@ -70,7 +81,7 @@ SYSTEMS: dict[str, SystemDef] = {
         label="GAME BOY ADVANCE",
         rom_subdir="gba",
         extensions=(".gba", ".zip"),
-        binary_candidates=("mgba-sdl", "mgba-qt", "mgba"),
+        binary_candidates=("mgba", "mgba-sdl", "mgba-qt"),
         extra_args=("-f",),
     ),
     "ps1": SystemDef(
