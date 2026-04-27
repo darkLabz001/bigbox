@@ -35,8 +35,13 @@ class CCTVView:
     """Full-screen CCTV monitoring based on optimized MJPEG architecture."""
 
     def __init__(self) -> None:
-        # Verified WORKING URLs (as of this minute)
+        # Verified working URLs. Seattle SDOT entries are sourced from
+        # https://web.seattle.gov/Travelers/api/Map/GetCamerasByNeighborhood
+        # — single-snapshot JPEGs the CCTV viewer polls every ~2s. Each
+        # was checked for a non-placeholder image (>30 KB, non-default
+        # MD5) before being added.
         self.cameras = [
+            # International live MJPEG / snapshot feeds (kept from prior set)
             Camera("AVALON", "Avalon Golf", "http://74.95.172.65:8100/axis-cgi/mjpg/video.cgi"),
             Camera("NORWAY", "Norway Coast", "http://78.31.82.246/mjpg/video.mjpg"),
             Camera("PLAYA", "Playa Levante", "http://212.170.100.189/mjpg/video.mjpg"),
@@ -44,8 +49,21 @@ class CCTVView:
             Camera("MADRID", "Madrid, ESP", "http://83.48.75.113:8320/axis-cgi/mjpg/video.cgi"),
             Camera("STELVIO", "Stelvio Pass", "https://jpeg.popso.it/webcam/webcam_online/stelviolive_05.jpg"),
             Camera("MARINA", "Fair Harbor", "http://webcam.fairharbormarina.com/nphMotionJpeg?Resolution=640x480"),
-            Camera("SEATTLE1", "MLK & Jackson", "http://www.seattle.gov/trafficcams/images/MLK_S_Jackson_NS.jpg"),
-            Camera("SEATTLE2", "4th & Battery", "http://www.seattle.gov/trafficcams/images/4_Battery_NS.jpg"),
+
+            # Seattle SDOT traffic cams — curated, validated 2026-04-27
+            Camera("SEA-DENNY1", "1st & Denny",         "https://www.seattle.gov/trafficcams/images/1_N_Denny_EW.jpg"),
+            Camera("SEA-DENNY3", "3rd & Denny",         "https://www.seattle.gov/trafficcams/images/3_N_Denny_EW.jpg"),
+            Camera("SEA-DENNY6", "6th & Denny",         "https://www.seattle.gov/trafficcams/images/6_N_Denny_NWC.jpg"),
+            Camera("SEA-BATT2",  "2nd & Battery",       "https://www.seattle.gov/trafficcams/images/2_Battery_NS.jpg"),
+            Camera("SEA-BATT4",  "4th & Battery",       "https://www.seattle.gov/trafficcams/images/4_Battery_EW.jpg"),
+            Camera("SEA-ELL-B",  "Elliott & Broad",     "https://www.seattle.gov/trafficcams/images/Elliott_Broad_NS.jpg"),
+            Camera("SEA-WEST",   "Western & Elliott",   "https://www.seattle.gov/trafficcams/images/Western_Elliott_NS.jpg"),
+            Camera("SEA-AUR-46", "Aurora & N 46th",     "https://www.seattle.gov/trafficcams/images/Aurora_N_46.jpg"),
+            Camera("SEA-AUR-85", "Aurora & N 85th",     "https://www.seattle.gov/trafficcams/images/Aurora_N_85_EW.jpg"),
+            Camera("SEA-AUR-105","Aurora & N 105th",    "https://www.seattle.gov/trafficcams/images/Aurora_N_105_EW.jpg"),
+            Camera("SEA-BRIDGE", "Bridge Way & 38th",   "https://www.seattle.gov/trafficcams/images/Bridge_N_38.jpg"),
+            Camera("SEA-MARKET", "24th NW & Market",    "https://www.seattle.gov/trafficcams/images/24_NW_Market_EW.jpg"),
+            Camera("SEA-MLK",    "MLK & S Jackson",     "https://www.seattle.gov/trafficcams/images/MLK_S_Jackson_NS.jpg"),
         ]
         
         self._load_manual_urls()
