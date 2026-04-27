@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import io
 import random
+import shutil
+import subprocess
 import threading
 import time
 import re
@@ -50,20 +52,38 @@ class CCTVView:
             Camera("STELVIO", "Stelvio Pass", "https://jpeg.popso.it/webcam/webcam_online/stelviolive_05.jpg"),
             Camera("MARINA", "Fair Harbor", "http://webcam.fairharbormarina.com/nphMotionJpeg?Resolution=640x480"),
 
-            # Seattle SDOT traffic cams — curated, validated 2026-04-27
-            Camera("SEA-DENNY1", "1st & Denny",         "https://www.seattle.gov/trafficcams/images/1_N_Denny_EW.jpg"),
-            Camera("SEA-DENNY3", "3rd & Denny",         "https://www.seattle.gov/trafficcams/images/3_N_Denny_EW.jpg"),
-            Camera("SEA-DENNY6", "6th & Denny",         "https://www.seattle.gov/trafficcams/images/6_N_Denny_NWC.jpg"),
-            Camera("SEA-BATT2",  "2nd & Battery",       "https://www.seattle.gov/trafficcams/images/2_Battery_NS.jpg"),
-            Camera("SEA-BATT4",  "4th & Battery",       "https://www.seattle.gov/trafficcams/images/4_Battery_EW.jpg"),
-            Camera("SEA-ELL-B",  "Elliott & Broad",     "https://www.seattle.gov/trafficcams/images/Elliott_Broad_NS.jpg"),
-            Camera("SEA-WEST",   "Western & Elliott",   "https://www.seattle.gov/trafficcams/images/Western_Elliott_NS.jpg"),
-            Camera("SEA-AUR-46", "Aurora & N 46th",     "https://www.seattle.gov/trafficcams/images/Aurora_N_46.jpg"),
-            Camera("SEA-AUR-85", "Aurora & N 85th",     "https://www.seattle.gov/trafficcams/images/Aurora_N_85_EW.jpg"),
-            Camera("SEA-AUR-105","Aurora & N 105th",    "https://www.seattle.gov/trafficcams/images/Aurora_N_105_EW.jpg"),
-            Camera("SEA-BRIDGE", "Bridge Way & 38th",   "https://www.seattle.gov/trafficcams/images/Bridge_N_38.jpg"),
-            Camera("SEA-MARKET", "24th NW & Market",    "https://www.seattle.gov/trafficcams/images/24_NW_Market_EW.jpg"),
-            Camera("SEA-MLK",    "MLK & S Jackson",     "https://www.seattle.gov/trafficcams/images/MLK_S_Jackson_NS.jpg"),
+            # Seattle SDOT live HLS feeds — Wowza endpoint behind the
+            # web.seattle.gov/Travelers viewer. Each URL is the HLS
+            # playlist; ffmpeg transcodes to MJPEG for the pygame
+            # renderer (see _hls_loop).
+            Camera("SEA-DENNY1", "1st & Denny",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/1_N_Denny_EW.stream/playlist.m3u8"),
+            Camera("SEA-DENNY3", "3rd & Denny",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/3_N_Denny_EW.stream/playlist.m3u8"),
+            Camera("SEA-DENNY6", "6th & Denny",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/6_N_Denny_NWC.stream/playlist.m3u8"),
+            Camera("SEA-BATT2",  "2nd & Battery",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/2_Battery_NS.stream/playlist.m3u8"),
+            Camera("SEA-BATT4",  "4th & Battery",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/4_Battery_EW.stream/playlist.m3u8"),
+            Camera("SEA-ELL-B",  "Elliott & Broad",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/Elliott_Broad_NS.stream/playlist.m3u8"),
+            Camera("SEA-WEST",   "Western & Elliott",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/Western_Elliott_NS.stream/playlist.m3u8"),
+            Camera("SEA-AUR-36", "Aurora & N 36th",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/Aurora_N_36.stream/playlist.m3u8"),
+            Camera("SEA-AUR-46", "Aurora & N 46th",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/Aurora_N_46.stream/playlist.m3u8"),
+            Camera("SEA-AUR-85", "Aurora & N 85th",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/Aurora_N_85_EW.stream/playlist.m3u8"),
+            Camera("SEA-AUR-105","Aurora & N 105th",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/Aurora_N_105_EW.stream/playlist.m3u8"),
+            Camera("SEA-BRIDGE", "Bridge Way & 38th",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/Bridge_N_38.stream/playlist.m3u8"),
+            Camera("SEA-MARKET", "24th NW & Market",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/24_NW_Market_EW.stream/playlist.m3u8"),
+            Camera("SEA-MLK",    "MLK & S Jackson",
+                   "https://61e0c5d388c2e.streamlock.net:443/live/MLK_S_Jackson_NS.stream/playlist.m3u8"),
         ]
         
         self._load_manual_urls()
@@ -120,20 +140,117 @@ class CCTVView:
         self._fetch_thread = threading.Thread(target=self._fetch_loop, daemon=True)
         self._fetch_thread.start()
 
+    def _hls_loop(self, cam, current_idx, cam_ip) -> None:
+        """HLS streams (.m3u8) — pygame can't decode HLS directly, so we
+        spawn ffmpeg as a transcoder: HLS in, low-fps low-quality MJPEG
+        out on stdout. Then we reuse the same JPEG-marker parser the
+        MJPEG branch uses. Pi 4 software-decodes h264 fine at 540x380."""
+        if not shutil.which("ffmpeg"):
+            self.error_msg = "ffmpeg not installed"
+            time.sleep(2)
+            return
+
+        cmd = [
+            "ffmpeg",
+            "-loglevel", "error",
+            "-hide_banner",
+            "-fflags", "nobuffer",
+            "-flags", "low_delay",
+            "-probesize", "32",
+            "-analyzeduration", "0",
+            "-user_agent", "Mozilla/5.0",
+            "-headers", "Referer: https://web.seattle.gov/\r\n",
+            "-i", cam.url,
+            "-vf", f"scale={self.view_w}:{self.view_h}:force_original_aspect_ratio=decrease,"
+                   f"pad={self.view_w}:{self.view_h}:(ow-iw)/2:(oh-ih)/2",
+            "-r", "12",          # 12 fps is plenty for traffic cams
+            "-q:v", "6",         # mid-quality JPEG (1=best, 31=worst)
+            "-an",               # no audio
+            "-f", "mjpeg",
+            "pipe:1",
+        ]
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except Exception as e:
+            self.error_msg = f"ffmpeg launch: {e}"
+            return
+
+        self.is_loading = False
+        buf = bytearray()
+        last_fps_check = time.time()
+        frames_this_sec = 0
+        try:
+            while not self._stop_thread and self.selected == current_idx:
+                chunk = proc.stdout.read(32768) if proc.stdout else b""
+                if not chunk:
+                    err = proc.stderr.read(512).decode("utf-8", "replace") \
+                        if proc.stderr else ""
+                    if err:
+                        self.error_msg = err.split("\n", 1)[0][:60]
+                    break
+                buf.extend(chunk)
+                while True:
+                    a = buf.find(b"\xff\xd8")
+                    b = buf.find(b"\xff\xd9", a + 2)
+                    if a == -1 or b == -1:
+                        break
+                    jpg = bytes(buf[a:b + 2])
+                    del buf[:b + 2]
+                    try:
+                        raw_surf = pygame.image.load(io.BytesIO(jpg))
+                        if self.zoom > 1:
+                            w, h = raw_surf.get_size()
+                            cw, ch = w // self.zoom, h // self.zoom
+                            cx, cy = (w - cw) // 2, (h - ch) // 2
+                            raw_surf = raw_surf.subsurface((cx, cy, cw, ch))
+                        final_surf = pygame.transform.scale(
+                            raw_surf, (self.view_w, self.view_h))
+                        self._frame_buffer.append((final_surf, cam_ip))
+                        frames_this_sec += 1
+                        now = time.time()
+                        if now - last_fps_check > 1.0:
+                            self.fps = frames_this_sec
+                            frames_this_sec = 0
+                            last_fps_check = now
+                    except Exception:
+                        pass
+                if len(buf) > 1024 * 1024:
+                    buf = bytearray()
+        finally:
+            try:
+                proc.terminate()
+                proc.wait(timeout=1)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
     def _fetch_loop(self) -> None:
         CHUNK_SIZE = 32768
         MAX_BUF = 1024 * 1024
-        
+
         while not self._stop_thread:
             cam = self.cameras[self.selected]
             current_idx = self.selected
             self.is_loading = True
             self.error_msg = None
-            
+
+            ip_match = re.search(r'://([^:/]+)', cam.url)
+            cam_ip = ip_match.group(1) if ip_match else "UNKNOWN"
+
+            # HLS (.m3u8) gets transcoded by ffmpeg — handle that first
+            # so we don't try to GET the playlist as if it were MJPEG.
+            if cam.url.lower().split("?", 1)[0].endswith(".m3u8"):
+                self._hls_loop(cam, current_idx, cam_ip)
+                continue
+
             try:
-                ip_match = re.search(r'://([^:/]+)', cam.url)
-                cam_ip = ip_match.group(1) if ip_match else "UNKNOWN"
-                
                 # Check stream type with redirects followed
                 content_type = ""
                 try:
