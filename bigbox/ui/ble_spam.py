@@ -38,6 +38,8 @@ class BLESpamView:
         self.cursor = 0
         self.error_msg = ""
         self.packets_sent = 0
+        self.iface_idx = 0
+        self.interfaces = ["hci0", "hci1"]
         
         self._stop_event = threading.Event()
         self._spam_thread: threading.Thread | None = None
@@ -55,6 +57,8 @@ class BLESpamView:
             self.cursor = (self.cursor - 1) % len(PROFILES)
         elif ev.button is Button.DOWN and not self.running:
             self.cursor = (self.cursor + 1) % len(PROFILES)
+        elif ev.button is Button.X and not self.running:
+            self.iface_idx = (self.iface_idx + 1) % len(self.interfaces)
         elif ev.button is Button.A:
             if self.running:
                 self._stop()
@@ -79,7 +83,7 @@ class BLESpamView:
         try:
             # Open raw HCI socket
             sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
-            sock.bind((0,)) # hci0
+            sock.bind((self.iface_idx,)) # Dynamic interface (0=hci0, 1=hci1)
 
             # 1. Reset Bluetooth controller to a known clean state
             self._hci_send_cmd(sock, 0x03, 0x0003, b"") # Reset
@@ -149,6 +153,10 @@ class BLESpamView:
         s_surf = self.body_font.render(status_text, True, status_color)
         surf.blit(s_surf, (theme.PADDING, 60))
 
+        iface_text = f"IFACE: {self.interfaces[self.iface_idx]}"
+        if_surf = self.body_font.render(iface_text, True, theme.ACCENT)
+        surf.blit(if_surf, (theme.SCREEN_W - theme.PADDING - if_surf.get_width(), 60))
+
         if self.error_msg:
             e_surf = self.body_font.render(self.error_msg, True, theme.ERR)
             surf.blit(e_surf, (theme.PADDING, 90))
@@ -176,5 +184,5 @@ class BLESpamView:
             m_surf = self.body_font.render(msg, True, theme.FG)
             surf.blit(m_surf, (theme.PADDING, theme.SCREEN_H - 80))
 
-        hint = self.body_font.render("A: Toggle Attack  UP/DN: Select  B: Back", True, theme.FG_DIM)
+        hint = self.body_font.render("A: Toggle Attack  X: Cycle Iface  UP/DN: Select  B: Back", True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
