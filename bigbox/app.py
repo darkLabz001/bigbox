@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, DeadDropView, BBSView, BLEChatView, OnionChatView, TerminalView, UpdateView, WifiMultiToolView, WardriveView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, DeadDropView, BBSView, BLEChatView, OnionChatView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView
 
 
 class App:
@@ -50,6 +50,7 @@ class App:
         self.ble_view: BLEChatView | None = None
         self.onion_view: OnionChatView | None = None
         self.terminal_view: TerminalView | None = None
+        self.theme_manager_view: ThemeManagerView | None = None
         self.wardrive_view: WardriveView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
@@ -191,6 +192,9 @@ class App:
     def show_terminal(self) -> None:
         self.terminal_view = TerminalView()
 
+    def show_theme_manager(self) -> None:
+        self.theme_manager_view = ThemeManagerView()
+
     def show_update(self, title: str, argv: list[str]) -> None:
         view = UpdateView(title, "")
         self.update_view = view
@@ -219,6 +223,7 @@ class App:
         self.ble_view = None
         self.onion_view = None
         self.terminal_view = None
+        self.theme_manager_view = None
         self.wardrive_view = None
 
     def toast(self, msg: str) -> None:
@@ -322,6 +327,10 @@ class App:
                 self.terminal_view.render(screen)
                 if self.terminal_view.dismissed:
                     self.terminal_view = None
+            elif self.theme_manager_view is not None:
+                self.theme_manager_view.render(screen)
+                if self.theme_manager_view.dismissed:
+                    self.theme_manager_view = None
             elif self.wardrive_view is not None:
                 self.wardrive_view.render(screen)
                 if self.wardrive_view.dismissed:
@@ -465,6 +474,10 @@ class App:
 
         if self.terminal_view is not None:
             self.terminal_view.handle(bev, self)
+            return
+
+        if self.theme_manager_view is not None:
+            self.theme_manager_view.handle(bev, self)
             return
 
         if self.wardrive_view is not None:

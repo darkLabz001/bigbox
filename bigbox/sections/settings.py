@@ -54,6 +54,10 @@ def _terminal(ctx: SectionContext) -> None:
     ctx.show_terminal()
 
 
+def _theme_manager(ctx: SectionContext) -> None:
+    ctx.show_theme_manager()
+
+
 def _update(ctx: SectionContext) -> None:
     # Always resolve the script via the package layout, never via cwd.
     from pathlib import Path
@@ -69,6 +73,7 @@ def build() -> Section:
         background_img=load_background("settings"),
         actions=[
             Action("Connect to Wi-Fi", _wifi_connect, "scan, select, save a network"),
+            Action("Theme Manager", _theme_manager, "install and manage themes"),
             Action("Bash Terminal", _terminal, "full root shell with OSK"),
             Action("Check for updates (OTA)", _update),
             Action("View Flock Loot", _view_loot, "intel gathered from FlockSeeker"),

@@ -1,0 +1,17 @@
+{
+    "name": "Template Theme",
+    "author": "Your Name",
+    "colors": {
+        "BG": "#0A0C12",
+        "BG_ALT": "#121620",
+        "FG": "#DCE2EC",
+        "FG_DIM": "#828C9E",
+        "ACCENT": "#5AE6AA",
+        "ACCENT_DIM": "#286E50",
+        "WARN": "#F0B446",
+        "ERR": "#EB5A5A",
+        "DIVIDER": "#282E3C",
+        "SELECTION": "#5AE6AA",
+        "SELECTION_BG": "#183C30"
+    }
+}
