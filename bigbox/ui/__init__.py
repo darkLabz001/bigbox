@@ -10,6 +10,7 @@ from bigbox.ui.flock import FlockScannerView
 from bigbox.ui.wifi_connect import WifiConnectView
 from bigbox.ui.cam_scanner import CamScannerView
 from bigbox.ui.wifi_attack import WifiAttackView
+from bigbox.ui.wifi_multi_tool import WifiMultiToolView
 from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.update import UpdateView
@@ -31,6 +32,7 @@ __all__ = [
     "WifiConnectView",
     "CamScannerView",
     "WifiAttackView",
+    "WifiMultiToolView",
     "OfflineCrackerView",
     "MediaPlayerView",
     "UpdateView",

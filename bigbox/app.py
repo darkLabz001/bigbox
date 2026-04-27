@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, UpdateView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, UpdateView, WifiMultiToolView
 
 
 class App:
@@ -41,6 +41,7 @@ class App:
         self.wifi_view: WifiConnectView | None = None
         self.cam_scan_view: CamScannerView | None = None
         self.wifi_attack_view: WifiAttackView | None = None
+        self.wifi_multi_view: WifiMultiToolView | None = None
         self.cracker_view: OfflineCrackerView | None = None
         self.media_view: MediaPlayerView | None = None
         self.show_status = True
@@ -146,6 +147,9 @@ class App:
     def show_wifi_attack(self) -> None:
         self.wifi_attack_view = WifiAttackView()
 
+    def show_wifi_multi_tool(self) -> None:
+        self.wifi_multi_view = WifiMultiToolView()
+
     def show_cracker(self) -> None:
         self.cracker_view = OfflineCrackerView()
 
@@ -171,6 +175,7 @@ class App:
         self.wifi_view = None
         self.cam_scan_view = None
         self.wifi_attack_view = None
+        self.wifi_multi_view = None
         self.cracker_view = None
         self.media_view = None
 
@@ -239,6 +244,10 @@ class App:
                 self.wifi_attack_view.render(screen)
                 if self.wifi_attack_view.dismissed:
                     self.wifi_attack_view = None
+            elif self.wifi_multi_view is not None:
+                self.wifi_multi_view.render(screen)
+                if self.wifi_multi_view.dismissed:
+                    self.wifi_multi_view = None
             elif self.cracker_view is not None:
                 self.cracker_view.render(screen)
                 if self.cracker_view.dismissed:
@@ -350,6 +359,10 @@ class App:
 
         if self.wifi_attack_view is not None:
             self.wifi_attack_view.handle(bev, self)
+            return
+
+        if self.wifi_multi_view is not None:
+            self.wifi_multi_view.handle(bev, self)
             return
 
         if self.cracker_view is not None:

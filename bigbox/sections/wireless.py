@@ -23,6 +23,10 @@ def _handshake_deauth(ctx: SectionContext) -> None:
     ctx.show_wifi_attack()
 
 
+def _wifi_multi_tool(ctx: SectionContext) -> None:
+    ctx.show_wifi_multi_tool()
+
+
 def _crack_handshake(ctx: SectionContext) -> None:
     ctx.show_cracker()
 
@@ -45,6 +49,7 @@ def build() -> Section:
         icon_img=load_icon("wireless"),
         background_img=load_background("wireless"),
         actions=[
+            Action("WiFi Multi-Tool", _wifi_multi_tool, "integrated scanner & attacks"),
             Action("Handshake / Deauth", _handshake_deauth, "capture WPA handshakes"),
             Action("Crack Handshake (offline)", _crack_handshake, "aircrack-ng + wordlist"),
             Action("List Wi-Fi interfaces", _wifi_interfaces),
