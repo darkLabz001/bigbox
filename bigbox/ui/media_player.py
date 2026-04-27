@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import time
 from typing import TYPE_CHECKING
 
 import pygame
@@ -16,12 +18,20 @@ if TYPE_CHECKING:
     from bigbox.app import App
 
 
+# mpv's combined stdout+stderr lands here. We tail this when a launch
+# fails so the on-screen error tells the user *why* instead of the old
+# "Error: VLC failed to start." stub.
+MPV_LOG = "/tmp/bigbox-mpv.log"
+
+
 class MediaPlayerView:
     def __init__(self, media_dir: str = "media") -> None:
         self.media_dir = media_dir
         self.dismissed = False
         self.playing_file: str | None = None
         self.proc: subprocess.Popen | None = None
+        self.error_msg: str | None = None
+        self._launch_time: float = 0.0
         
         try:
             if not os.path.exists(self.media_dir):
@@ -63,38 +73,79 @@ class MediaPlayerView:
 
     def _play(self, filename: str) -> None:
         self.playing_file = filename
+        self.error_msg = None
+        self.proc = None
         full_path = os.path.abspath(os.path.join(self.media_dir, filename))
 
         print(f"[media] Playing: {full_path}")
 
-        # mpv runs as root fine and uses ALSA directly when forced with
-        # --ao=alsa, so we skip VLC's sudo / Xauthority dance entirely.
+        if not shutil.which("mpv"):
+            self.error_msg = "mpv not installed (apt install mpv)"
+            print(f"[media] {self.error_msg}")
+            return
+        if not os.path.exists(full_path):
+            self.error_msg = f"file not found: {full_path}"
+            print(f"[media] {self.error_msg}")
+            return
+
+        # Bigbox runs as root under xinit, so mpv inherits the X session
+        # and ALSA access without any sudo / Xauthority gymnastics.
         env = os.environ.copy()
         env.setdefault("DISPLAY", ":0")
         env.setdefault("XAUTHORITY", "/root/.Xauthority")
 
+        # Capture stderr+stdout to a log file so a failed launch leaves
+        # diagnostics behind.
+        try:
+            log_fd: int | object = open(MPV_LOG, "w")
+        except Exception:
+            log_fd = subprocess.DEVNULL
+
         cmd = [
             "mpv",
-            "--fs",                  # fullscreen
-            "--ao=alsa",             # force ALSA backend (no PulseAudio session)
-            "--hwdec=auto-safe",     # hardware decode where supported (Pi v4l2m2m)
-            "--no-osc",              # no on-screen controller; we have hw buttons
-            "--really-quiet",        # suppress mpv's own status text
+            "--fs",                          # fullscreen
+            "--no-border",                   # no WM decorations under bare xinit
+            "--ontop",                       # raise above pygame surface
+            "--cursor-autohide=always",
+            "--ao=alsa",                     # ALSA, no PulseAudio session req'd
+            "--hwdec=auto-safe",             # v4l2m2m on Pi 4 where available
+            "--no-osc",                      # bigbox owns the controls
+            "--no-input-default-bindings",   # don't react to keyboard
+            "--really-quiet",
             full_path,
         ]
         try:
             self.proc = subprocess.Popen(
                 cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,    # never read from controlling tty
+                stdout=log_fd,
+                stderr=subprocess.STDOUT,
                 env=env,
             )
+            self._launch_time = time.time()
         except FileNotFoundError:
-            print("[media] mpv not installed (apt install mpv)")
+            self.error_msg = "mpv not found in PATH"
             self.proc = None
         except Exception as e:
-            print(f"[media] mpv launch error: {e}")
+            self.error_msg = f"launch failed: {type(e).__name__}: {e}"
             self.proc = None
+        finally:
+            # We don't need our handle to the log file — child has it.
+            if log_fd is not subprocess.DEVNULL:
+                try:
+                    log_fd.close()  # type: ignore[union-attr]
+                except Exception:
+                    pass
+
+    def _read_mpv_error(self) -> str:
+        try:
+            with open(MPV_LOG, "r") as f:
+                tail = [ln.strip() for ln in f.read().strip().splitlines() if ln.strip()]
+            if tail:
+                return tail[-1][:80]
+        except Exception:
+            pass
+        return ""
 
     def _stop(self) -> None:
         if self.proc:
@@ -135,12 +186,25 @@ class MediaPlayerView:
             print(f"[media] Handle error: {e}")
 
     def render(self, surf: pygame.Surface) -> None:
-        # Check if process finished
+        # Check if process finished. If it died within 2s of launch we
+        # treat that as a failure and pull the reason from the log so
+        # the user sees an actionable error instead of a black screen.
         if self.playing_file and self.proc:
-            if self.proc.poll() is not None:
-                print("[media] Playback finished naturally")
-                self.playing_file = None
-                self.proc = None
+            rc = self.proc.poll()
+            if rc is not None:
+                quick_exit = (time.time() - self._launch_time) < 2.0
+                if rc != 0 or quick_exit:
+                    self.error_msg = (
+                        self._read_mpv_error()
+                        or f"mpv exited (code {rc})"
+                    )
+                    print(f"[media] mpv error: {self.error_msg}")
+                    self.proc = None
+                else:
+                    print("[media] Playback finished naturally")
+                    self.playing_file = None
+                    self.proc = None
+                    self.error_msg = None
 
         try:
             surf.fill(theme.BG)
@@ -165,9 +229,21 @@ class MediaPlayerView:
                 icon = self.play_font.render("▶", True, theme.ACCENT)
                 surf.blit(icon, (center_x - icon.get_width() // 2, center_y - icon.get_height() // 2 + 20))
                 
-                msg = "Playing in background..." if self.proc else "Error: VLC failed to start."
-                color = theme.FG_DIM if self.proc else theme.ERR
-                hint = self.hint_font.render(f"{msg} Press A or B to return.", True, color)
+                if self.proc:
+                    msg = "Playing in background... Press A or B to return."
+                    color = theme.FG_DIM
+                else:
+                    err = self.error_msg or "Player failed to start."
+                    msg = f"ERROR: {err}  (B to return)"
+                    color = theme.ERR
+                hint = self.hint_font.render(msg, True, color)
+                # Truncate if too wide to fit
+                max_w = theme.SCREEN_W - 2 * theme.PADDING
+                if hint.get_width() > max_w:
+                    truncated = msg
+                    while truncated and self.hint_font.size(truncated)[0] > max_w:
+                        truncated = truncated[:-1]
+                    hint = self.hint_font.render(truncated, True, color)
                 surf.blit(hint, (center_x - hint.get_width() // 2, box.bottom + 20))
                 
             else:
