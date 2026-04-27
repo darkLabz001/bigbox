@@ -134,8 +134,36 @@ def _typewriter(text: str, t: float, t_start: float, duration: float) -> str:
     return text[:n]
 
 
-def play(screen: pygame.Surface, total_seconds: float = 3.6) -> None:
-    """Run the splash on `screen` for `total_seconds`, then return."""
+# Cyberpunk-style boot log lines that scroll on after the title appears.
+# Timed to fill the gap until the audio chime (~15s) ends. Each gets
+# typewritten one at a time.
+_BOOT_LOG = [
+    "[OK]   kernel 6.12.75 / aarch64",
+    "[OK]   gpio bus initialized",
+    "[OK]   alsa: 3.5mm out / 100%",
+    "[OK]   nl80211 wireless stack",
+    "[OK]   bluez bluetooth stack",
+    "[OK]   aircrack-ng suite ready",
+    "[OK]   wigle uplink: provisioned",
+    "[OK]   gps watchdog: armed",
+    "[OK]   web ui: 0.0.0.0:8080",
+    "[OK]   arasaka net: secure",
+    "[INIT] handing control to user...",
+]
+
+
+def play(screen: pygame.Surface, total_seconds: float = 14.5) -> None:
+    """Run the splash on `screen` for `total_seconds`, then return.
+
+    Default is 14.5s to match the bundled boot.mp3 chime. The visible
+    sequence is:
+      0.0 - 0.6 s   CRT power-on sweep
+      0.6 - 1.4 s   Arasaka diamond reveal
+      1.4 - 2.4 s   "WELCOME TO DARKBOX" typewriter
+      2.0 - 2.5 s   "BOOTSTRAPPING SECURE NODE..." subtitle
+      3.0 - 13.0 s  boot log lines roll on, one every ~0.9 s
+      13.0 +        title + log hold, fade out
+    """
     audio_path = _find_audio()
     audio_proc = _play_audio_async(audio_path) if audio_path else None
 
@@ -154,11 +182,21 @@ def play(screen: pygame.Surface, total_seconds: float = 3.6) -> None:
         f_corp = pygame.font.Font(None, 18)
     except Exception:
         f_corp = pygame.font.SysFont("monospace", 14)
+    try:
+        f_log = pygame.font.Font(None, 18)
+    except Exception:
+        f_log = pygame.font.SysFont("monospace", 14)
 
     clock = pygame.time.Clock()
     start = time.time()
     title_text = "WELCOME TO DARKBOX"
     sub_text = "BOOTSTRAPPING SECURE NODE..."
+
+    # Boot log timing: first line appears at t=3.0, one every 0.9s, with
+    # a per-line typewrite of 0.3s.
+    log_start = 3.0
+    log_step = 0.9
+    log_typewrite = 0.3
 
     while True:
         t = time.time() - start
@@ -179,23 +217,54 @@ def play(screen: pygame.Surface, total_seconds: float = 3.6) -> None:
                 pygame.draw.rect(screen, (alpha, 0, 0),
                                  (ring, ring, w - 2 * ring, h - 2 * ring), 1)
 
-        # Stage 2 — Arasaka mark (0.6..1.4s)
+        # Stage 2 — Arasaka mark (0.6..1.4s, then holds)
         if t >= 0.6:
-            mark_progress = (t - 0.6) / 0.8
-            _draw_arasaka_mark(screen, cx, cy - 40, 70,
+            mark_progress = min(1.0, (t - 0.6) / 0.8)
+            # After the mark fully draws, sit it slightly higher so the
+            # boot log has room beneath the title.
+            mark_y = cy - 80 if t > 3.0 else cy - 40
+            _draw_arasaka_mark(screen, cx, mark_y, 60,
                                mark_progress, color=ARA_RED)
 
         # Stage 3 — Title typewriter (1.4..2.4s)
+        title_y = cy + 10 if t > 3.0 else cy + 50
         if t >= 1.4:
             shown = _typewriter(title_text, t, 1.4, 1.0)
             ts = f_title.render(shown, True, ARA_RED_BRIGHT)
-            screen.blit(ts, (cx - ts.get_width() // 2, cy + 50))
+            screen.blit(ts, (cx - ts.get_width() // 2, title_y))
 
             # Subtitle below title
             if t >= 2.0:
                 sub_shown = _typewriter(sub_text, t, 2.0, 0.5)
                 ss = f_sub.render(sub_shown, True, ARA_RED)
-                screen.blit(ss, (cx - ss.get_width() // 2, cy + 110))
+                screen.blit(ss, (cx - ss.get_width() // 2, title_y + 60))
+
+        # Stage 4 — Boot log roll (3.0s onwards)
+        if t >= log_start:
+            log_x = 60
+            log_y = cy + 100
+            line_h = f_log.get_linesize() + 2
+            for i, line in enumerate(_BOOT_LOG):
+                line_t = log_start + i * log_step
+                if t < line_t:
+                    break
+                shown = _typewriter(line, t, line_t, log_typewrite)
+                # First two chars get a brighter color (the [OK]/[INIT] tag)
+                tag_end = shown.find("]")
+                if tag_end != -1 and tag_end < len(shown):
+                    tag = shown[: tag_end + 1]
+                    rest = shown[tag_end + 1:]
+                    color = (ARA_RED_BRIGHT if "INIT" in tag or "ERR" in tag
+                             else ARA_BONE)
+                    tag_surf = f_log.render(tag, True, color)
+                    rest_surf = f_log.render(rest, True, ARA_RED_DIM)
+                    screen.blit(tag_surf, (log_x, log_y + i * line_h))
+                    screen.blit(rest_surf,
+                                (log_x + tag_surf.get_width(),
+                                 log_y + i * line_h))
+                else:
+                    ls = f_log.render(shown, True, ARA_RED_DIM)
+                    screen.blit(ls, (log_x, log_y + i * line_h))
 
         # Bottom-left version stamp
         stamp = f_corp.render("[ARASAKA::DARKBOX::v0.1]", True, ARA_RED_DIM)
