@@ -13,6 +13,7 @@ import os
 import shutil
 
 from bigbox.events import Button, ButtonEvent
+from bigbox import wigle as wigle_mod
 
 if TYPE_CHECKING:
     from bigbox.app import App
@@ -111,3 +112,69 @@ async def frame_generator():
 @app.get("/video_feed")
 async def video_feed():
     return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+# ---------------- Wardrive / WiGLE -----------------------------------------
+
+WARDRIVE_DIR = Path("loot/wardrive")
+
+
+@app.get("/wigle/status")
+async def wigle_status():
+    creds = wigle_mod.load_creds()
+    if not creds:
+        return {"logged_in": False}
+    return {"logged_in": True, "api_name": creds.api_name}
+
+
+@app.post("/wigle/login")
+async def wigle_login(api_name: str = Form(...), api_token: str = Form(...)):
+    api_name = api_name.strip()
+    api_token = api_token.strip()
+    if not api_name or not api_token:
+        raise HTTPException(status_code=400, detail="api_name and api_token required")
+    creds = wigle_mod.WigleCreds(api_name=api_name, api_token=api_token)
+    ok, msg = wigle_mod.validate_creds(creds)
+    if not ok:
+        raise HTTPException(status_code=401, detail=msg)
+    try:
+        wigle_mod.save_creds(creds)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"could not persist creds: {e}")
+    return {"logged_in": True, "api_name": api_name, "message": msg}
+
+
+@app.post("/wigle/logout")
+async def wigle_logout():
+    wigle_mod.clear_creds()
+    return {"logged_in": False}
+
+
+@app.get("/wardrive/files")
+async def wardrive_files():
+    if not WARDRIVE_DIR.is_dir():
+        return {"files": []}
+    items = []
+    for p in sorted(WARDRIVE_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+        if p.is_file() and p.suffix in (".csv", ".gz"):
+            items.append({
+                "name": p.name,
+                "size": p.stat().st_size,
+                "mtime": int(p.stat().st_mtime),
+            })
+    return {"files": items}
+
+
+@app.post("/wardrive/upload/{name}")
+async def wardrive_upload(name: str):
+    safe = os.path.basename(name)
+    target = WARDRIVE_DIR / safe
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    creds = wigle_mod.load_creds()
+    if not creds:
+        raise HTTPException(status_code=401, detail="not signed in to WiGLE")
+    ok, msg = wigle_mod.upload(target, creds)
+    if not ok:
+        raise HTTPException(status_code=502, detail=msg)
+    return {"status": "uploaded", "message": msg, "filename": safe}

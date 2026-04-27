@@ -14,6 +14,7 @@ from bigbox.ui.wifi_multi_tool import WifiMultiToolView
 from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.update import UpdateView
+from bigbox.ui.wardrive import WardriveView
 
 __all__ = [
     "Action",
@@ -36,4 +37,5 @@ __all__ = [
     "OfflineCrackerView",
     "MediaPlayerView",
     "UpdateView",
+    "WardriveView",
 ]

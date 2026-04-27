@@ -110,7 +110,36 @@
         <div class="btn btn-rect" onmousedown="press('start')" ontouchstart="press('start')">START</div>
     </div>
 
-    <div style="margin-top: 30px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px; text-align: center;">
+    <div style="margin-top: 30px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px;">
+        <h2 style="font-size: 14px; margin-bottom: 15px; text-align: center;">WARDRIVE :: WIGLE</h2>
+
+        <div id="wigleSignedOut" style="display:none;">
+            <div style="font-size:11px; color:#828ba0; margin-bottom:8px;">
+                Sign in with your WiGLE <b>API Name</b> and <b>API Token</b>
+                (mint at wigle.net/account &rarr; Show API Token).
+            </div>
+            <input type="text" id="apiName" placeholder="API Name (e.g. AID0000...)"
+                   style="width:100%; box-sizing:border-box; margin-bottom:6px; padding:8px; background:#0a0c12; color:#5ae6aa; border:1px solid #282e3c; font-family:monospace;">
+            <input type="password" id="apiToken" placeholder="API Token"
+                   style="width:100%; box-sizing:border-box; margin-bottom:8px; padding:8px; background:#0a0c12; color:#5ae6aa; border:1px solid #282e3c; font-family:monospace;">
+            <button onclick="wigleLogin()"
+                    style="background:transparent; border:1px solid #5ae6aa; color:#5ae6aa; padding:8px 18px; cursor:pointer; font-family:monospace; width:100%;">
+                SIGN IN
+            </button>
+            <div id="wigleLoginMsg" style="margin-top:8px; font-size:11px; color:#eb5a5a;"></div>
+        </div>
+
+        <div id="wigleSignedIn" style="display:none;">
+            <div style="font-size:12px; color:#5ae6aa;">
+                Signed in as <span id="wigleUser">?</span>
+                <a href="#" onclick="wigleLogout(); return false;"
+                   style="color:#828ba0; margin-left:8px;">[sign out]</a>
+            </div>
+            <div id="wardriveFiles" style="margin-top:14px; font-size:12px;"></div>
+        </div>
+    </div>
+
+    <div style="margin-top: 20px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px; text-align: center;">
         <h2 style="font-size: 14px; margin-bottom: 15px;">UPLOAD MEDIA</h2>
 
         <div style="margin-bottom: 12px; font-size: 12px;">
@@ -199,6 +228,117 @@
 
         // Populate the library list on first paint.
         refreshLibrary();
+
+        // ---------------- WiGLE / Wardrive ---------------------------------
+        function fmtSize(n) {
+            if (n < 1024) return n + 'B';
+            if (n < 1024*1024) return (n/1024).toFixed(0) + 'KB';
+            return (n/1024/1024).toFixed(1) + 'MB';
+        }
+
+        function refreshWigleStatus() {
+            fetch('/wigle/status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.logged_in) {
+                        document.getElementById('wigleSignedIn').style.display = 'block';
+                        document.getElementById('wigleSignedOut').style.display = 'none';
+                        document.getElementById('wigleUser').innerText = data.api_name;
+                        refreshWardriveFiles();
+                    } else {
+                        document.getElementById('wigleSignedIn').style.display = 'none';
+                        document.getElementById('wigleSignedOut').style.display = 'block';
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function wigleLogin() {
+            const name = document.getElementById('apiName').value.trim();
+            const token = document.getElementById('apiToken').value.trim();
+            const msg = document.getElementById('wigleLoginMsg');
+            if (!name || !token) {
+                msg.style.color = '#eb5a5a';
+                msg.innerText = 'API Name and API Token required.';
+                return;
+            }
+            const fd = new FormData();
+            fd.append('api_name', name);
+            fd.append('api_token', token);
+            msg.style.color = '#828ba0';
+            msg.innerText = 'verifying with wigle.net...';
+            fetch('/wigle/login', {method: 'POST', body: fd})
+                .then(r => r.json().then(j => ({ok: r.ok, body: j})))
+                .then(({ok, body}) => {
+                    if (ok) {
+                        msg.style.color = '#5ae6aa';
+                        msg.innerText = body.message || 'signed in';
+                        document.getElementById('apiToken').value = '';
+                        refreshWigleStatus();
+                    } else {
+                        msg.style.color = '#eb5a5a';
+                        msg.innerText = body.detail || 'login failed';
+                    }
+                })
+                .catch(e => {
+                    msg.style.color = '#eb5a5a';
+                    msg.innerText = 'request failed: ' + e;
+                });
+        }
+
+        function wigleLogout() {
+            fetch('/wigle/logout', {method: 'POST'})
+                .then(() => refreshWigleStatus());
+        }
+
+        function refreshWardriveFiles() {
+            fetch('/wardrive/files')
+                .then(r => r.json())
+                .then(data => {
+                    const box = document.getElementById('wardriveFiles');
+                    const items = data.files || [];
+                    if (!items.length) {
+                        box.innerHTML = '<div style="color:#828ba0;">No sessions yet — start one from Recon &rarr; Wardriving.</div>';
+                        return;
+                    }
+                    let html = '<div style="color:#5ae6aa; margin-bottom:6px;">[ SESSIONS ]</div>';
+                    for (const f of items) {
+                        const safe = f.name.replace(/[<>&]/g, '');
+                        html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px dotted #282e3c;">'
+                              + '<span>' + safe + ' <span style="color:#828ba0;">(' + fmtSize(f.size) + ')</span></span>'
+                              + '<button onclick="wigleUpload(\'' + encodeURIComponent(f.name) + '\', this)"'
+                              + ' style="background:transparent; border:1px solid #5ae6aa; color:#5ae6aa; padding:4px 10px; cursor:pointer; font-family:monospace; font-size:11px;">UPLOAD</button>'
+                              + '</div>';
+                    }
+                    box.innerHTML = html;
+                })
+                .catch(() => {});
+        }
+
+        function wigleUpload(name, btn) {
+            btn.disabled = true;
+            btn.innerText = 'UPLOADING...';
+            fetch('/wardrive/upload/' + name, {method: 'POST'})
+                .then(r => r.json().then(j => ({ok: r.ok, body: j})))
+                .then(({ok, body}) => {
+                    if (ok) {
+                        btn.innerText = 'OK';
+                        btn.style.color = '#5ae6aa';
+                    } else {
+                        btn.innerText = 'FAIL';
+                        btn.style.color = '#eb5a5a';
+                        btn.title = body.detail || 'upload failed';
+                    }
+                    setTimeout(() => { btn.innerText = 'UPLOAD'; btn.disabled = false; btn.style.color = '#5ae6aa'; }, 4000);
+                })
+                .catch(e => {
+                    btn.innerText = 'ERR';
+                    btn.disabled = false;
+                });
+        }
+
+        refreshWigleStatus();
+        setInterval(refreshWardriveFiles, 30000);
         
         // Prevent zoom on double tap for iOS
         document.addEventListener('touchstart', function (event) {

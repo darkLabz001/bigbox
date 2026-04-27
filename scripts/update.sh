@@ -98,7 +98,7 @@ echo "PROGRESS: 25"
 #   (b) run a single apt install instead of one per package
 #   (c) skip the slow apt-get update too
 NEEDED=()
-for pkg in libturbojpeg0 vlc hcxdumptool hcxtools dnsmasq hostapd; do
+for pkg in libturbojpeg0 vlc mpv python3-serial rfkill hcxdumptool hcxtools dnsmasq hostapd; do
     if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "ok installed"; then
         NEEDED+=("$pkg")
     fi

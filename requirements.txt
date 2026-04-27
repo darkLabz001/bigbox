@@ -8,3 +8,4 @@ fastapi
 uvicorn
 jinja2
 python-multipart
+pyserial>=3.5
