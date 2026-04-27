@@ -106,11 +106,14 @@ class MediaPlayerView:
         except Exception:
             log_fd = subprocess.DEVNULL
 
-        # Keep flags minimal so we don't accidentally trip an early-exit
-        # path. Don't suppress mpv's own output — the log is our diagnostic
-        # surface and we display it on the result screen below.
+        # The GamePi43 image is fbdev (no /dev/dri, no Xvideo, no Vulkan,
+        # no VDPAU), so all of mpv's accelerated video outputs fail and
+        # the autoselect ends up on a backend that decodes silently with
+        # no visible window. --vo=x11 is the software X11 path; it works
+        # on every fbdev+xinit setup, just with a "legacy VO" warning.
         cmd = [
             "mpv",
+            "--vo=x11",                      # software X11 — fbdev compatible
             "--fs",                          # fullscreen
             "--cursor-autohide=always",
             "--ao=alsa,pulse,null",          # alsa first, fall back gracefully
