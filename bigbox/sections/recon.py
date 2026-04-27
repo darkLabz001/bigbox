@@ -61,6 +61,54 @@ def _wardrive(ctx: SectionContext) -> None:
     ctx.show_wardrive()
 
 
+def _username_hint(ctx: SectionContext) -> None:
+    ctx.show_result(
+        "username search",
+        "Find a username across hundreds of social sites.\n\n"
+        "Drop to a TTY (Ctrl-Alt-F2) and run:\n"
+        "    sudo apt-get install -y sherlock\n"
+        "    sherlock <username>\n\n"
+        "Output goes to ./<username>.txt with all matches.\n",
+    )
+
+
+def _email_hint(ctx: SectionContext) -> None:
+    ctx.show_result(
+        "email harvester",
+        "Pull emails / subdomains for a target domain from public sources.\n\n"
+        "Drop to a TTY (Ctrl-Alt-F2) and run:\n"
+        "    sudo apt-get install -y theharvester\n"
+        "    theHarvester -d <domain> -b all\n\n"
+        "Sources: bing, duckduckgo, github, hunter, etc.\n",
+    )
+
+
+def _phone_hint(ctx: SectionContext) -> None:
+    ctx.show_result(
+        "phone OSINT",
+        "Reverse-lookup a phone number (carrier, region, format).\n\n"
+        "Drop to a TTY (Ctrl-Alt-F2) and run:\n"
+        "    pipx install phoneinfoga\n"
+        "    phoneinfoga scan -n <number>\n",
+    )
+
+
+def _wayback(ctx: SectionContext) -> None:
+    target = "https://github.com/darkLabz001/bigbox"
+    out = run_capture([
+        "sh", "-c",
+        f"curl -s --max-time 6 'https://archive.org/wayback/available?url={target}'"
+        " | python3 -m json.tool 2>/dev/null"
+        " || echo offline",
+    ])
+    ctx.show_result(f"wayback · {target}", out)
+
+
+def _whois_repo(ctx: SectionContext) -> None:
+    out = run_capture(["sh", "-c", "whois github.com 2>&1 | head -40 || echo 'whois not installed'"])
+    ctx.show_result("whois · github.com", out)
+
+
 def build() -> Section:
     return Section(
         title="Recon",
@@ -74,6 +122,11 @@ def build() -> Section:
             Action("ARP scan", _arp_scan, "local discovery"),
             Action("CCTV Viewer", _cctv_viewer, "live monitoring"),
             Action("IP Camera Scanner", _cam_scanner, "find cameras on the LAN"),
+            Action("Username search (sherlock)", _username_hint, "OSINT"),
+            Action("Email harvester (theHarvester)", _email_hint, "OSINT"),
+            Action("Phone OSINT (phoneinfoga)", _phone_hint, "OSINT"),
+            Action("Wayback availability check", _wayback),
+            Action("WHOIS · github.com", _whois_repo),
             Action("Quick scan: localhost", _nmap_quick_self, "nmap -F"),
             Action("Whoami / kernel", _whoami),
         ],
