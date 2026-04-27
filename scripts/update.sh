@@ -79,6 +79,46 @@ LOCAL=$(git rev-parse HEAD 2>>"$LOG")
 REMOTE=$(git rev-parse "origin/$BRANCH" 2>>"$LOG")
 
 if [ "$LOCAL" = "$REMOTE" ]; then
+    # Even when git is in sync, the *running* bigbox can be older than the
+    # code on disk — happens when a previous OTA pulled new files but its
+    # deferred restart never fired (cgroup teardown race, hot-spot wifi
+    # drop, etc). Detect that case and force a restart so the user isn't
+    # stuck with stale code that "already updated" can't fix.
+    NEED_RESTART=0
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        START_EPOCH=$(systemctl show "$SERVICE_NAME" \
+                        -p ActiveEnterTimestamp --value 2>/dev/null \
+                        | xargs -I{} date -d "{}" +%s 2>/dev/null || echo 0)
+        # mtime of the most recently touched .py / .sh file in the repo
+        NEWEST_FILE_EPOCH=$(find "$REPO_DIR" -type f \
+                                \( -name '*.py' -o -name '*.sh' -o -name '*.html' -o -name '*.toml' \) \
+                                -printf '%T@\n' 2>/dev/null \
+                              | sort -nr | head -1 | cut -d. -f1)
+        NEWEST_FILE_EPOCH=${NEWEST_FILE_EPOCH:-0}
+        if [ "$NEWEST_FILE_EPOCH" -gt "$START_EPOCH" ] 2>/dev/null; then
+            NEED_RESTART=1
+        fi
+    fi
+
+    if [ "$NEED_RESTART" -eq 1 ]; then
+        echo "STATUS: Restarting bigbox to load synced code..."
+        echo "PROGRESS: 70"
+        if command -v systemd-run >/dev/null 2>&1; then
+            sudo systemd-run --quiet --unit=bigbox-ota-restart \
+                --on-active=2 /bin/systemctl restart "$SERVICE_NAME" \
+                </dev/null >>"$LOG" 2>&1 \
+              || sudo systemctl restart "$SERVICE_NAME" </dev/null >>"$LOG" 2>&1 &
+        else
+            ( sleep 2; sudo systemctl restart "$SERVICE_NAME" ) \
+                </dev/null >>"$LOG" 2>&1 &
+            disown
+        fi
+        echo "PROGRESS: 100"
+        echo "STATUS: Already synced — restart scheduled"
+        echo "Code already in sync; bigbox will reload in 2s."
+        exit 0
+    fi
+
     echo "STATUS: Already up to date"
     echo "PROGRESS: 100"
     echo "Already up to date."
