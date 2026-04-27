@@ -12,6 +12,7 @@ from bigbox.ui.cam_scanner import CamScannerView
 from bigbox.ui.wifi_attack import WifiAttackView
 from bigbox.ui.eviltwin import EvilTwinView
 from bigbox.ui.games import GamesView
+from bigbox.ui.trackers import TrackerView
 from bigbox.ui.wifi_multi_tool import WifiMultiToolView
 from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
@@ -45,6 +46,7 @@ __all__ = [
     "WifiAttackView",
     "EvilTwinView",
     "GamesView",
+    "TrackerView",
     "WifiMultiToolView",
     "OfflineCrackerView",
     "MediaPlayerView",
