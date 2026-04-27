@@ -35,7 +35,7 @@ apt-get install -y --no-install-recommends \
     alsa-utils \
     mpv \
     mgba-sdl \
-    pcsx-rearmed \
+    pcsxr \
     python3-serial rfkill \
     curl ca-certificates \
     fonts-dejavu-core

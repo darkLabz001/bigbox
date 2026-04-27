@@ -79,10 +79,11 @@ SYSTEMS: dict[str, SystemDef] = {
         rom_subdir="ps1",
         # .pbp is the eboot format; .chd is compressed. duckstation eats them all.
         extensions=(".bin", ".cue", ".iso", ".img", ".pbp", ".chd", ".ecm", ".m3u"),
-        # duckstation-nogui (qt-less) preferred; pcsx-rearmed as fallback when
-        # the user's distro doesn't have duckstation packaged.
+        # duckstation-nogui (qt-less) preferred; pcsxr / pcsx-rearmed as
+        # fallbacks. On Kali / Debian trixie the real package name is
+        # `pcsxr` (1.9.94) — `pcsx-rearmed` doesn't exist there.
         binary_candidates=("duckstation-nogui", "duckstation-qt",
-                           "pcsx_rearmed", "pcsx-rearmed"),
+                           "pcsxr", "pcsx_rearmed", "pcsx-rearmed"),
         # DuckStation flag for fullscreen launch is `-fullscreen`; pcsx-rearmed
         # runs fullscreen by default. We append both — pcsx-rearmed ignores
         # unknown flags so it's safe.
