@@ -61,36 +61,54 @@ def _wardrive(ctx: SectionContext) -> None:
     ctx.show_wardrive()
 
 
-def _username_hint(ctx: SectionContext) -> None:
-    ctx.show_result(
-        "username search",
-        "Find a username across hundreds of social sites.\n\n"
-        "Drop to a TTY (Ctrl-Alt-F2) and run:\n"
-        "    sudo apt-get install -y sherlock\n"
-        "    sherlock <username>\n\n"
-        "Output goes to ./<username>.txt with all matches.\n",
-    )
+def _username_search(ctx: SectionContext) -> None:
+    """Sherlock — search a username across hundreds of social networks.
+    Tool installed by scripts/install-osint.sh as `sherlock` on PATH."""
+    def _go(val: str | None) -> None:
+        v = (val or "").strip()
+        if not v:
+            return
+        ctx.run_streaming(
+            f"sherlock · {v}",
+            ["sherlock", "--print-found", "--no-color", "--timeout", "8", v],
+        )
+    ctx.get_input("Username (e.g. johndoe)", _go)
 
 
-def _email_hint(ctx: SectionContext) -> None:
-    ctx.show_result(
-        "email harvester",
-        "Pull emails / subdomains for a target domain from public sources.\n\n"
-        "Drop to a TTY (Ctrl-Alt-F2) and run:\n"
-        "    sudo apt-get install -y theharvester\n"
-        "    theHarvester -d <domain> -b all\n\n"
-        "Sources: bing, duckduckgo, github, hunter, etc.\n",
-    )
+def _email_harvest(ctx: SectionContext) -> None:
+    """theHarvester — emails + subdomains for a target domain. Installed
+    into the bigbox venv at /opt/bigbox/.venv/bin/theHarvester by
+    scripts/install-osint.sh. Default sources skip API-key-required ones
+    so it works out of the box."""
+    def _go(val: str | None) -> None:
+        v = (val or "").strip().lower()
+        if not v:
+            return
+        bin_path = "/opt/bigbox/.venv/bin/theHarvester"
+        ctx.run_streaming(
+            f"theHarvester · {v}",
+            [bin_path,
+             "-d", v,
+             "-l", "200",
+             "-b", "bing,duckduckgo,hackertarget,crtsh,otx,rapiddns,urlscan"],
+        )
+    ctx.get_input("Domain (e.g. example.com)", _go)
 
 
-def _phone_hint(ctx: SectionContext) -> None:
-    ctx.show_result(
-        "phone OSINT",
-        "Reverse-lookup a phone number (carrier, region, format).\n\n"
-        "Drop to a TTY (Ctrl-Alt-F2) and run:\n"
-        "    pipx install phoneinfoga\n"
-        "    phoneinfoga scan -n <number>\n",
-    )
+def _phone_osint(ctx: SectionContext) -> None:
+    """phoneinfoga — carrier / region / formatting + free-tier OSINT
+    scanners for a phone number. Binary installed at
+    /usr/local/bin/phoneinfoga by scripts/install-osint.sh."""
+    def _go(val: str | None) -> None:
+        v = (val or "").strip()
+        if not v:
+            return
+        # Accept "+15551234567" or "5551234567"; phoneinfoga tolerates both.
+        ctx.run_streaming(
+            f"phoneinfoga · {v}",
+            ["phoneinfoga", "scan", "-n", v, "--no-color"],
+        )
+    ctx.get_input("Phone (e.g. +15551234567)", _go)
 
 
 def _wayback(ctx: SectionContext) -> None:
@@ -122,9 +140,9 @@ def build() -> Section:
             Action("ARP scan", _arp_scan, "local discovery"),
             Action("CCTV Viewer", _cctv_viewer, "live monitoring"),
             Action("IP Camera Scanner", _cam_scanner, "find cameras on the LAN"),
-            Action("Username search (sherlock)", _username_hint, "OSINT"),
-            Action("Email harvester (theHarvester)", _email_hint, "OSINT"),
-            Action("Phone OSINT (phoneinfoga)", _phone_hint, "OSINT"),
+            Action("Username search (sherlock)", _username_search, "OSINT"),
+            Action("Email harvester (theHarvester)", _email_harvest, "OSINT"),
+            Action("Phone OSINT (phoneinfoga)", _phone_osint, "OSINT"),
             Action("Wayback availability check", _wayback),
             Action("WHOIS · github.com", _whois_repo),
             Action("Quick scan: localhost", _nmap_quick_self, "nmap -F"),

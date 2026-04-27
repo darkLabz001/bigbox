@@ -83,6 +83,13 @@ ensure_line "dtparam=audio=on"
 # script for your model. If the screen already works in raspi-config, you
 # do not need to do anything more.
 
+# --- 4b. OSINT tools (sherlock + theHarvester + phoneinfoga) ----------------
+# Idempotent installer — see scripts/install-osint.sh for what it does.
+if [[ -x "$REPO_DIR/scripts/install-osint.sh" ]]; then
+    echo "==> OSINT tools"
+    "$REPO_DIR/scripts/install-osint.sh"
+fi
+
 # --- 5. systemd service + OTA update timer (timer is installed but disabled) -
 echo "==> systemd units"
 install -m 0644 "$REPO_DIR/scripts/bigbox.service" /etc/systemd/system/bigbox.service
