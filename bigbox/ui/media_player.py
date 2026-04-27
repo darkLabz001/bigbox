@@ -32,6 +32,11 @@ class MediaPlayerView:
         self.proc: subprocess.Popen | None = None
         self.error_msg: str | None = None
         self._launch_time: float = 0.0
+        # After mpv exits we hold a result screen so the user always sees
+        # what happened. Cleared by pressing B.
+        self.last_result: list[str] | None = None
+        self.last_result_rc: int | None = None
+        self.last_played: str | None = None
         
         try:
             if not os.path.exists(self.media_dir):
@@ -101,17 +106,17 @@ class MediaPlayerView:
         except Exception:
             log_fd = subprocess.DEVNULL
 
+        # Keep flags minimal so we don't accidentally trip an early-exit
+        # path. Don't suppress mpv's own output — the log is our diagnostic
+        # surface and we display it on the result screen below.
         cmd = [
             "mpv",
             "--fs",                          # fullscreen
-            "--no-border",                   # no WM decorations under bare xinit
-            "--ontop",                       # raise above pygame surface
             "--cursor-autohide=always",
-            "--ao=alsa",                     # ALSA, no PulseAudio session req'd
-            "--hwdec=auto-safe",             # v4l2m2m on Pi 4 where available
+            "--ao=alsa,pulse,null",          # alsa first, fall back gracefully
             "--no-osc",                      # bigbox owns the controls
             "--no-input-default-bindings",   # don't react to keyboard
-            "--really-quiet",
+            "--msg-level=all=warn",          # warn+ (skip per-frame status)
             full_path,
         ]
         try:
@@ -137,15 +142,13 @@ class MediaPlayerView:
                 except Exception:
                     pass
 
-    def _read_mpv_error(self) -> str:
+    def _read_mpv_log_tail(self, n: int = 8) -> list[str]:
         try:
             with open(MPV_LOG, "r") as f:
-                tail = [ln.strip() for ln in f.read().strip().splitlines() if ln.strip()]
-            if tail:
-                return tail[-1][:80]
+                lines = [ln.rstrip() for ln in f.readlines() if ln.strip()]
+            return lines[-n:] if lines else []
         except Exception:
-            pass
-        return ""
+            return []
 
     def _stop(self) -> None:
         if self.proc:
@@ -160,10 +163,23 @@ class MediaPlayerView:
                     pass
             self.proc = None
         self.playing_file = None
+        # When the user explicitly stops, skip the result screen.
+        self.last_result = None
+        self.last_result_rc = None
+        self.last_played = None
+        self.error_msg = None
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
         try:
             if not ev.pressed:
+                return
+
+            # Result screen: any button (especially B/A) clears it.
+            if self.last_result is not None:
+                if ev.button in (Button.A, Button.B, Button.START, Button.SELECT):
+                    self.last_result = None
+                    self.last_result_rc = None
+                    self.last_played = None
                 return
 
             if ev.button is Button.B:
@@ -186,78 +202,128 @@ class MediaPlayerView:
             print(f"[media] Handle error: {e}")
 
     def render(self, surf: pygame.Surface) -> None:
-        # Check if process finished. If it died within 2s of launch we
-        # treat that as a failure and pull the reason from the log so
-        # the user sees an actionable error instead of a black screen.
+        # Did mpv exit? Pull its log onto a result screen the user has
+        # to dismiss with B. Always — regardless of exit code — so we
+        # never silently bounce back to the menu after a failure.
         if self.playing_file and self.proc:
             rc = self.proc.poll()
             if rc is not None:
-                quick_exit = (time.time() - self._launch_time) < 2.0
-                if rc != 0 or quick_exit:
-                    self.error_msg = (
-                        self._read_mpv_error()
-                        or f"mpv exited (code {rc})"
-                    )
-                    print(f"[media] mpv error: {self.error_msg}")
-                    self.proc = None
-                else:
-                    print("[media] Playback finished naturally")
-                    self.playing_file = None
-                    self.proc = None
-                    self.error_msg = None
+                self.last_result = self._read_mpv_log_tail(8) or [
+                    f"mpv exited with code {rc} (no log output)"
+                ]
+                self.last_result_rc = rc
+                self.last_played = self.playing_file
+                self.proc = None
+                self.playing_file = None
+                self.error_msg = None
 
         try:
             surf.fill(theme.BG)
-            
+
             # Header
             head_h = 60
             pygame.draw.rect(surf, theme.BG_ALT, (0, 0, theme.SCREEN_W, head_h))
-            pygame.draw.line(surf, theme.ACCENT, (0, head_h - 1), (theme.SCREEN_W, head_h - 1), 2)
-            
-            title_text = "MEDIA PLAYER" if not self.playing_file else f"PLAYING: {self.playing_file}"
+            pygame.draw.line(surf, theme.ACCENT, (0, head_h - 1),
+                             (theme.SCREEN_W, head_h - 1), 2)
+
+            if self.last_result is not None:
+                title_text = "PLAYBACK RESULT"
+            elif self.playing_file:
+                title_text = f"PLAYING: {self.playing_file}"
+            else:
+                title_text = "MEDIA PLAYER"
+
             title = self.title_font.render(title_text, True, theme.ACCENT)
             surf.blit(title, (theme.PADDING, (head_h - title.get_height()) // 2))
 
-            if self.playing_file:
-                center_x, center_y = theme.SCREEN_W // 2, theme.SCREEN_H // 2
-                
-                box_w, box_h = 600, 340
-                box = pygame.Rect(center_x - box_w // 2, center_y - box_h // 2 + 20, box_w, box_h)
-                pygame.draw.rect(surf, (0, 0, 0), box)
-                pygame.draw.rect(surf, theme.ACCENT_DIM, box, 2)
-                
-                icon = self.play_font.render("▶", True, theme.ACCENT)
-                surf.blit(icon, (center_x - icon.get_width() // 2, center_y - icon.get_height() // 2 + 20))
-                
-                if self.proc:
-                    msg = "Playing in background... Press A or B to return."
-                    color = theme.FG_DIM
-                else:
-                    err = self.error_msg or "Player failed to start."
-                    msg = f"ERROR: {err}  (B to return)"
-                    color = theme.ERR
-                hint = self.hint_font.render(msg, True, color)
-                # Truncate if too wide to fit
-                max_w = theme.SCREEN_W - 2 * theme.PADDING
-                if hint.get_width() > max_w:
-                    truncated = msg
-                    while truncated and self.hint_font.size(truncated)[0] > max_w:
-                        truncated = truncated[:-1]
-                    hint = self.hint_font.render(truncated, True, color)
-                surf.blit(hint, (center_x - hint.get_width() // 2, box.bottom + 20))
-                
+            if self.last_result is not None:
+                self._render_result(surf, head_h)
+            elif self.playing_file:
+                self._render_playing(surf, head_h)
             else:
-                list_rect = pygame.Rect(
-                    theme.PADDING,
-                    head_h + theme.PADDING,
-                    theme.SCREEN_W - 2 * theme.PADDING,
-                    theme.SCREEN_H - head_h - 2 * theme.PADDING - 40
-                )
-                self.list.render(surf, list_rect, self.body_font)
-                
-                hint = self.hint_font.render("UP/DOWN: Navigate  A: Play  B: Back", True, theme.FG_DIM)
-                surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
+                self._render_list(surf, head_h)
         except Exception as e:
             print(f"[media] Render error: {e}")
-            # If rendering fails, we don't want to just show a black screen forever,
-            # but we also don't want to crash the whole app.
+
+    def _render_playing(self, surf: pygame.Surface, head_h: int) -> None:
+        center_x, center_y = theme.SCREEN_W // 2, theme.SCREEN_H // 2
+
+        box_w, box_h = 600, 340
+        box = pygame.Rect(center_x - box_w // 2,
+                          center_y - box_h // 2 + 20, box_w, box_h)
+        pygame.draw.rect(surf, (0, 0, 0), box)
+        pygame.draw.rect(surf, theme.ACCENT_DIM, box, 2)
+
+        icon = self.play_font.render("▶", True, theme.ACCENT)
+        surf.blit(icon, (center_x - icon.get_width() // 2,
+                         center_y - icon.get_height() // 2 + 20))
+
+        if self.proc:
+            msg = "Playing in background... Press A or B to return."
+            color = theme.FG_DIM
+        else:
+            err = self.error_msg or "Player failed to start."
+            msg = f"ERROR: {err}  (B to return)"
+            color = theme.ERR
+        hint = self.hint_font.render(msg, True, color)
+        max_w = theme.SCREEN_W - 2 * theme.PADDING
+        if hint.get_width() > max_w:
+            truncated = msg
+            while truncated and self.hint_font.size(truncated)[0] > max_w:
+                truncated = truncated[:-1]
+            hint = self.hint_font.render(truncated, True, color)
+        surf.blit(hint, (center_x - hint.get_width() // 2, box.bottom + 20))
+
+    def _render_list(self, surf: pygame.Surface, head_h: int) -> None:
+        list_rect = pygame.Rect(
+            theme.PADDING,
+            head_h + theme.PADDING,
+            theme.SCREEN_W - 2 * theme.PADDING,
+            theme.SCREEN_H - head_h - 2 * theme.PADDING - 40,
+        )
+        self.list.render(surf, list_rect, self.body_font)
+        hint = self.hint_font.render(
+            "UP/DOWN: Navigate  A: Play  B: Back", True, theme.FG_DIM)
+        surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
+
+    def _render_result(self, surf: pygame.Surface, head_h: int) -> None:
+        rc = self.last_result_rc if self.last_result_rc is not None else 0
+        ok = (rc == 0)
+        accent = theme.ACCENT if ok else theme.ERR
+
+        # Subtitle: file + exit code
+        sub_y = head_h + theme.PADDING
+        sub = self.body_font.render(
+            f"{self.last_played or ''}  (exit {rc})", True, accent)
+        surf.blit(sub, (theme.PADDING, sub_y))
+
+        # Log box
+        log_y = sub_y + sub.get_height() + 8
+        log_h = theme.SCREEN_H - log_y - 40
+        log_rect = pygame.Rect(theme.PADDING, log_y,
+                               theme.SCREEN_W - 2 * theme.PADDING, log_h)
+        pygame.draw.rect(surf, (0, 0, 0), log_rect)
+        pygame.draw.rect(surf, theme.DIVIDER, log_rect, 1)
+
+        f = pygame.font.Font(None, 18)
+        line_h = f.get_linesize()
+        max_lines = max(1, (log_rect.height - 16) // line_h)
+        lines = (self.last_result or [])[-max_lines:]
+
+        max_w = log_rect.width - 16
+        for i, raw in enumerate(lines):
+            text = raw
+            # Truncate per line
+            while text and f.size(text)[0] > max_w:
+                text = text[:-1]
+            # Color: red if it looks like an error, dim otherwise
+            lc = (theme.ERR if any(k in raw.lower() for k in
+                                   ("error", "fail", "cannot", "could not"))
+                  else theme.FG_DIM)
+            ls = f.render(text, True, lc)
+            surf.blit(ls, (log_rect.x + 8, log_rect.y + 8 + i * line_h))
+
+        hint = self.hint_font.render(
+            "B: dismiss   /tmp/bigbox-mpv.log has full output",
+            True, theme.FG_DIM)
+        surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
