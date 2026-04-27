@@ -54,6 +54,7 @@ class App:
         self.wardrive_view: WardriveView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
+        self._last_vol_enforce = 0
         
         # Web UI state
         self.last_frame: bytes | None = None
@@ -258,6 +259,14 @@ class App:
                 self._dispatch(bev, carousel)
 
             # 3. Render.
+            now = time.time()
+            if now - self._last_vol_enforce > 10:
+                self._last_vol_enforce = now
+                try:
+                    subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
+                except:
+                    pass
+
             screen.fill(theme.BG)
             if self.kb_view is not None:
                 self.kb_view.render(screen)

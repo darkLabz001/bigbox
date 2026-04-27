@@ -187,6 +187,12 @@ class MediaPlayerView:
         # GamePi43 image is fbdev (no /dev/dri, no Xvideo, no Vulkan, no
         # VDPAU). --vo=x11 is the only software output that actually puts
         # pixels on this screen; tested live on the device.
+        # Boost volume to max at system level before starting mpv
+        try:
+            subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
+        except:
+            pass
+
         cmd = [
             "mpv",
             "--vo=x11",
