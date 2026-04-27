@@ -110,7 +110,15 @@ class App:
             set_app(self)
             
             def run_server():
-                uvicorn.run(app, host="0.0.0.0", port=8080, log_level="error")
+                # Increase timeouts for large movie uploads (1GB can take a while over WiFi)
+                uvicorn.run(
+                    app, 
+                    host="0.0.0.0", 
+                    port=8080, 
+                    log_level="error",
+                    timeout_keep_alive=60,
+                    timeout_notify=60
+                )
             
             t = threading.Thread(target=run_server, daemon=True)
             t.start()

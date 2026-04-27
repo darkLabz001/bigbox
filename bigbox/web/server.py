@@ -57,8 +57,18 @@ async def upload_file(
     target_dir.mkdir(parents=True, exist_ok=True)
     file_path = target_dir / safe_name
 
-    with file_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # Stream the file to disk in chunks instead of using shutil.copyfileobj
+    # on the SpooledTemporaryFile, which can be slow/memory intensive for 1GB+
+    try:
+        with file_path.open("wb") as buffer:
+            while chunk := await file.read(1024 * 1024): # 1MB chunks
+                buffer.write(chunk)
+    except Exception as e:
+        if file_path.exists():
+            file_path.unlink()
+        raise HTTPException(status_code=500, detail=f"write failed: {e}")
+    finally:
+        await file.close()
 
     # Refresh the device-side player if it's open. refresh() handles both
     # the category screen and any open file list. Fall back to the legacy
