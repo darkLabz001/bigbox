@@ -31,6 +31,10 @@ def _crack_handshake(ctx: SectionContext) -> None:
     ctx.show_cracker()
 
 
+def _evil_twin(ctx: SectionContext) -> None:
+    ctx.show_eviltwin()
+
+
 def _airodump_hint(ctx: SectionContext) -> None:
     ctx.show_result(
         "airodump-ng",
@@ -52,6 +56,7 @@ def build() -> Section:
             Action("WiFi Multi-Tool", _wifi_multi_tool, "integrated scanner & attacks"),
             Action("Handshake / Deauth", _handshake_deauth, "capture WPA handshakes"),
             Action("Crack Handshake (offline)", _crack_handshake, "aircrack-ng + wordlist"),
+            Action("Evil Twin / Captive Portal", _evil_twin, "rogue AP + cred capture"),
             Action("List Wi-Fi interfaces", _wifi_interfaces),
             Action("Current link", _link),
             Action("Scan APs (wlan0)", _wifi_scan, "iw dev wlan0 scan"),

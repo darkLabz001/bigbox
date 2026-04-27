@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView
 
 
 class App:
@@ -53,6 +53,7 @@ class App:
         self.terminal_view: TerminalView | None = None
         self.theme_manager_view: ThemeManagerView | None = None
         self.wardrive_view: WardriveView | None = None
+        self.eviltwin_view: EvilTwinView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
         self._last_vol_enforce = 0
@@ -176,6 +177,9 @@ class App:
     def show_wardrive(self) -> None:
         self.wardrive_view = WardriveView()
 
+    def show_eviltwin(self) -> None:
+        self.eviltwin_view = EvilTwinView()
+
     def show_chat(self) -> None:
         self.chat_view = ChatView()
 
@@ -231,6 +235,7 @@ class App:
         self.terminal_view = None
         self.theme_manager_view = None
         self.wardrive_view = None
+        self.eviltwin_view = None
 
     def toast(self, msg: str) -> None:
         # Lightweight: just print for now; could become an on-screen toast widget.
@@ -240,6 +245,15 @@ class App:
     def run(self) -> int:
         screen = self._init_display()
         pygame.display.set_caption("bigbox")
+        # Play the Arasaka boot splash (red diamond + "WELCOME TO DARKBOX" +
+        # psx.mp3 chime) before anything else hits the screen. Skipped in
+        # dev mode so we don't sit through it on every restart.
+        if not self.dev_mode and not os.environ.get("BIGBOX_NO_SPLASH"):
+            try:
+                from bigbox import splash as _splash
+                _splash.play(screen)
+            except Exception as e:
+                print(f"[bigbox] splash failed: {e}")
         self._start_input()
 
         carousel = Carousel(build_sections())
@@ -353,6 +367,10 @@ class App:
                 self.wardrive_view.render(screen)
                 if self.wardrive_view.dismissed:
                     self.wardrive_view = None
+            elif self.eviltwin_view is not None:
+                self.eviltwin_view.render(screen)
+                if self.eviltwin_view.dismissed:
+                    self.eviltwin_view = None
             elif self.update_view is not None:
                 self.update_view.render(screen)
                 if self.update_view.dismissed:
@@ -504,6 +522,10 @@ class App:
 
         if self.wardrive_view is not None:
             self.wardrive_view.handle(bev, self)
+            return
+
+        if self.eviltwin_view is not None:
+            self.eviltwin_view.handle(bev, self)
             return
 
         if self.update_view is not None:
