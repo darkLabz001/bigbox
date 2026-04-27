@@ -63,23 +63,34 @@ def _wardrive(ctx: SectionContext) -> None:
 
 def _username_search(ctx: SectionContext) -> None:
     """Sherlock — search a username across hundreds of social networks.
-    Tool installed by scripts/install-osint.sh as `sherlock` on PATH."""
+
+    Wrapped with `stdbuf -oL` because sherlock (Python, no -u in its
+    apt wrapper) block-buffers stdout when stdin isn't a TTY. Without
+    this, bigbox's run_streaming sees nothing for minutes while
+    sherlock churns through 400+ sites — the user reads that as a
+    timeout. Line-buffered, matches stream in as found.
+    """
     def _go(val: str | None) -> None:
         v = (val or "").strip()
         if not v:
             return
         ctx.run_streaming(
             f"sherlock · {v}",
-            ["sherlock", "--print-found", "--no-color", "--timeout", "8", v],
+            ["stdbuf", "-oL",
+             "sherlock", "--print-found", "--timeout", "5", v],
         )
     ctx.get_input("Username (e.g. johndoe)", _go)
 
 
 def _email_harvest(ctx: SectionContext) -> None:
-    """theHarvester — emails + subdomains for a target domain. Installed
-    into the bigbox venv at /opt/bigbox/.venv/bin/theHarvester by
-    scripts/install-osint.sh. Default sources skip API-key-required ones
-    so it works out of the box."""
+    """theHarvester — emails + subdomains for a target domain.
+
+    Sources are restricted to the no-API-key set that still ships in
+    4.10.1. The earlier list (bing, hackertarget, otx, rapiddns,
+    urlscan) had been removed from theHarvester's source roster, so
+    `-b` returned "invalid source". Verified against
+    `theHarvester -h` on 4.10.1.
+    """
     def _go(val: str | None) -> None:
         v = (val or "").strip().lower()
         if not v:
@@ -87,18 +98,23 @@ def _email_harvest(ctx: SectionContext) -> None:
         bin_path = "/opt/bigbox/.venv/bin/theHarvester"
         ctx.run_streaming(
             f"theHarvester · {v}",
-            [bin_path,
+            ["stdbuf", "-oL",
+             bin_path,
              "-d", v,
              "-l", "200",
-             "-b", "bing,duckduckgo,hackertarget,crtsh,otx,rapiddns,urlscan"],
+             "-b", "duckduckgo,crtsh,certspotter"],
         )
     ctx.get_input("Domain (e.g. example.com)", _go)
 
 
 def _phone_osint(ctx: SectionContext) -> None:
     """phoneinfoga — carrier / region / formatting + free-tier OSINT
-    scanners for a phone number. Binary installed at
-    /usr/local/bin/phoneinfoga by scripts/install-osint.sh."""
+    scanners for a phone number.
+
+    The `scan` subcommand only takes -D (--disable), --env-file,
+    --plugin, and -n (--number) — the `--no-color` flag from earlier
+    was rejected. Output is plain text by default, no escape needed.
+    """
     def _go(val: str | None) -> None:
         v = (val or "").strip()
         if not v:
@@ -106,7 +122,7 @@ def _phone_osint(ctx: SectionContext) -> None:
         # Accept "+15551234567" or "5551234567"; phoneinfoga tolerates both.
         ctx.run_streaming(
             f"phoneinfoga · {v}",
-            ["phoneinfoga", "scan", "-n", v, "--no-color"],
+            ["phoneinfoga", "scan", "-n", v],
         )
     ctx.get_input("Phone (e.g. +15551234567)", _go)
 
