@@ -187,10 +187,15 @@ class MediaPlayerView:
         # GamePi43 image is fbdev (no /dev/dri, no Xvideo, no Vulkan, no
         # VDPAU). --vo=x11 is the only software output that actually puts
         # pixels on this screen; tested live on the device.
-        # Boost volume to max at system level before starting mpv
+        # Boost volume to max at system level before starting mpv. Pin to
+        # card 1 (BCM2835 Headphones — the 3.5mm jack the GamePi43 speaker
+        # is wired to); the unscoped form was setting HDMI volume instead.
         try:
-            subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
-        except:
+            subprocess.run(
+                ["amixer", "-c", "1", "sset", "PCM", "100%"],
+                capture_output=True,
+            )
+        except Exception:
             pass
 
         cmd = [
@@ -198,7 +203,12 @@ class MediaPlayerView:
             "--vo=x11",
             "--fs",
             "--cursor-autohide=always",
-            "--ao=alsa,pulse,null",
+            # Pin mpv's audio device to the Headphones card explicitly. This
+            # is defense-in-depth against /etc/asound.conf going missing on
+            # a re-flash — without this the stock ALSA default lands on
+            # HDMI (card 0, silent on this hardware).
+            "--ao=alsa",
+            "--audio-device=alsa/default:CARD=Headphones",
             "--volume=130",
             "--af=loudnorm",
             "--no-osc",

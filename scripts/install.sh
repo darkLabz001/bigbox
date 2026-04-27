@@ -74,6 +74,22 @@ ensure_line() {
 # Audio out to 3.5mm jack (GamePi43 routes to its built-in speaker via this).
 ensure_line "dtparam=audio=on"
 
+# --- 4a. ALSA default = Headphones card --------------------------------------
+# Without this, ALSA defaults to card 0 (HDMI) which is silent on this
+# hardware. apps like mpv hit the silent device and the speaker stays
+# whatever level the system left it at. Force the default to card 1.
+if [[ ! -f /etc/asound.conf ]]; then
+    cat > /etc/asound.conf <<'ASOUND'
+# Bigbox: route ALSA default to BCM2835 Headphones (card 1).
+# HDMI is silent on the GamePi43 — its speaker is wired to the 3.5mm jack.
+defaults.pcm.card 1
+defaults.pcm.device 0
+defaults.ctl.card 1
+ASOUND
+fi
+# Make sure the actual hardware level isn't sitting at the boot default.
+amixer -c 1 sset PCM 100% >/dev/null 2>&1 || true
+
 # NOTE: GamePi43 display driver is intentionally NOT touched here.
 # The DPI/SPI overlay differs between unit revisions; follow Waveshare's
 # wiki ( https://www.waveshare.com/wiki/GamePi43 ) and run their LCD-show

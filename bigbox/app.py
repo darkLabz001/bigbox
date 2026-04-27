@@ -281,9 +281,17 @@ class App:
             now = time.time()
             if now - self._last_vol_enforce > 10:
                 self._last_vol_enforce = now
+                # Pin to card 1 (BCM2835 Headphones / 3.5mm jack — the
+                # GamePi43 speaker output). Without -c 1, amixer hits the
+                # ALSA default which on a fresh image is HDMI (card 0,
+                # silent), leaving the actual speaker at whatever level
+                # it booted at.
                 try:
-                    subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
-                except:
+                    subprocess.run(
+                        ["amixer", "-c", "1", "sset", "PCM", "100%"],
+                        capture_output=True,
+                    )
+                except Exception:
                     pass
 
             screen.fill(theme.BG)
