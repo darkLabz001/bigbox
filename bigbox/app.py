@@ -203,7 +203,7 @@ class App:
                 elif ev.type in (pygame.KEYDOWN, pygame.KEYUP):
                     if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                         self.running = False
-                    if self.dev_mode:
+                    if self.dev_mode or self._gpio is None:
                         kbd_translate(ev, self.bus)
 
             # 2. Drain logical button events; route to the foreground screen.

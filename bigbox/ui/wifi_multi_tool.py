@@ -250,7 +250,11 @@ class WifiMultiToolView:
 
     def _cleanup_and_exit(self) -> None:
         self._stop_procs()
-        if self.mon_iface: subprocess.run(["airmon-ng", "stop", self.mon_iface])
+        if self.mon_iface: 
+            subprocess.run(["airmon-ng", "stop", self.mon_iface], stdout=subprocess.DEVNULL)
+            # Restore managed mode services killed by airmon-ng check kill
+            subprocess.run(["nmcli", "networking", "on"], stdout=subprocess.DEVNULL)
+            subprocess.run(["systemctl", "restart", "NetworkManager"], stdout=subprocess.DEVNULL)
         self.dismissed = True
 
     def _start_poll_thread(self) -> None:

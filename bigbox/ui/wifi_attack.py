@@ -225,6 +225,9 @@ class WifiAttackView:
             subprocess.run(["airmon-ng", "stop", self.mon_iface],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            timeout=10)
+            # Restore managed mode services
+            subprocess.run(["nmcli", "networking", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["systemctl", "restart", "NetworkManager"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
         self.mon_iface = None
