@@ -14,6 +14,10 @@ from bigbox.ui.wifi_multi_tool import WifiMultiToolView
 from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.chat import ChatView
+from bigbox.ui.deaddrop import DeadDropView
+from bigbox.ui.bbs import BBSView
+from bigbox.ui.ble_chat import BLEChatView
+from bigbox.ui.onion_chat import OnionChatView
 from bigbox.ui.update import UpdateView
 from bigbox.ui.wardrive import WardriveView
 
@@ -38,6 +42,10 @@ __all__ = [
     "OfflineCrackerView",
     "MediaPlayerView",
     "ChatView",
+    "DeadDropView",
+    "BBSView",
+    "BLEChatView",
+    "OnionChatView",
     "UpdateView",
     "WardriveView",
 ]

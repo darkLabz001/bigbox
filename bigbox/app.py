@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, UpdateView, WifiMultiToolView, WardriveView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, DeadDropView, BBSView, BLEChatView, OnionChatView, UpdateView, WifiMultiToolView, WardriveView
 
 
 class App:
@@ -45,6 +45,10 @@ class App:
         self.cracker_view: OfflineCrackerView | None = None
         self.media_view: MediaPlayerView | None = None
         self.chat_view: ChatView | None = None
+        self.deaddrop_view: DeadDropView | None = None
+        self.bbs_view: BBSView | None = None
+        self.ble_view: BLEChatView | None = None
+        self.onion_view: OnionChatView | None = None
         self.wardrive_view: WardriveView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
@@ -172,6 +176,18 @@ class App:
     def show_chat(self) -> None:
         self.chat_view = ChatView()
 
+    def show_deaddrop(self) -> None:
+        self.deaddrop_view = DeadDropView()
+
+    def show_bbs(self) -> None:
+        self.bbs_view = BBSView()
+
+    def show_ble_chat(self) -> None:
+        self.ble_view = BLEChatView()
+
+    def show_onion_chat(self) -> None:
+        self.onion_view = OnionChatView()
+
     def show_update(self, title: str, argv: list[str]) -> None:
         view = UpdateView(title, "")
         self.update_view = view
@@ -195,6 +211,10 @@ class App:
         self.cracker_view = None
         self.media_view = None
         self.chat_view = None
+        self.deaddrop_view = None
+        self.bbs_view = None
+        self.ble_view = None
+        self.onion_view = None
         self.wardrive_view = None
 
     def toast(self, msg: str) -> None:
@@ -278,6 +298,22 @@ class App:
                 self.chat_view.render(screen)
                 if self.chat_view.dismissed:
                     self.chat_view = None
+            elif self.deaddrop_view is not None:
+                self.deaddrop_view.render(screen)
+                if self.deaddrop_view.dismissed:
+                    self.deaddrop_view = None
+            elif self.bbs_view is not None:
+                self.bbs_view.render(screen)
+                if self.bbs_view.dismissed:
+                    self.bbs_view = None
+            elif self.ble_view is not None:
+                self.ble_view.render(screen)
+                if self.ble_view.dismissed:
+                    self.ble_view = None
+            elif self.onion_view is not None:
+                self.onion_view.render(screen)
+                if self.onion_view.dismissed:
+                    self.onion_view = None
             elif self.wardrive_view is not None:
                 self.wardrive_view.render(screen)
                 if self.wardrive_view.dismissed:
@@ -401,6 +437,22 @@ class App:
 
         if self.chat_view is not None:
             self.chat_view.handle(bev, self)
+            return
+
+        if self.deaddrop_view is not None:
+            self.deaddrop_view.handle(bev, self)
+            return
+
+        if self.bbs_view is not None:
+            self.bbs_view.handle(bev, self)
+            return
+
+        if self.ble_view is not None:
+            self.ble_view.handle(bev, self)
+            return
+
+        if self.onion_view is not None:
+            self.onion_view.handle(bev, self)
             return
 
         if self.wardrive_view is not None:
