@@ -22,7 +22,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, UpdateView, WifiMultiToolView, WardriveView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, UpdateView, WifiMultiToolView, WardriveView
 
 
 class App:
@@ -44,6 +44,7 @@ class App:
         self.wifi_multi_view: WifiMultiToolView | None = None
         self.cracker_view: OfflineCrackerView | None = None
         self.media_view: MediaPlayerView | None = None
+        self.chat_view: ChatView | None = None
         self.wardrive_view: WardriveView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
@@ -168,6 +169,9 @@ class App:
     def show_wardrive(self) -> None:
         self.wardrive_view = WardriveView()
 
+    def show_chat(self) -> None:
+        self.chat_view = ChatView()
+
     def show_update(self, title: str, argv: list[str]) -> None:
         view = UpdateView(title, "")
         self.update_view = view
@@ -190,6 +194,7 @@ class App:
         self.wifi_multi_view = None
         self.cracker_view = None
         self.media_view = None
+        self.chat_view = None
         self.wardrive_view = None
 
     def toast(self, msg: str) -> None:
@@ -269,6 +274,10 @@ class App:
                 self.media_view.render(screen)
                 if self.media_view.dismissed:
                     self.media_view = None
+            elif self.chat_view is not None:
+                self.chat_view.render(screen)
+                if self.chat_view.dismissed:
+                    self.chat_view = None
             elif self.wardrive_view is not None:
                 self.wardrive_view.render(screen)
                 if self.wardrive_view.dismissed:
@@ -388,6 +397,10 @@ class App:
 
         if self.media_view is not None:
             self.media_view.handle(bev, self)
+            return
+
+        if self.chat_view is not None:
+            self.chat_view.handle(bev, self)
             return
 
         if self.wardrive_view is not None:
