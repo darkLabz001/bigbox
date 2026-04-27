@@ -18,7 +18,7 @@ import lgpio
 # Pins to skip:
 #   0, 1   I2C0 ID EEPROM (HAT detection) — claiming breaks future detection.
 #   14, 15 default UART; if console is on, claiming kicks the console off.
-SKIP = {0, 1, 14, 15}
+SKIP = {0, 1}
 
 CANDIDATES = [p for p in range(28) if p not in SKIP]
 
