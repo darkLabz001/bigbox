@@ -206,10 +206,33 @@ class WifiMultiToolView:
     def _enable_and_scan(self, iface: str) -> None:
         self.original_iface = iface
         self.phase = PHASE_ENABLING
-        subprocess.run(["airmon-ng", "start", iface])
-        # Simple detection of mon name
-        self.mon_iface = iface + "mon" if not iface.endswith("mon") else iface
+        self.status_msg = f"Enabling monitor on {iface}..."
+        
+        # Kill interfering processes
+        subprocess.run(["airmon-ng", "check", "kill"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Enable monitor mode
+        subprocess.run(["airmon-ng", "start", iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Wait a bit for interface to settle and find the actual monitor interface name
+        time.sleep(2)
+        found_mon = None
+        for it in _list_wlan_ifaces():
+            if it.is_monitor:
+                found_mon = it.name
+                break
+        
+        # Fallback: if no monitor interface found, try the original name + 'mon' 
+        # or just the original name if airmon-ng didn't rename it.
+        if not found_mon:
+            if os.path.exists(f"/sys/class/net/{iface}mon"):
+                found_mon = f"{iface}mon"
+            else:
+                found_mon = iface
+
+        self.mon_iface = found_mon
         self.phase = PHASE_SCAN_APS
+        self.status_msg = f"Scanning on {self.mon_iface}..."
         self._start_scan()
 
     def _stop_procs(self) -> None:

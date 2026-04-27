@@ -421,6 +421,14 @@ class WifiAttackView:
     def _enable_and_scan(self, iface: str) -> None:
         if not self._enable_monitor(iface):
             return
+        
+        # Double check the monitor interface name
+        time.sleep(1)
+        for it in _list_wlan_ifaces():
+            if it.is_monitor:
+                self.mon_iface = it.name
+                break
+
         self.phase = PHASE_SCAN_APS
         self.status_msg = f"Scanning on {self.mon_iface}..."
         self._start_airodump(None)
