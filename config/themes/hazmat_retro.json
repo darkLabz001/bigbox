@@ -1,0 +1,17 @@
+{
+    "name": "Hazmat Retro",
+    "author": "DaRkb0x AI",
+    "colors": {
+        "BG": "#050505",
+        "BG_ALT": "#0F0F0A",
+        "FG": "#33FF33",
+        "FG_DIM": "#1A881A",
+        "ACCENT": "#FFD700",
+        "ACCENT_DIM": "#8B6508",
+        "WARN": "#FFCC00",
+        "ERR": "#FF0000",
+        "DIVIDER": "#333300",
+        "SELECTION": "#FFD700",
+        "SELECTION_BG": "#222200"
+    }
+}
