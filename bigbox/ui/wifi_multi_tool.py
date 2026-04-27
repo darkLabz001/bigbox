@@ -141,8 +141,12 @@ class WifiMultiToolView:
     def _start_scan(self) -> None:
         self._stop_procs()
         self.LOOT_DIR.mkdir(parents=True, exist_ok=True)
-        prefix = self.LOOT_DIR / f"scan_{datetime.now().strftime('%H%M%S')}"
+        # Use an absolute path for prefix to be safe
+        ts = datetime.now().strftime("%H%M%S")
+        prefix = (Path("/opt/bigbox") / self.LOOT_DIR / f"scan_{ts}").absolute()
         self._capture_csv_path = Path(str(prefix) + "-01.csv")
+        
+        print(f"[wifi] Starting scan: {prefix}")
         self._airodump = subprocess.Popen(
             ["airodump-ng", "--output-format", "csv", "-w", str(prefix), self.mon_iface],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid
@@ -151,7 +155,8 @@ class WifiMultiToolView:
 
     def _start_airodump_target(self) -> None:
         ap = self.targeted_ap
-        prefix = self.LOOT_DIR / f"handshake_{ap.essid or 'hidden'}_{datetime.now().strftime('%H%M%S')}"
+        ts = datetime.now().strftime("%H%M%S")
+        prefix = (Path("/opt/bigbox") / self.LOOT_DIR / f"handshake_{ap.essid or 'hidden'}_{ts}").absolute()
         self._capture_csv_path = Path(str(prefix) + "-01.csv")
         self._airodump = subprocess.Popen(
             ["airodump-ng", "-c", ap.channel, "--bssid", ap.bssid, "--output-format", "csv,pcap", "-w", str(prefix), self.mon_iface],

@@ -103,10 +103,14 @@ def _read_airodump_csv(path: Path) -> tuple[list[AP], list[Client]]:
     except Exception:
         return aps, clients
 
-    # Split into two CSV sections.
-    parts = re.split(r"\r?\n\r?\n", text, maxsplit=1)
-    ap_block = parts[0]
-    cli_block = parts[1] if len(parts) > 1 else ""
+    # More robust splitting: split by "Station MAC" header.
+    if "Station MAC" in text:
+        parts = text.split("Station MAC")
+        ap_block = parts[0]
+        cli_block = "Station MAC" + parts[1]
+    else:
+        ap_block = text
+        cli_block = ""
 
     for row in csv.reader(ap_block.splitlines()):
         if not row or row[0].strip() == "BSSID":
