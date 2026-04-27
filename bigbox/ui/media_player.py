@@ -193,6 +193,8 @@ class MediaPlayerView:
             "--fs",
             "--cursor-autohide=always",
             "--ao=alsa,pulse,null",
+            "--volume=130",
+            "--af=loudnorm",
             "--no-osc",
             "--no-input-default-bindings",
             "--msg-level=all=warn",
