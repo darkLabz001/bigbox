@@ -17,6 +17,7 @@ WorkingDirectory=/opt/bigbox
 # This is the most portable path: works on legacy fbdev images (no KMS) and
 # on KMS images, with no config.txt changes needed. -nocursor hides the X
 # pointer, -nolisten tcp closes the X11 socket on the network.
+ExecStartPre=/usr/bin/amixer sset "PCM" 100%
 ExecStart=/usr/bin/xinit /opt/bigbox/.venv/bin/python -m bigbox -- :0 vt3 -nocursor -nolisten tcp
 
 TTYPath=/dev/tty3
