@@ -18,6 +18,7 @@ from bigbox.ui.deaddrop import DeadDropView
 from bigbox.ui.bbs import BBSView
 from bigbox.ui.ble_chat import BLEChatView
 from bigbox.ui.onion_chat import OnionChatView
+from bigbox.ui.terminal import TerminalView
 from bigbox.ui.update import UpdateView
 from bigbox.ui.wardrive import WardriveView
 
@@ -46,6 +47,7 @@ __all__ = [
     "BBSView",
     "BLEChatView",
     "OnionChatView",
+    "TerminalView",
     "UpdateView",
     "WardriveView",
 ]
