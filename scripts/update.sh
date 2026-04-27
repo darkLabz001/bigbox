@@ -55,9 +55,16 @@ done
 
 if [ "${#NEEDED[@]}" -gt 0 ]; then
     echo "STATUS: Installing ${NEEDED[*]}..."
-    apt-get update >/dev/null
+    # CRITICAL: close stdin and redirect stderr too. apt is run from the
+    # bigbox UI, whose controlling terminal is /dev/tty3 (owned by xinit).
+    # If apt inherits stdin from there, dpkg post-install scripts that
+    # touch debconf can SIGTTIN and hang the whole OTA at this step.
+    apt-get update </dev/null >/dev/null 2>&1
     echo "PROGRESS: 40"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${NEEDED[@]}" >/dev/null
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        "${NEEDED[@]}" </dev/null >/dev/null 2>&1
     echo "PROGRESS: 70"
 else
     echo "STATUS: System dependencies up to date"
