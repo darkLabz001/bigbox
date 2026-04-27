@@ -21,6 +21,15 @@ _DARKEN_ALPHA = 150   # 0 = off, 255 = solid black
 
 
 def _open(name: str) -> pygame.surface.Surface | None:
+    # Try theme icons first
+    if theme.ASSETS_ICONS:
+        p_theme = Path(theme.ASSETS_ICONS) / f"{name}.png"
+        if p_theme.is_file():
+            try:
+                return pygame.image.load(str(p_theme)).convert_alpha()
+            except: pass
+
+    # Fallback to defaults
     p = _DIR / f"{name}.png"
     if not p.is_file():
         return None
@@ -46,7 +55,19 @@ def load(name: str) -> pygame.surface.Surface | None:
 def load_background(name: str) -> pygame.surface.Surface | None:
     """Page background: cover-fit to BG_W×BG_H with a darkening overlay so
     the title + scroll list stay legible on top."""
-    img = _open(name)
+    
+    # Try theme global background first
+    img = None
+    if theme.ASSETS_BG:
+        p_bg = Path(theme.ASSETS_BG)
+        if p_bg.is_file():
+            try:
+                img = pygame.image.load(str(p_bg)).convert()
+            except: pass
+
+    if img is None:
+        img = _open(name)
+        
     if img is None:
         return None
     iw, ih = img.get_size()

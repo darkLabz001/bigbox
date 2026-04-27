@@ -33,6 +33,10 @@ FS_TITLE  = 28
 FS_BODY   = 22
 FS_SMALL  = 16
 
+# Custom Assets
+ASSETS_BG: str | None = None
+ASSETS_ICONS: str | None = None
+
 def _load_active_theme():
     """Load colors from /opt/bigbox/config/themes/active.json or local config."""
     paths = [
@@ -69,6 +73,11 @@ def _load_active_theme():
                 DIVIDER = to_tuple(colors.get("DIVIDER"), DIVIDER)
                 SELECTION = to_tuple(colors.get("SELECTION"), SELECTION)
                 SELECTION_BG = to_tuple(colors.get("SELECTION_BG"), SELECTION_BG)
+                
+                assets = data.get("assets", {})
+                global ASSETS_BG, ASSETS_ICONS
+                ASSETS_BG = assets.get("background")
+                ASSETS_ICONS = assets.get("icons_dir")
                 
                 break # Loaded successfully
             except Exception as e:

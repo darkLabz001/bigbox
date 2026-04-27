@@ -13,5 +13,9 @@
         "DIVIDER": "#282E3C",
         "SELECTION": "#5AE6AA",
         "SELECTION_BG": "#183C30"
+    },
+    "assets": {
+        "background": "path/to/bg.png",
+        "icons_dir": "path/to/icons/"
     }
 }
