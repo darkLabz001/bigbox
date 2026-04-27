@@ -18,6 +18,7 @@ from bigbox.ui.deaddrop import DeadDropView
 from bigbox.ui.bbs import BBSView
 from bigbox.ui.ble_chat import BLEChatView
 from bigbox.ui.onion_chat import OnionChatView
+from bigbox.ui.ble_spam import BLESpamView
 from bigbox.ui.terminal import TerminalView
 from bigbox.ui.theme_manager import ThemeManagerView
 from bigbox.ui.update import UpdateView
@@ -48,6 +49,7 @@ __all__ = [
     "BBSView",
     "BLEChatView",
     "OnionChatView",
+    "BLESpamView",
     "TerminalView",
     "ThemeManagerView",
     "UpdateView",

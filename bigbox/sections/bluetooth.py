@@ -19,6 +19,10 @@ def _scan(ctx: SectionContext) -> None:
     ctx.run_streaming("BT scan (10s)", ["bluetoothctl", "--timeout", "10", "scan", "on"])
 
 
+def _ble_spam(ctx: SectionContext) -> None:
+    ctx.show_ble_spam()
+
+
 def build() -> Section:
     return Section(
         title="Bluetooth",
@@ -26,6 +30,7 @@ def build() -> Section:
         icon_img=load_icon("bluetooth"),
         background_img=load_background("bluetooth"),
         actions=[
+            Action("BLE Spam (AppleJuice)", _ble_spam, "spoof pairing popups"),
             Action("Controller info", _ctl_show),
             Action("Known devices", _devices),
             Action("Scan (10s)", _scan),
