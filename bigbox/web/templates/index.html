@@ -112,14 +112,56 @@
 
     <div style="margin-top: 30px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px; text-align: center;">
         <h2 style="font-size: 14px; margin-bottom: 15px;">UPLOAD MEDIA</h2>
+
+        <div style="margin-bottom: 12px; font-size: 12px;">
+            <label style="margin-right: 14px;">
+                <input type="radio" name="folder" value="movies" checked> MOVIES
+            </label>
+            <label>
+                <input type="radio" name="folder" value="tv"> TV
+            </label>
+        </div>
+
         <input type="file" id="fileInput" style="display: none;">
         <button onclick="document.getElementById('fileInput').click()" style="background: transparent; border: 1px solid #5ae6aa; color: #5ae6aa; padding: 10px 20px; cursor: pointer; font-family: monospace;">CHOOSE FILE</button>
         <div id="status" style="margin-top: 10px; font-size: 12px;"></div>
+
+        <div id="library" style="margin-top: 18px; text-align: left; font-size: 11px;"></div>
     </div>
 
     <script>
         function press(btn) {
             fetch('/press/' + btn).catch(e => console.error(e));
+        }
+
+        function selectedFolder() {
+            const r = document.querySelector('input[name="folder"]:checked');
+            return r ? r.value : 'movies';
+        }
+
+        function refreshLibrary() {
+            fetch('/media')
+                .then(r => r.json())
+                .then(data => {
+                    const lib = document.getElementById('library');
+                    let html = '';
+                    for (const folder of ['movies', 'tv']) {
+                        const items = data[folder] || [];
+                        html += '<div style="margin-top:8px;">'
+                             + '<div style="color:#5ae6aa;">[ ' + folder.toUpperCase()
+                             + ' &mdash; ' + items.length + ' file(s) ]</div>';
+                        if (items.length) {
+                            html += '<ul style="margin:4px 0 0 14px; padding:0; color:#828ba0;">';
+                            for (const f of items) {
+                                html += '<li>' + f.replace(/[<>&]/g, '') + '</li>';
+                            }
+                            html += '</ul>';
+                        }
+                        html += '</div>';
+                    }
+                    lib.innerHTML = html;
+                })
+                .catch(() => {});
         }
 
         document.getElementById('fileInput').onchange = function() {
@@ -128,9 +170,10 @@
 
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('folder', selectedFolder());
 
             const status = document.getElementById('status');
-            status.innerText = "UPLOADING: " + file.name + "...";
+            status.innerText = "UPLOADING: " + file.name + " -> " + selectedFolder() + "...";
 
             fetch('/upload', {
                 method: 'POST',
@@ -138,14 +181,24 @@
             })
             .then(r => r.json())
             .then(data => {
-                status.innerText = "UPLOADED SUCCESSFUL: " + data.filename;
+                if (data.status === 'uploaded') {
+                    status.innerText = "UPLOADED: " + data.filename + " (" + data.folder + ")";
+                    refreshLibrary();
+                } else {
+                    status.innerText = "UPLOAD FAILED: " + (data.detail || 'unknown error');
+                }
                 setTimeout(() => { status.innerText = ""; }, 3000);
             })
             .catch(e => {
                 status.innerText = "UPLOAD FAILED";
                 console.error(e);
             });
+            // reset so re-picking the same file fires onchange again
+            this.value = '';
         };
+
+        // Populate the library list on first paint.
+        refreshLibrary();
         
         // Prevent zoom on double tap for iOS
         document.addEventListener('touchstart', function (event) {
