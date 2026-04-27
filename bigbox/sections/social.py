@@ -34,8 +34,8 @@ def build() -> Section:
     return Section(
         title="Social",
         icon="[s]",
-        icon_img=load_icon("media"),
-        background_img=load_background("media"),
+        icon_img=load_icon("social"),
+        background_img=load_background("social"),
         actions=[
             Action("Global Chat", _open_chat, "darksec.uk in-device chat"),
             Action("Dead Drop", _open_deaddrop, "Rogue AP offline chatroom"),

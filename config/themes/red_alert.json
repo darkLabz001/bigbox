@@ -1,0 +1,20 @@
+{
+    "name": "Red Alert",
+    "author": "sinX",
+    "colors": {
+        "BG": "#0A0000",
+        "BG_ALT": "#1A0000",
+        "FG": "#FFDADA",
+        "FG_DIM": "#AA6666",
+        "ACCENT": "#FF0000",
+        "ACCENT_DIM": "#880000",
+        "WARN": "#FF8800",
+        "ERR": "#FF0000",
+        "DIVIDER": "#440000",
+        "SELECTION": "#FF0000",
+        "SELECTION_BG": "#440000"
+    },
+    "assets": {
+        "icons_dir": "/opt/bigbox/config/themes/red_alert/icons/"
+    }
+}
