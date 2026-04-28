@@ -217,14 +217,31 @@ class SignalScraperView:
 
     def _cleanup(self):
         self._stop = True
+        
+        # 1. Kill background profile processes
         for proc in [self._airodump, self._btmon]:
             if proc and proc.poll() is None:
-                try: os.killpg(os.getpgid(proc.pid), signal.SIGINT)
-                except: proc.terminate()
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+                    proc.wait(timeout=2)
+                except:
+                    try: proc.kill()
+                    except: pass
+        self._airodump = self._btmon = None
+
+        # 2. Stop Bluetooth scan
         subprocess.run(["bluetoothctl", "scan", "off"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # 3. Disable monitor mode and restore NetworkManager
         if self.mon_iface:
-            subprocess.run(["airmon-ng", "stop", self.mon_iface], stdout=subprocess.DEVNULL)
-            hardware.ensure_wifi_managed()
+            subprocess.run(["airmon-ng", "stop", self.mon_iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Restore managed mode and services
+            subprocess.run(["nmcli", "networking", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["systemctl", "restart", "NetworkManager"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.mon_iface = None
+            
+        # Global safety recovery
+        hardware.ensure_wifi_managed()
 
     def _adjust_scroll(self):
         visible = 11
