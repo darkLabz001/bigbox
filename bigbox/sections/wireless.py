@@ -27,6 +27,11 @@ def _wifi_multi_tool(ctx: SectionContext) -> None:
     ctx.show_wifi_multi_tool()
 
 
+def _wifite(ctx: SectionContext) -> None:
+    """Wifite — Interactive automated wireless auditor."""
+    ctx.show_wifite()
+
+
 def _crack_handshake(ctx: SectionContext) -> None:
     ctx.show_cracker()
 
@@ -65,6 +70,7 @@ def build() -> Section:
         icon_img=load_icon("wireless"),
         background_img=load_background("wireless"),
         actions=[
+            Action("Wifite 2", _wifite, "automated auditor — interactive terminal"),
             Action("WiFi Multi-Tool", _wifi_multi_tool, "integrated scanner & attacks"),
             Action("Handshake / Deauth", _handshake_deauth, "capture WPA handshakes"),
             Action("Crack Handshake (offline)", _crack_handshake, "aircrack-ng + wordlist"),
