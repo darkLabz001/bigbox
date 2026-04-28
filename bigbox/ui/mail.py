@@ -440,11 +440,11 @@ class MailView:
         y = head_h + 30
         lines = [
             f"A: Email: {self.config.email or 'NOT SET'}",
-            f"X: Password: {'********' if self.config.password else 'NOT SET'}",
+            f"X: Password / App Pass: {'********' if self.config.password else 'NOT SET'}",
             f"Y: IMAP Server: {self.config.imap_server}",
             "",
             "START: Test Connection",
-            "SELECT: Save and Return",
+            "SELECT/RR: Save and Return",
             "B: Cancel"
         ]
         for i, ln in enumerate(lines):
