@@ -61,15 +61,6 @@ def _wardrive(ctx: SectionContext) -> None:
     ctx.show_wardrive()
 
 
-def _loki(ctx: SectionContext) -> None:
-    import sys
-    from pathlib import Path
-    
-    # Run the exact original Loki payload, using the mocked Pygame pagerctl.py
-    loki_script = Path(__file__).resolve().parents[2] / "loki_original" / "Loki.py"
-    ctx.run_streaming("Original Loki", [sys.executable, str(loki_script)])
-
-
 def _username_search(ctx: SectionContext) -> None:
     """Sherlock — search a username across hundreds of social networks."""
     def _go(val: str | None) -> None:
@@ -148,7 +139,6 @@ def build() -> Section:
         icon_img=load_icon("recon"),
         background_img=load_background("recon"),
         actions=[
-            Action("Loki", _loki, "autonomous recon companion"),
             Action("FlockSeeker", _flock_seeker, "detect ALPR infrastructure"),
             Action("Wardriving", _wardrive, "GPS-tagged Wi-Fi+BT for WiGLE"),
             Action("Ping sweep", _ping_sweep, "host discovery"),
