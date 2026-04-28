@@ -18,6 +18,7 @@ from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.tv import InternetTVView
 from bigbox.ui.mail import MailView
+from bigbox.ui.signal_scraper import SignalScraperView
 from bigbox.ui.chat import ChatView
 from bigbox.ui.sherlock import SherlockView
 from bigbox.ui.deaddrop import DeadDropView
@@ -58,6 +59,7 @@ __all__ = [
     "MediaPlayerView",
     "InternetTVView",
     "MailView",
+    "SignalScraperView",
     "ChatView",
     "SherlockView",
     "DeadDropView",

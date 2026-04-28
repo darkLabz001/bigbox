@@ -28,7 +28,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, MailView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, MailView, SignalScraperView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 class App:
@@ -52,6 +52,7 @@ class App:
         self.media_view: MediaPlayerView | None = None
         self.tv_view: InternetTVView | None = None
         self.mail_view: MailView | None = None
+        self.scraper_view: SignalScraperView | None = None
         self.chat_view: ChatView | None = None
         self.sherlock_view: SherlockView | None = None
         self.deaddrop_view: DeadDropView | None = None
@@ -200,6 +201,9 @@ class App:
     def show_mail(self) -> None:
         self.mail_view = MailView()
 
+    def show_signal_scraper(self) -> None:
+        self.scraper_view = SignalScraperView()
+
     def show_wardrive(self) -> None:
         self.wardrive_view = WardriveView()
 
@@ -272,6 +276,7 @@ class App:
         self.media_view = None
         self.tv_view = None
         self.mail_view = None
+        self.scraper_view = None
         self.chat_view = None
         self.sherlock_view = None
         self.deaddrop_view = None
@@ -422,6 +427,10 @@ class App:
                 self.mail_view.render(screen)
                 if self.mail_view.dismissed:
                     self.mail_view = None
+            elif self.scraper_view is not None:
+                self.scraper_view.render(screen)
+                if self.scraper_view.dismissed:
+                    self.scraper_view = None
             elif self.chat_view is not None:
                 self.chat_view.render(screen)
                 if self.chat_view.dismissed:
@@ -606,6 +615,10 @@ class App:
 
         if self.mail_view is not None:
             self.mail_view.handle(bev, self)
+            return
+
+        if self.scraper_view is not None:
+            self.scraper_view.handle(bev, self)
             return
 
         if self.chat_view is not None:

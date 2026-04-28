@@ -45,7 +45,12 @@ def _cctv_viewer(ctx: SectionContext) -> None:
     ctx.show_cctv()
 
 
-def _cam_scanner(ctx: SectionContext) -> None:
+def _signal_scraper(ctx: SectionContext) -> None:
+    """Signal Scraper — Proximity profiling of Wi-Fi and BT devices."""
+    ctx.show_signal_scraper()
+
+
+def _wardrive(ctx: SectionContext) -> None:
     ctx.show_camscan()
 
 
@@ -139,6 +144,7 @@ def build() -> Section:
         icon_img=load_icon("recon"),
         background_img=load_background("recon"),
         actions=[
+            Action("Signal Scraper", _signal_scraper, "proximity profiling"),
             Action("FlockSeeker", _flock_seeker, "detect ALPR infrastructure"),
             Action("Wardriving", _wardrive, "GPS-tagged Wi-Fi+BT for WiGLE"),
             Action("Ping sweep", _ping_sweep, "host discovery"),
