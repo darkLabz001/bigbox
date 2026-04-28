@@ -88,41 +88,34 @@ class _MonitorModeView:
         # Recover from any previous monitor-mode session
         hardware.ensure_wifi_managed()
 
-        all_clients = hardware.list_wifi_clients() or ["wlan0"]
-        self.ifaces = all_clients
+        # Filter the picker to interfaces that actually support monitor
+        # mode. Pi 4's onboard wlan0 (BCM43455 sans nexmon) doesn't —
+        # showing it as an option just sets the user up for failure.
+        monitor_caps = hardware.list_monitor_capable_clients()
+        if monitor_caps:
+            self.ifaces = monitor_caps
+        else:
+            # No monitor-capable adapter visible — show whatever's there
+            # so the user can see the picker isn't broken, plus a hint.
+            self.ifaces = hardware.list_wifi_clients() or ["wlan0"]
+            self.status_msg = ("no monitor-capable adapter detected — "
+                               "plug in an Alfa or similar")
         self.iface_cursor = 0
         self.selected_iface: str | None = None
         self.mon_iface: str | None = None
 
     # ---------- airmon-ng helpers ----------
     def _enable_monitor(self, iface: str) -> bool:
-        try:
-            out = subprocess.run(
-                ["airmon-ng", "start", iface],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL, text=True, timeout=15,
-            )
-        except FileNotFoundError:
-            self.status_msg = "airmon-ng not installed"
-            self.error_msg = "airmon-ng missing"
+        # hardware.enable_monitor() handles NM detach, airmon-ng start,
+        # multi-format output parsing, AND a manual-flip fallback for
+        # adapters where airmon-ng can't create a *mon vif but can
+        # switch the existing iface in place.
+        mon = hardware.enable_monitor(iface)
+        if not mon:
+            self.status_msg = ("monitor mode failed — adapter may not "
+                               "support it (try a different one)")
             return False
-        except subprocess.TimeoutExpired:
-            self.status_msg = "airmon-ng timed out"
-            return False
-
-        m = re.search(r"monitor mode\s+vif enabled for[^\]]+\]\S+\s+on\s+\[(?:[^\]]+)\]?(\S+)",
-                      out.stdout)
-        if not m:
-            m = re.search(r"\(monitor mode enabled on (\S+?)\)", out.stdout)
-        if m:
-            self.mon_iface = m.group(1)
-        else:
-            for it in hardware.list_monitor_ifaces():
-                self.mon_iface = it
-                break
-        if not self.mon_iface:
-            self.status_msg = "monitor mode failed (see iw dev)"
-            return False
+        self.mon_iface = mon
         return True
 
     def _disable_monitor(self) -> None:

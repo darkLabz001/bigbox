@@ -111,6 +111,107 @@ def stop_bluetooth_scan() -> None:
         _run(["bluetoothctl", "scan", "off"], timeout=3)
 
 
+def iface_phy(iface: str) -> str | None:
+    """Return the phyN name backing a wlan interface, or None on failure."""
+    rc, out = _run(["iw", "dev", iface, "info"], timeout=3)
+    if rc != 0:
+        return None
+    m = re.search(r"wiphy\s+(\d+)", out)
+    if m:
+        return f"phy{m.group(1)}"
+    return None
+
+
+def iface_supports_monitor(iface: str) -> bool:
+    """Check `iw phy <phy> info` for monitor mode in the supported list.
+
+    Pi 4's onboard wlan0 (BCM43455 without nexmon firmware) does NOT
+    support monitor mode — the iface picker should hide it instead of
+    letting the user pick something that's guaranteed to fail.
+    """
+    phy = iface_phy(iface)
+    if not phy:
+        # Couldn't determine — be permissive so a working adapter
+        # we don't recognize still gets a chance.
+        return True
+    rc, out = _run(["iw", "phy", phy, "info"], timeout=5)
+    if rc != 0:
+        return True
+    in_modes = False
+    for line in out.splitlines():
+        s = line.strip()
+        if "Supported interface modes" in s:
+            in_modes = True
+            continue
+        if in_modes:
+            if s.startswith("*"):
+                if s.startswith("* monitor"):
+                    return True
+            else:
+                # Block ended without finding monitor.
+                return False
+    return False
+
+
+def list_monitor_capable_clients() -> list[str]:
+    """Subset of list_wifi_clients() filtered to monitor-mode-capable ifaces.
+
+    Used by views that put the iface into monitor mode so the picker
+    only shows adapters that can actually do the job.
+    """
+    return [c for c in list_wifi_clients() if iface_supports_monitor(c)]
+
+
+def enable_monitor(iface: str, timeout: float = 15.0) -> str | None:
+    """Put `iface` into monitor mode and return the resulting iface name.
+
+    Three-step strategy. Returns the monitor iface name on success, or
+    None if every path failed. Robust against:
+      - NetworkManager re-claiming the radio mid-setup
+      - airmon-ng output format variance across BlueZ versions
+      - airmon-ng-less systems
+
+    1. Tell NetworkManager to release the iface so airmon-ng's child
+       interface doesn't get yanked back.
+    2. Run `airmon-ng start <iface>`. Parse the resulting *mon iface
+       from any of the three known output formats; if parsing fails
+       fall back to scanning `iw dev` for any interface in monitor mode.
+    3. If airmon-ng didn't produce a monitor iface, try the manual
+       sequence: `ip link set <iface> down ; iw dev <iface> set type
+       monitor ; ip link set <iface> up`. Some adapters won't let
+       airmon-ng create a *mon vif but will let you flip the existing
+       iface into monitor mode directly.
+    """
+    if shutil.which("nmcli"):
+        _run(["nmcli", "device", "set", iface, "managed", "no"], timeout=5)
+
+    # Step 2 — airmon-ng if available
+    if shutil.which("airmon-ng"):
+        rc, out = _run(["airmon-ng", "start", iface], timeout=timeout)
+        # Try the three known output shapes.
+        for pattern in (
+            r"monitor mode\s+vif enabled for[^\]]+\]\S+\s+on\s+\[(?:[^\]]+)\]?(\S+)",
+            r"\(monitor mode enabled on (\S+?)\)",
+            r"monitor mode enabled\s+(\S+)",
+        ):
+            m = re.search(pattern, out)
+            if m:
+                return m.group(1)
+        # Fallback: scan iw dev for any iface that's now in monitor mode.
+        for mon in list_monitor_ifaces():
+            return mon
+
+    # Step 3 — manual mode flip
+    rc1, _ = _run(["ip", "link", "set", iface, "down"], timeout=5)
+    rc2, _ = _run(["iw", "dev", iface, "set", "type", "monitor"], timeout=5)
+    rc3, _ = _run(["ip", "link", "set", iface, "up"], timeout=5)
+    if rc1 == 0 and rc2 == 0 and rc3 == 0:
+        # iface keeps its name when switched in-place
+        if iface in list_monitor_ifaces():
+            return iface
+    return None
+
+
 def list_wifi_clients() -> list[str]:
     """Names of wlan ifaces in managed (client) mode — usable for scanning."""
     rc, out = _run(["iw", "dev"], timeout=3)
