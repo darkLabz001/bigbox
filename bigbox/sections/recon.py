@@ -62,7 +62,12 @@ def _wardrive(ctx: SectionContext) -> None:
 
 
 def _loki(ctx: SectionContext) -> None:
-    ctx.show_loki()
+    import sys
+    from pathlib import Path
+    
+    # Run the exact original Loki payload, using the mocked Pygame pagerctl.py
+    loki_script = Path(__file__).resolve().parents[2] / "loki_original" / "Loki.py"
+    ctx.run_streaming("Original Loki", [sys.executable, str(loki_script)])
 
 
 def _username_search(ctx: SectionContext) -> None:
