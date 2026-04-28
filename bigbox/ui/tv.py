@@ -27,16 +27,37 @@ class TVChannel:
 
 
 CHANNELS = [
-    TVChannel("ABC News", "https://content.uplynk.com/channel/3324f2467c414329b3b4cc61b055776e.m3u8", "News"),
-    TVChannel("NHK World", "https://nhkwlive-ojp.akamaized.net/hls/live/2003459/nhkwlive-ojp-en/master.m3u8", "News"),
-    TVChannel("Al Jazeera", "https://live-hls-web-aje.getaj.net/AJE/index.m3u8", "News"),
+    # --- News & Business ---
+    TVChannel("ABC News", "https://abc-news-dmd-streams-1.akamaized.net/out/v1/701126012d044971b3fa89406a440133/index.m3u8", "News"),
+    TVChannel("CBS News 24/7", "https://jmp2.uk/plu-6350fdd266e9ea0007bedec5.m3u8", "News"),
+    TVChannel("NBC News NOW", "https://d1si3n1st4nkgb.cloudfront.net/10502/88896001/hls/master.m3u8", "News"),
+    TVChannel("Bloomberg Originals", "https://86fdc85a.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/TEctZ2JfQmxvb21iZXJnT3JpZ2luYWxzX0hMUw/playlist.m3u8", "Business"),
+    TVChannel("Al Jazeera English", "https://live-hls-apps-aje-fa.getaj.net/AJE/index.m3u8", "News"),
+    TVChannel("France 24 English", "https://live.france24.com/hls/live/2037218-b/F24_EN_HI_HLS/master_5000.m3u8", "News"),
     TVChannel("DW English", "https://dwamdstream102.akamaized.net/hls/live/2015430/dwstream102/master.m3u8", "News"),
-    TVChannel("France 24", "https://static.france24.com/live/F24_EN_LO_HLS/live_web.m3u8", "News"),
-    TVChannel("Sky News", "https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-en/master.m3u8", "News"),
-    TVChannel("Bloomberg", "https://live-bloomberg-us-east.ateme.com/index.m3u8", "Business"),
-    TVChannel("Red Bull TV", "https://rbmn-live.akamaized.net/hls/live/590964/flrb/master.m3u8", "Sports"),
-    TVChannel("Fashion TV", "https://fash1043.cloudycdn.be/slive/_definst_/ftv_ftv_mid_600/playlist.m3u8", "Lifestyle"),
+    TVChannel("Sky News Extra", "https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8", "News"),
+    TVChannel("Reuters", "https://amg00453-reuters-amg00453c1-rakuten-uk-2110.playouts.now.amagi.tv/playlist/amg00453-reuters-reuters-rakutenuk/playlist.m3u8", "News"),
+    TVChannel("CBC News", "https://d2ny9lo79ujali.cloudfront.net/CBC_News_International.m3u8", "News"),
+    TVChannel("CNA Originals", "https://d2e1asnsl7br7b.cloudfront.net/7782e205e72f43aeb4a48ec97f66ebbe/index.m3u8", "News"),
+
+    # --- Entertainment & Movies ---
+    TVChannel("Classic Movies", "https://jmp2.uk/plu-5f4d878d3d19b30007d2e782.m3u8", "Movies"),
+    TVChannel("70s Cinema", "https://jmp2.uk/plu-5f4d878d3d19b30007d2e782.m3u8", "Movies"),
+    TVChannel("80s Rewind", "https://jmp2.uk/plu-5ca525b650be2571e3943c63.m3u8", "Movies"),
+    TVChannel("90s Throwback", "https://jmp2.uk/plu-5f4d86f519358a00072b978e.m3u8", "Movies"),
+    TVChannel("50 Cent Action", "https://jmp2.uk/plu-68487fb3f212bedacf5a53e3.m3u8", "Action"),
+    TVChannel("Gravitas Movies", "https://jmp2.uk/plu-5ca5258950be2571e3943c62.m3u8", "Movies"),
+    TVChannel("Star Trek", "https://jmp2.uk/plu-5d2c56a8aeb3e2738ae27932.m3u8", "Sci-Fi"),
+    TVChannel("Doctor Who Classic", "https://jmp2.uk/plu-5e1f7da4bc7d740009831259.m3u8", "Sci-Fi"),
+    TVChannel("CSI: NY", "https://jmp2.uk/plu-62e925bc68d18a00077bb990.m3u8", "Series"),
+    TVChannel("Top Gear", "https://jmp2.uk/plu-5ca52a1b50be2571e3943c74.m3u8", "Entertainment"),
+
+    # --- Sports & Science ---
+    TVChannel("Red Bull TV", "https://3ea22335.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/UmFrdXRlblRWLWdiX1JlZEJ1bGxUVl9ITFM/playlist.m3u8", "Sports"),
     TVChannel("NASA TV", "https://ntvpublic.akamaized.net/hls/live/2026507/NASA-NTV1-Public/master.m3u8", "Science"),
+    TVChannel("Gusto TV", "https://jmp2.uk/plu-5da667e41154560009581831.m3u8", "Food"),
+    TVChannel("ACCDN", "https://raycom-accdn-firetv.amagi.tv/playlist.m3u8", "Sports"),
+    TVChannel("30A Outdoor", "https://30a-tv.com/darcizzle.m3u8", "Outdoor"),
 ]
 
 
@@ -252,11 +273,17 @@ class InternetTVView:
         
         # Channel List (Left)
         list_y = head_h + theme.PADDING
-        for i, chan in enumerate(self.channels):
+        # Calculate scroll offset to keep selected visible
+        row_h = 40
+        max_rows = (theme.SCREEN_H - list_y - 40) // row_h
+        scroll_idx = max(0, self.selected - max_rows // 2)
+        if scroll_idx + max_rows > len(self.channels):
+            scroll_idx = max(0, len(self.channels) - max_rows)
+
+        for i in range(scroll_idx, min(scroll_idx + max_rows, len(self.channels))):
+            chan = self.channels[i]
             sel = i == self.selected
-            y = list_y + i * 40
-            if y > theme.SCREEN_H - 40:
-                break
+            y = list_y + (i - scroll_idx) * row_h
                 
             rect = pygame.Rect(theme.PADDING, y, self.list_w - 20, 36)
             if sel:
@@ -266,10 +293,13 @@ class InternetTVView:
             else:
                 color = theme.FG_DIM
                 
-            name = pygame.font.Font(None, 24).render(chan.name, True, color)
+            name_text = chan.name
+            if len(name_text) > 20: name_text = name_text[:18] + ".."
+            name = pygame.font.Font(None, 24).render(name_text, True, color)
             surf.blit(name, (rect.x + 10, rect.y + (rect.height - name.get_height()) // 2))
             
-            cat = pygame.font.Font(None, 18).render(chan.category, True, theme.FG_DIM if not sel else theme.ACCENT_DIM)
+            cat_text = chan.category.split(';')[0]
+            cat = pygame.font.Font(None, 18).render(cat_text, True, theme.FG_DIM if not sel else theme.ACCENT_DIM)
             surf.blit(cat, (rect.right - cat.get_width() - 5, rect.y + 20))
 
         # Viewport (Right)
