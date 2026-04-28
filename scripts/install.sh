@@ -32,6 +32,7 @@ apt-get install -y --no-install-recommends \
     nmap arp-scan \
     aircrack-ng iw wireless-tools \
     tcpdump mdk4 wifite reaver bully pixiewps tshark \
+    hashcat macchanger \
     bluez \
     alsa-utils \
     mpv \
