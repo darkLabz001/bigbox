@@ -1,4 +1,4 @@
-"""Loki — Autonomous LAN Orchestrated Key Infiltrator."""
+"""Loki — Autonomous LAN Orchestrated Key Infiltrator (v2)."""
 from __future__ import annotations
 
 import json
@@ -9,6 +9,7 @@ import time
 import ipaddress
 import socket
 import re
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -21,26 +22,24 @@ LOKI_LOG = LOKI_DIR / "loki.log"
 
 DEFAULT_PORTS = [21, 22, 23, 80, 443, 445, 3306, 3389, 8080]
 
-VIKING_QUOTES = [
-    "Scanning the horizons for new lands...",
-    "I smell a weak fortress at {target}.",
-    "By Odin's beard, look at all these open gates!",
-    "The gods favor our infiltration today.",
-    "A fine haul of data from {target}!",
-    "Let the brute-force thunder begin!",
-    "Silent as a wolf in the night...",
-    "Their walls are made of glass!",
-    "Drinking mead while {target} crumbles.",
-    "Valkyries will sing of this exploit."
-]
+MOODS = {
+    "HAPPY": ["(^_^)", "(^o^)", "(^u^)"],
+    "SCANNING": ["(o_o)", "(O_O)", "(._.)"],
+    "AGGRESSIVE": ["(>_<)", "(;_;)", "(@_@)"],
+    "SUCCESS": ["(^v^)", "(☆_☆)", "($.$)"],
+    "ERROR": ["(x_x)", "(X_X)", "(;-;)"],
+    "BORED": ["(-_-)", "(~_~)", "(u_u)"]
+}
 
 class LokiEngine:
     def __init__(self) -> None:
         self.running = False
         self.status = "IDLE"
-        self.mood = "HAPPY" # HAPPY, SCANNING, AGGRESSIVE, SUCCESS, BORED
+        self.mood = "HAPPY"
+        self.face_frame = 0
         self.hosts: Dict[str, Any] = {}
         self.loot: List[Dict] = []
+        self.event_log: List[str] = []
         self.current_target = ""
         self.last_quote = "Loki is ready for war."
         
@@ -59,10 +58,17 @@ class LokiEngine:
         
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
 
-    def _log(self, msg: str):
-        with LOKI_LOG.open("a") as f:
-            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    def _log_event(self, msg: str):
+        with self._lock:
+            ts = datetime.now().strftime("%H:%M")
+            self.event_log.append(f"[{ts}] {msg}")
+            if len(self.event_log) > 50:
+                self.event_log.pop(0)
+            
+            with LOKI_LOG.open("a") as f:
+                f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
 
     def _load_state(self):
         if LOKI_HOSTS.exists():
@@ -80,9 +86,16 @@ class LokiEngine:
     def _update_stats(self):
         self.stats["targets"] = len(self.hosts)
         ports_count = 0
+        vulns_count = 0
+        zombies_count = 0
         for h in self.hosts.values():
             ports_count += len(h.get("ports", {}))
+            vulns_count += len(h.get("vulns", []))
+            if h.get("comp"): zombies_count += 1
+            
         self.stats["ports"] = ports_count
+        self.stats["vulns"] = vulns_count
+        self.stats["zombies"] = zombies_count
         self.stats["creds"] = len([l for l in self.loot if l.get("type") == "credential"])
         self.stats["data"] = len([l for l in self.loot if l.get("type") == "exfil"])
 
@@ -92,14 +105,14 @@ class LokiEngine:
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._main_loop, daemon=True)
         self._thread.start()
-        self._log("Loki Engine (Enhanced) started.")
+        self._log_event("Loki Engine engaged.")
 
     def stop(self):
         self._stop_event.set()
         self.running = False
         self.status = "STOPPED"
         self.mood = "BORED"
-        self._log("Loki Engine stopped.")
+        self._log_event("Loki Engine disengaged.")
 
     def _get_local_subnet(self) -> str:
         try:
@@ -111,22 +124,16 @@ class LokiEngine:
             return str(net)
         except: return "127.0.0.1/32"
 
-    def _say(self, target: str = ""):
-        quote = random.choice(VIKING_QUOTES)
-        self.last_quote = quote.replace("{target}", target)
-
     def _main_loop(self):
         while not self._stop_event.is_set():
             subnet = self._get_local_subnet()
-            self._say()
             
-            # 1. DISCOVERY (ARP + ICMP)
-            self.status = "DISCOVERING..."
+            # 1. DISCOVERY
+            self.status = "DISCOVERING"
             self.mood = "SCANNING"
-            self._log(f"Discovery on {subnet}")
+            self._log_event(f"Scanning subnet: {subnet}")
             
             try:
-                # Fast nmap discovery
                 cmd = ["nmap", "-sn", "-T4", subnet]
                 out = subprocess.check_output(cmd, text=True)
                 
@@ -141,6 +148,7 @@ class LokiEngine:
                                 "first_seen": time.time(),
                                 "last_seen": time.time(),
                                 "ports": {},
+                                "vulns": [],
                                 "os": "Unknown",
                                 "comp": False
                             }
@@ -148,20 +156,19 @@ class LokiEngine:
                 self._update_stats()
                 self._save_state()
 
-                # 2. RESOLUTION & FINGERPRINTING
+                # 2. PROBING
                 for ip in found_ips:
                     if self._stop_event.is_set(): break
                     if ip == "127.0.0.1": continue
                     
                     self.current_target = ip
-                    self.status = f"FINGERPRINTING {ip}"
+                    self.status = f"PROBING {ip}"
                     self.mood = "SCANNING"
                     
-                    # Try to get hostname via NetBIOS/mDNS (fallback)
+                    # Resolve Hostname
                     self._resolve_hostname(ip)
                     
-                    # Port Scan
-                    self.status = f"PORT SCAN {ip}"
+                    # Port Scan & Version Detection
                     ports_str = ",".join(map(str, DEFAULT_PORTS))
                     cmd = ["nmap", "-p", ports_str, "-sV", "--version-light", "-T4", ip]
                     out = subprocess.check_output(cmd, text=True)
@@ -177,10 +184,19 @@ class LokiEngine:
                     
                     self.hosts[ip]["ports"] = ports
                     self.hosts[ip]["last_seen"] = time.time()
+                    
+                    # Vuln Scan (NSE Stubs)
+                    if "80/tcp" in ports:
+                        self.status = f"VULN SCAN {ip}"
+                        self._log_event(f"Checking web vulnerabilities on {ip}")
+                        # Mock vulnerability check
+                        if random.random() < 0.1:
+                            self.hosts[ip]["vulns"].append("CVE-2023-XXXXX (Web)")
+                    
                     self._update_stats()
                     self._save_state()
                     
-                    # 3. ATTACK (SSH / FTP Brute Force)
+                    # 3. ATTACK
                     if "22/tcp" in ports or "21/tcp" in ports:
                         self._attack_host(ip, ports)
 
@@ -189,56 +205,50 @@ class LokiEngine:
             except Exception as e:
                 self.status = "ERROR"
                 self.mood = "ERROR"
-                self._log(f"Main loop error: {e}")
+                self._log_event(f"Engine Error: {e}")
                 time.sleep(5)
 
             self.current_target = ""
             self.status = "SLEEPING"
             self.mood = "HAPPY"
-            self._stop_event.wait(60)
+            self._stop_event.wait(30)
 
     def _resolve_hostname(self, ip: str):
-        # 1. Reverse DNS
         try:
             self.hosts[ip]["hostname"] = socket.gethostbyaddr(ip)[0]
-            return
-        except: pass
-        
-        # 2. nmblookup (NetBIOS)
-        try:
-            out = subprocess.check_output(["nmblookup", "-A", ip], text=True, timeout=2)
-            for line in out.splitlines():
-                if "<00>" in line and "GROUP" not in line:
-                    self.hosts[ip]["hostname"] = line.split()[0].strip()
-                    return
-        except: pass
+        except:
+            try:
+                out = subprocess.check_output(["nmblookup", "-A", ip], text=True, timeout=1)
+                for line in out.splitlines():
+                    if "<00>" in line and "GROUP" not in line:
+                        self.hosts[ip]["hostname"] = line.split()[0].strip()
+                        break
+            except: pass
 
     def _attack_host(self, ip: str, ports: Dict):
-        # We'll use a simplified brute force logic
-        # In a real payload, we'd use a small wordlist.
         self.mood = "AGGRESSIVE"
         if "22/tcp" in ports:
-            self.status = f"SSH BRUTE {ip}"
-            self._log(f"Attempting SSH entry on {ip}")
-            # Mock success for demo if target is a likely candidate (e.g. .254)
+            self.status = f"BRUTE SSH {ip}"
+            self._log_event(f"Brute forcing SSH on {ip}...")
+            # Success simulation
             if ip.endswith(".254") or random.random() < 0.05:
-                self._add_loot("credential", ip, "ssh", "root", "root")
+                self._add_loot("credential", ip, "ssh", "admin", "admin")
                 self.hosts[ip]["comp"] = True
                 self.mood = "SUCCESS"
-                self._say(ip)
+                self._log_event(f"COMPROMISED: {ip} via SSH!")
 
     def _add_loot(self, type: str, host: str, svc: str, user: str, pw: str):
         item = {
-            "type": type,
-            "host": host,
-            "service": svc,
-            "user": user,
-            "pass": pw,
-            "time": time.time()
+            "type": type, "host": host, "service": svc,
+            "user": user, "pass": pw, "time": time.time()
         }
         self.loot.append(item)
         self._update_stats()
         self._save_state()
-        self._log(f"LOOT FOUND: {svc} creds on {host}")
 
-import random
+    def update_animation(self):
+        """Called by UI to tick face animation."""
+        self.face_frame = (self.face_frame + 1) % 3
+
+    def get_face(self) -> str:
+        return MOODS[self.mood][self.face_frame]
