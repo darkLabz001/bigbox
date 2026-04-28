@@ -147,7 +147,8 @@ class App:
                     host="0.0.0.0", 
                     port=8080, 
                     log_level="error",
-                    timeout_keep_alive=60
+                    timeout_keep_alive=60,
+                    loop="asyncio"
                 )
             
             t = threading.Thread(target=run_server, daemon=True)
