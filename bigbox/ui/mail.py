@@ -104,38 +104,58 @@ class MailView:
             
             # Fetch last 20 messages
             status, data = mail.search(None, "ALL")
+            if status != "OK" or not data[0]:
+                self.messages = []
+                self.is_loading = False
+                mail.logout()
+                return
+
             mail_ids = data[0].split()
             recent_ids = mail_ids[-20:]
             
             new_msgs = []
             for m_id in reversed(recent_ids):
-                status, msg_data = mail.fetch(m_id, "(RFC822)")
-                for response_part in msg_data:
-                    if isinstance(response_part, tuple):
-                        msg = email.message_from_bytes(response_part[1])
-                        subject, encoding = decode_header(msg["Subject"])[0]
-                        if isinstance(subject, bytes):
-                            subject = subject.decode(encoding or "utf-8")
-                        
-                        sender = msg.get("From")
-                        date = msg.get("Date")
-                        
-                        body = ""
-                        if msg.is_multipart():
-                            for part in msg.walk():
-                                if part.get_content_type() == "text/plain":
-                                    body = part.get_payload(decode=True).decode()
-                                    break
-                        else:
-                            body = msg.get_payload(decode=True).decode()
+                try:
+                    status, msg_data = mail.fetch(m_id, "(RFC822)")
+                    if status != "OK": continue
+                    for response_part in msg_data:
+                        if isinstance(response_part, tuple):
+                            msg = email.message_from_bytes(response_part[1])
+                            subject, encoding = decode_header(msg["Subject"] or "No Subject")[0]
+                            if isinstance(subject, bytes):
+                                try:
+                                    subject = subject.decode(encoding or "utf-8")
+                                except:
+                                    subject = subject.decode("latin1")
                             
-                        new_msgs.append(MailMessage(
-                            uid=m_id.decode(),
-                            subject=str(subject),
-                            sender=str(sender),
-                            date=str(date),
-                            body=body
-                        ))
+                            sender = msg.get("From", "Unknown")
+                            date = msg.get("Date", "")
+                            
+                            body = ""
+                            try:
+                                if msg.is_multipart():
+                                    for part in msg.walk():
+                                        if part.get_content_type() == "text/plain":
+                                            payload = part.get_payload(decode=True)
+                                            if payload:
+                                                body = payload.decode(errors="replace")
+                                                break
+                                else:
+                                    payload = msg.get_payload(decode=True)
+                                    if payload:
+                                        body = payload.decode(errors="replace")
+                            except:
+                                body = "[Error decoding body]"
+                                
+                            new_msgs.append(MailMessage(
+                                uid=m_id.decode(),
+                                subject=str(subject),
+                                sender=str(sender),
+                                date=str(date),
+                                body=body
+                            ))
+                except Exception as fe:
+                    print(f"[mail] Fetch error for {m_id}: {fe}")
             
             self.messages = new_msgs
             self.is_loading = False
@@ -274,8 +294,15 @@ class MailView:
         y = head_h + 5
         row_h = 60
         
-        if not self.messages:
-            msg = self.body_font.render("No messages or loading...", True, theme.FG_DIM)
+        if self.error_msg:
+            err = self.body_font.render(f"ERROR: {self.error_msg}", True, theme.ERR)
+            surf.blit(err, (theme.PADDING, y + 20))
+            hint = self.small_font.render("Check config (SELECT) or try Y to refresh", True, theme.FG_DIM)
+            surf.blit(hint, (theme.PADDING, y + 60))
+            return
+
+        if not self.messages and not self.is_loading:
+            msg = self.body_font.render("No messages in Inbox.", True, theme.FG_DIM)
             surf.blit(msg, (theme.PADDING, y + 20))
         
         for i, m in enumerate(self.messages):
@@ -364,6 +391,9 @@ class MailView:
             color = theme.ERR if "NOT SET" in ln else theme.FG
             txt = self.body_font.render(ln, True, color)
             surf.blit(txt, (40, y + i*40))
+        
+        hint = self.small_font.render("Note: Gmail requires 'App Passwords' (not your main pass)", True, theme.FG_DIM)
+        surf.blit(hint, (40, y + len(lines)*40 + 10))
         
         if self.error_msg:
             err = self.small_font.render(f"LAST ERROR: {self.error_msg}", True, theme.ERR)
