@@ -7,7 +7,7 @@ than a flash of black or the carousel pre-render.
 Stages, ~3.5s total:
   0.0 - 0.6 s   black with red horizontal sweep (CRT power-on)
   0.6 - 1.4 s   ARASAKA-style red diamond logo draws in
-  1.4 - 2.4 s   "WELCOME TO DARKBOX" types onto the screen
+  1.4 - 2.4 s   "WELCOME TO DaRkb0x" types onto the screen
   2.4 - 3.5 s   hold + scanline shimmer + glitch tick
   exit          screen wiped, control returns to caller
 
@@ -159,7 +159,7 @@ def play(screen: pygame.Surface, total_seconds: float = 14.5) -> None:
     sequence is:
       0.0 - 0.6 s   CRT power-on sweep
       0.6 - 1.4 s   Arasaka diamond reveal
-      1.4 - 2.4 s   "WELCOME TO DARKBOX" typewriter
+      1.4 - 2.4 s   "WELCOME TO DaRkb0x" typewriter
       2.0 - 2.5 s   "BOOTSTRAPPING SECURE NODE..." subtitle
       3.0 - 13.0 s  boot log lines roll on, one every ~0.9 s
       13.0 +        title + log hold, fade out
@@ -189,7 +189,7 @@ def play(screen: pygame.Surface, total_seconds: float = 14.5) -> None:
 
     clock = pygame.time.Clock()
     start = time.time()
-    title_text = "WELCOME TO DARKBOX"
+    title_text = "WELCOME TO DaRkb0x"
     sub_text = "BOOTSTRAPPING SECURE NODE..."
 
     # Boot log timing: first line appears at t=3.0, one every 0.9s, with
@@ -267,7 +267,7 @@ def play(screen: pygame.Surface, total_seconds: float = 14.5) -> None:
                     screen.blit(ls, (log_x, log_y + i * line_h))
 
         # Bottom-left version stamp
-        stamp = f_corp.render("[ARASAKA::DARKBOX::v0.1]", True, ARA_RED_DIM)
+        stamp = f_corp.render("[ARASAKA::DaRkb0x::v0.1]", True, ARA_RED_DIM)
         screen.blit(stamp, (12, h - 26))
 
         # Top-right blinking cursor
