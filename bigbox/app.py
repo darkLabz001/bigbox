@@ -28,7 +28,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, MailView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 class App:
@@ -51,6 +51,7 @@ class App:
         self.cracker_view: OfflineCrackerView | None = None
         self.media_view: MediaPlayerView | None = None
         self.tv_view: InternetTVView | None = None
+        self.mail_view: MailView | None = None
         self.chat_view: ChatView | None = None
         self.sherlock_view: SherlockView | None = None
         self.deaddrop_view: DeadDropView | None = None
@@ -196,6 +197,9 @@ class App:
     def show_tv(self) -> None:
         self.tv_view = InternetTVView()
 
+    def show_mail(self) -> None:
+        self.mail_view = MailView()
+
     def show_wardrive(self) -> None:
         self.wardrive_view = WardriveView()
 
@@ -267,6 +271,7 @@ class App:
         self.cracker_view = None
         self.media_view = None
         self.tv_view = None
+        self.mail_view = None
         self.chat_view = None
         self.sherlock_view = None
         self.deaddrop_view = None
@@ -413,6 +418,10 @@ class App:
                 self.tv_view.render(screen)
                 if self.tv_view.dismissed:
                     self.tv_view = None
+            elif self.mail_view is not None:
+                self.mail_view.render(screen)
+                if self.mail_view.dismissed:
+                    self.mail_view = None
             elif self.chat_view is not None:
                 self.chat_view.render(screen)
                 if self.chat_view.dismissed:
@@ -602,6 +611,10 @@ class App:
                 self.tv_view.handle(bev, self)
             except Exception as e:
                 self.show_result("TV Error", f"{type(e).__name__}: {e}")
+            return
+
+        if self.mail_view is not None:
+            self.mail_view.handle(bev, self)
             return
 
         if self.chat_view is not None:
