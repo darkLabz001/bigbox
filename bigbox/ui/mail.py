@@ -277,7 +277,7 @@ class MailView:
                 self.comp_body = ""
             elif ev.button is Button.Y:
                 self._refresh_inbox()
-            elif ev.button is Button.SELECT:
+            elif ev.button in (Button.SELECT, Button.START):
                 self.phase = self.PHASE_CONFIG
 
         elif self.phase == self.PHASE_READING:
@@ -346,7 +346,7 @@ class MailView:
         row_h = 60
         
         # Always render hint first to ensure visibility regardless of early returns
-        hint = self.small_font.render("A: Read  X: Compose  Y: Refresh  SELECT: Config  B: Exit", True, theme.FG_DIM)
+        hint = self.small_font.render("A: Read  X: Compose  Y: Refresh  START/SEL: Config  B: Exit", True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 25))
 
         if self.error_msg:
