@@ -28,7 +28,8 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView
+from bigbox.glitch import GlitchEngine
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, GlitchView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 class App:
@@ -36,6 +37,7 @@ class App:
         self.dev_mode = bool(os.environ.get("BIGBOX_DEV"))
         self.bus = EventBus()
         self.running = True
+        self.glitch_engine = GlitchEngine()
         self.result_view: ResultView | None = None
         self.update_view: UpdateView | None = None
         self.menu_view: MenuView | None = None
@@ -51,6 +53,7 @@ class App:
         self.cracker_view: OfflineCrackerView | None = None
         self.media_view: MediaPlayerView | None = None
         self.chat_view: ChatView | None = None
+        self.glitch_view: GlitchView | None = None
         self.sherlock_view: SherlockView | None = None
         self.deaddrop_view: DeadDropView | None = None
         self.bbs_view: BBSView | None = None
@@ -63,6 +66,9 @@ class App:
         self.eviltwin_view: EvilTwinView | None = None
         self.games_view: GamesView | None = None
         self.tracker_view: TrackerView | None = None
+        self.probe_view: ProbeSnifferView | None = None
+        self.beacon_view: BeaconFloodView | None = None
+        self.karma_view: KarmaLiteView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
         self._last_vol_enforce = 0
@@ -201,8 +207,21 @@ class App:
     def show_trackers(self) -> None:
         self.tracker_view = TrackerView()
 
+    def show_probe_sniffer(self) -> None:
+        self.probe_view = ProbeSnifferView()
+
+    def show_beacon_flood(self) -> None:
+        self.beacon_view = BeaconFloodView()
+
+    def show_karma_lite(self) -> None:
+        self.karma_view = KarmaLiteView()
+
     def show_chat(self) -> None:
         self.chat_view = ChatView()
+
+    def show_glitch(self) -> None:
+        self.glitch_engine.start()
+        self.glitch_view = GlitchView(self.glitch_engine)
 
     def show_sherlock(self, username: str) -> None:
         self.sherlock_view = SherlockView(username)
@@ -251,6 +270,7 @@ class App:
         self.cracker_view = None
         self.media_view = None
         self.chat_view = None
+        self.glitch_view = None
         self.sherlock_view = None
         self.deaddrop_view = None
         self.bbs_view = None
@@ -263,6 +283,9 @@ class App:
         self.eviltwin_view = None
         self.games_view = None
         self.tracker_view = None
+        self.probe_view = None
+        self.beacon_view = None
+        self.karma_view = None
 
     def toast(self, msg: str) -> None:
         # Lightweight: just print for now; could become an on-screen toast widget.
@@ -389,6 +412,10 @@ class App:
                 self.chat_view.render(screen)
                 if self.chat_view.dismissed:
                     self.chat_view = None
+            elif self.glitch_view is not None:
+                self.glitch_view.render(screen)
+                if self.glitch_view.dismissed:
+                    self.glitch_view = None
             elif self.sherlock_view is not None:
                 self.sherlock_view.render(screen)
                 if self.sherlock_view.dismissed:
@@ -437,6 +464,18 @@ class App:
                 self.tracker_view.render(screen)
                 if self.tracker_view.dismissed:
                     self.tracker_view = None
+            elif self.probe_view is not None:
+                self.probe_view.render(screen)
+                if self.probe_view.dismissed:
+                    self.probe_view = None
+            elif self.beacon_view is not None:
+                self.beacon_view.render(screen)
+                if self.beacon_view.dismissed:
+                    self.beacon_view = None
+            elif self.karma_view is not None:
+                self.karma_view.render(screen)
+                if self.karma_view.dismissed:
+                    self.karma_view = None
             elif self.update_view is not None:
                 self.update_view.render(screen)
                 if self.update_view.dismissed:
@@ -561,6 +600,10 @@ class App:
             self.chat_view.handle(bev, self)
             return
 
+        if self.glitch_view is not None:
+            self.glitch_view.handle(bev, self)
+            return
+
         if self.sherlock_view is not None:
             self.sherlock_view.handle(bev, self)
             return
@@ -607,6 +650,18 @@ class App:
 
         if self.tracker_view is not None:
             self.tracker_view.handle(bev, self)
+            return
+
+        if self.probe_view is not None:
+            self.probe_view.handle(bev, self)
+            return
+
+        if self.beacon_view is not None:
+            self.beacon_view.handle(bev, self)
+            return
+
+        if self.karma_view is not None:
+            self.karma_view.handle(bev, self)
             return
 
         if self.update_view is not None:

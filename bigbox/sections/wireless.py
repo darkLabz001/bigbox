@@ -35,6 +35,18 @@ def _evil_twin(ctx: SectionContext) -> None:
     ctx.show_eviltwin()
 
 
+def _probe_sniffer(ctx: SectionContext) -> None:
+    ctx.show_probe_sniffer()
+
+
+def _beacon_flood(ctx: SectionContext) -> None:
+    ctx.show_beacon_flood()
+
+
+def _karma_lite(ctx: SectionContext) -> None:
+    ctx.show_karma_lite()
+
+
 def _airodump_hint(ctx: SectionContext) -> None:
     ctx.show_result(
         "airodump-ng",
@@ -57,6 +69,9 @@ def build() -> Section:
             Action("Handshake / Deauth", _handshake_deauth, "capture WPA handshakes"),
             Action("Crack Handshake (offline)", _crack_handshake, "aircrack-ng + wordlist"),
             Action("Evil Twin / Captive Portal", _evil_twin, "rogue AP + cred capture"),
+            Action("Probe Sniffer", _probe_sniffer, "passive — see every phone's known SSIDs"),
+            Action("Beacon Flood", _beacon_flood, "spam fake SSIDs into nearby devices"),
+            Action("Karma-lite", _karma_lite, "broadcast SSIDs phones are probing for"),
             Action("List Wi-Fi interfaces", _wifi_interfaces),
             Action("Current link", _link),
             Action("Scan APs (wlan0)", _wifi_scan, "iw dev wlan0 scan"),

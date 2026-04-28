@@ -17,6 +17,7 @@ from bigbox.ui.wifi_multi_tool import WifiMultiToolView
 from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.chat import ChatView
+from bigbox.ui.glitch import GlitchView
 from bigbox.ui.sherlock import SherlockView
 from bigbox.ui.deaddrop import DeadDropView
 from bigbox.ui.bbs import BBSView
@@ -27,6 +28,9 @@ from bigbox.ui.terminal import TerminalView
 from bigbox.ui.theme_manager import ThemeManagerView
 from bigbox.ui.update import UpdateView
 from bigbox.ui.wardrive import WardriveView
+from bigbox.ui.wifi_lite import (
+    ProbeSnifferView, BeaconFloodView, KarmaLiteView,
+)
 
 __all__ = [
     "Action",
@@ -52,6 +56,7 @@ __all__ = [
     "OfflineCrackerView",
     "MediaPlayerView",
     "ChatView",
+    "GlitchView",
     "SherlockView",
     "DeadDropView",
     "BBSView",
@@ -62,4 +67,7 @@ __all__ = [
     "ThemeManagerView",
     "UpdateView",
     "WardriveView",
+    "ProbeSnifferView",
+    "BeaconFloodView",
+    "KarmaLiteView",
 ]
