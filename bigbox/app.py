@@ -28,8 +28,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.glitch import GlitchEngine
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, ChatView, GlitchView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 class App:
@@ -37,7 +36,6 @@ class App:
         self.dev_mode = bool(os.environ.get("BIGBOX_DEV"))
         self.bus = EventBus()
         self.running = True
-        self.glitch_engine = GlitchEngine()
         self.result_view: ResultView | None = None
         self.update_view: UpdateView | None = None
         self.menu_view: MenuView | None = None
@@ -54,7 +52,6 @@ class App:
         self.media_view: MediaPlayerView | None = None
         self.tv_view: InternetTVView | None = None
         self.chat_view: ChatView | None = None
-        self.glitch_view: GlitchView | None = None
         self.sherlock_view: SherlockView | None = None
         self.deaddrop_view: DeadDropView | None = None
         self.bbs_view: BBSView | None = None
@@ -223,10 +220,6 @@ class App:
     def show_chat(self) -> None:
         self.chat_view = ChatView()
 
-    def show_glitch(self) -> None:
-        self.glitch_engine.start()
-        self.glitch_view = GlitchView(self.glitch_engine)
-
     def show_sherlock(self, username: str) -> None:
         self.sherlock_view = SherlockView(username)
 
@@ -275,7 +268,6 @@ class App:
         self.media_view = None
         self.tv_view = None
         self.chat_view = None
-        self.glitch_view = None
         self.sherlock_view = None
         self.deaddrop_view = None
         self.bbs_view = None
@@ -423,10 +415,6 @@ class App:
                 self.chat_view.render(screen)
                 if self.chat_view.dismissed:
                     self.chat_view = None
-            elif self.glitch_view is not None:
-                self.glitch_view.render(screen)
-                if self.glitch_view.dismissed:
-                    self.glitch_view = None
             elif self.sherlock_view is not None:
                 self.sherlock_view.render(screen)
                 if self.sherlock_view.dismissed:
@@ -613,10 +601,6 @@ class App:
 
         if self.chat_view is not None:
             self.chat_view.handle(bev, self)
-            return
-
-        if self.glitch_view is not None:
-            self.glitch_view.handle(bev, self)
             return
 
         if self.sherlock_view is not None:

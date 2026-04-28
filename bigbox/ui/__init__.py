@@ -18,7 +18,6 @@ from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.tv import InternetTVView
 from bigbox.ui.chat import ChatView
-from bigbox.ui.glitch import GlitchView
 from bigbox.ui.sherlock import SherlockView
 from bigbox.ui.deaddrop import DeadDropView
 from bigbox.ui.bbs import BBSView
@@ -58,7 +57,6 @@ __all__ = [
     "MediaPlayerView",
     "InternetTVView",
     "ChatView",
-    "GlitchView",
     "SherlockView",
     "DeadDropView",
     "BBSView",
