@@ -50,7 +50,7 @@ def _signal_scraper(ctx: SectionContext) -> None:
     ctx.show_signal_scraper()
 
 
-def _wardrive(ctx: SectionContext) -> None:
+def _cam_scanner(ctx: SectionContext) -> None:
     ctx.show_camscan()
 
 
