@@ -9,6 +9,10 @@ def _open_player(ctx: SectionContext) -> None:
     ctx.show_media_player()
 
 
+def _open_tv(ctx: SectionContext) -> None:
+    ctx.show_tv()
+
+
 def build() -> Section:
     return Section(
         title="Media",
@@ -17,5 +21,6 @@ def build() -> Section:
         background_img=load_background("media"),
         actions=[
             Action("Open Media Player", _open_player, "Browse and play movies"),
+            Action("Free Internet TV", _open_tv, "Watch live world news & TV"),
         ],
     )

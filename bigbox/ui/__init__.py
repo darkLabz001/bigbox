@@ -16,6 +16,7 @@ from bigbox.ui.trackers import TrackerView
 from bigbox.ui.wifi_multi_tool import WifiMultiToolView
 from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
+from bigbox.ui.tv import InternetTVView
 from bigbox.ui.chat import ChatView
 from bigbox.ui.glitch import GlitchView
 from bigbox.ui.sherlock import SherlockView
@@ -55,6 +56,7 @@ __all__ = [
     "WifiMultiToolView",
     "OfflineCrackerView",
     "MediaPlayerView",
+    "InternetTVView",
     "ChatView",
     "GlitchView",
     "SherlockView",

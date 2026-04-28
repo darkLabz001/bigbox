@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLITCH :: C2</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #eee;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+        }
+        h1, h2 { border-bottom: 2px solid #eee; padding-bottom: 5px; color: #fff; }
+        .panel {
+            background: #111;
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .status-header {
+            grid-column: span 2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .host-card {
+            background: #181818;
+            border-left: 4px solid #444;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .host-card.vulnerable { border-left-color: #ffcc00; }
+        .host-card.attacking { border-left-color: #ff3300; }
+        .host-card.compromised { border-left-color: #33ff33; background: #112211; }
+        
+        #logs {
+            font-size: 13px;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            color: #aaa;
+        }
+        .log-entry { margin-bottom: 4px; }
+        .accent { color: #33ff33; }
+        .blink { animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+    <div class="status-header panel">
+        <div>
+            <h1>GLITCH :: DAEMON v1.0</h1>
+            <p>OPERATION: <span id="activity" class="accent">IDLE</span> | <span id="status">INIT...</span></p>
+        </div>
+        <div style="text-align: right;">
+            <p>172.20.10.2 :: ONLINE</p>
+            <p class="blink">SCANNING...</p>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>TARGETS</h2>
+        <div id="hosts">
+            <!-- Dynamic hosts -->
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>ACTIVITY LOG</h2>
+        <div id="logs">
+            <!-- Dynamic logs -->
+        </div>
+    </div>
+
+    <script>
+        async function update() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                document.getElementById('activity').textContent = data.activity;
+                document.getElementById('status').textContent = data.status;
+                
+                // Update Hosts
+                const hostContainer = document.getElementById('hosts');
+                hostContainer.innerHTML = data.hosts.length ? '' : '<p>No targets found yet...</p>';
+                data.hosts.forEach(h => {
+                    const card = document.createElement('div');
+                    card.className = `host-card ${h.status}`;
+                    card.innerHTML = `
+                        <strong>${h.ip}</strong> (${h.status.toUpperCase()})<br>
+                        <small>${h.services.length ? 'Ports: ' + h.services.join(', ') : 'No open ports'}</small>
+                    `;
+                    hostContainer.appendChild(card);
+                });
+                
+                // Update Logs
+                const logContainer = document.getElementById('logs');
+                logContainer.innerHTML = data.logs.map(l => `<div class="log-entry">${l}</div>`).join('');
+                logContainer.scrollTop = logContainer.scrollHeight;
+                
+            } catch (e) {
+                console.error("Update failed", e);
+            }
+        }
+        setInterval(update, 2000);
+        update();
+    </script>
+</body>
+</html>

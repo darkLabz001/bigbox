@@ -29,7 +29,7 @@ from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.glitch import GlitchEngine
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, GlitchView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, ChatView, GlitchView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 class App:
@@ -52,6 +52,7 @@ class App:
         self.wifi_multi_view: WifiMultiToolView | None = None
         self.cracker_view: OfflineCrackerView | None = None
         self.media_view: MediaPlayerView | None = None
+        self.tv_view: InternetTVView | None = None
         self.chat_view: ChatView | None = None
         self.glitch_view: GlitchView | None = None
         self.sherlock_view: SherlockView | None = None
@@ -195,6 +196,9 @@ class App:
     def show_media_player(self) -> None:
         self.media_view = MediaPlayerView()
 
+    def show_tv(self) -> None:
+        self.tv_view = InternetTVView()
+
     def show_wardrive(self) -> None:
         self.wardrive_view = WardriveView()
 
@@ -269,6 +273,7 @@ class App:
         self.wifi_multi_view = None
         self.cracker_view = None
         self.media_view = None
+        self.tv_view = None
         self.chat_view = None
         self.glitch_view = None
         self.sherlock_view = None
@@ -312,6 +317,8 @@ class App:
                 return 5
         # Live video / animation views — keep them smooth.
         if self.cctv_view is not None:
+            return 30
+        if self.tv_view is not None:
             return 30
         if self.flock_view is not None:
             return 30
@@ -408,6 +415,10 @@ class App:
                 self.media_view.render(screen)
                 if self.media_view.dismissed:
                     self.media_view = None
+            elif self.tv_view is not None:
+                self.tv_view.render(screen)
+                if self.tv_view.dismissed:
+                    self.tv_view = None
             elif self.chat_view is not None:
                 self.chat_view.render(screen)
                 if self.chat_view.dismissed:
@@ -594,6 +605,10 @@ class App:
 
         if self.media_view is not None:
             self.media_view.handle(bev, self)
+            return
+
+        if self.tv_view is not None:
+            self.tv_view.handle(bev, self)
             return
 
         if self.chat_view is not None:

@@ -61,6 +61,10 @@ def _wardrive(ctx: SectionContext) -> None:
     ctx.show_wardrive()
 
 
+def _glitch(ctx: SectionContext) -> None:
+    ctx.show_glitch()
+
+
 def _username_search(ctx: SectionContext) -> None:
     """Sherlock — search a username across hundreds of social networks."""
     def _go(val: str | None) -> None:
@@ -139,6 +143,7 @@ def build() -> Section:
         icon_img=load_icon("recon"),
         background_img=load_background("recon"),
         actions=[
+            Action("Glitch", _glitch, "autonomous recon & attack"),
             Action("FlockSeeker", _flock_seeker, "detect ALPR infrastructure"),
             Action("Wardriving", _wardrive, "GPS-tagged Wi-Fi+BT for WiGLE"),
             Action("Ping sweep", _ping_sweep, "host discovery"),

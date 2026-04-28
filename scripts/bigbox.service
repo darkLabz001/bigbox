@@ -13,14 +13,11 @@ Environment=PYTHONUNBUFFERED=1
 Environment=DISPLAY=:0
 WorkingDirectory=/opt/bigbox
 
-# Launch a single-purpose X server on vt3 and run bigbox as its only client.
-# This is the most portable path: works on legacy fbdev images (no KMS) and
-# on KMS images, with no config.txt changes needed. -nocursor hides the X
-# pointer, -nolisten tcp closes the X11 socket on the network.
+# Launch a single-purpose X server on vt1 and run bigbox as its only client.
 ExecStartPre=/usr/bin/amixer sset "PCM" 100%
-ExecStart=/usr/bin/xinit /opt/bigbox/.venv/bin/python -m bigbox -- :0 vt3 -nocursor -nolisten tcp
+ExecStart=/usr/bin/xinit /opt/bigbox/.venv/bin/python -m bigbox -- :0 vt1 -nocursor -nolisten tcp
 
-TTYPath=/dev/tty3
+TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes
 StandardInput=tty
