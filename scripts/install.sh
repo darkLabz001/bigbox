@@ -31,6 +31,7 @@ apt-get install -y --no-install-recommends \
     libturbojpeg0 \
     nmap arp-scan \
     aircrack-ng iw wireless-tools \
+    tcpdump mdk4 \
     bluez \
     alsa-utils \
     mpv \
