@@ -49,7 +49,20 @@ class WifiteView:
 
     def _start_wifite(self):
         if not self.selected_iface:
-            self.status_msg = "ERROR: No Wi-Fi adapter found"
+            # Fallback to wlan0 if list failed
+            self.selected_iface = "wlan0"
+
+        # Check for wordlist
+        wordlist = "/usr/share/wordlists/rockyou.txt"
+        if "--dict" in self.args:
+            try:
+                idx = self.args.index("--dict")
+                wordlist = self.args[idx+1]
+            except: pass
+            
+        if not os.path.exists(wordlist):
+            self.phase = PHASE_LANDING
+            self.status_msg = f"ERROR: Wordlist not found at {wordlist}"
             return
 
         self.phase = PHASE_RUNNING
@@ -149,14 +162,17 @@ class WifiteView:
 
         elif self.phase == PHASE_CONFIG:
             if ev.button is Button.A:
-                # Toggle interface if multiple
-                ifaces = hardware.list_wifi_clients()
-                if ifaces:
-                    try:
-                        idx = (ifaces.index(self.selected_iface) + 1) % len(ifaces)
-                        self.selected_iface = ifaces[idx]
-                    except ValueError:
-                        self.selected_iface = ifaces[0]
+                # Toggle through common interfaces
+                common = ["wlan0", "wlan1", "wlan0mon", "wlan1mon"]
+                # Add any currently active ones
+                active = hardware.list_wifi_clients() + hardware.list_monitor_ifaces()
+                ifaces = sorted(list(set(common + active)))
+                
+                try:
+                    idx = (ifaces.index(self.selected_iface) + 1) % len(ifaces)
+                    self.selected_iface = ifaces[idx]
+                except (ValueError, IndexError):
+                    self.selected_iface = ifaces[0] if ifaces else "wlan0"
             elif ev.button is Button.X:
                 ctx.get_input("Wifite Args", self._on_args_done, initial=" ".join(self.args))
             elif ev.button is Button.START:

@@ -176,6 +176,22 @@ elif [ ! -d "$REPO_DIR/.venv" ]; then
 fi
 echo "PROGRESS: 90"
 
+# --- wordlists -------------------------------------------------------------
+echo "STATUS: Preparing wordlists..."
+mkdir -p /usr/share/wordlists
+if [ ! -f /usr/share/wordlists/rockyou.txt ]; then
+    if [ -f /usr/share/wordlists/rockyou.txt.gz ]; then
+        echo "Decompressing rockyou.txt.gz..." >>"$LOG"
+        gunzip -f /usr/share/wordlists/rockyou.txt.gz >>"$LOG" 2>&1
+    else
+        echo "Creating fallback wordlist..." >>"$LOG"
+        echo "12345678" > /usr/share/wordlists/rockyou.txt
+        echo "password" >> /usr/share/wordlists/rockyou.txt
+        echo "admin123" >> /usr/share/wordlists/rockyou.txt
+    fi
+fi
+echo "PROGRESS: 95"
+
 # --- service restart -------------------------------------------------------
 # This script is usually invoked as a child of bigbox.service. A direct
 # `systemctl restart bigbox.service` here would kill the whole cgroup,
