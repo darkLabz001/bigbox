@@ -301,6 +301,8 @@ class App:
         # External fullscreen subprocesses own the display.
         if self.media_view is not None and getattr(self.media_view, "proc", None) is not None:
             return 5
+        if self.tv_view is not None and getattr(self.tv_view, "playing_proc", None) is not None:
+            return 5
         if self.games_view is not None and getattr(self.games_view, "proc", None) is not None:
             return 5
         if self.eviltwin_view is not None:
@@ -596,7 +598,10 @@ class App:
             return
 
         if self.tv_view is not None:
-            self.tv_view.handle(bev, self)
+            try:
+                self.tv_view.handle(bev, self)
+            except Exception as e:
+                self.show_result("TV Error", f"{type(e).__name__}: {e}")
             return
 
         if self.chat_view is not None:

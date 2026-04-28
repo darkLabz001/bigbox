@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import os
 import random
 import shutil
 import subprocess
@@ -79,6 +80,8 @@ class InternetTVView:
         self.is_loading = True
         self.error_msg: str | None = None
         self.fps = 0.0
+        
+        self.playing_proc: subprocess.Popen | None = None
         
         # Noise for "static" effect
         self._noise_cache: list[pygame.Surface] = []
@@ -208,6 +211,13 @@ class InternetTVView:
 
     def _play_fullscreen(self):
         """Launches mpv for true full-screen playback with audio."""
+        if self.playing_proc:
+            return
+            
+        if not shutil.which("mpv"):
+            self.error_msg = "mpv not installed"
+            return
+
         chan = self.channels[self.selected]
         # We need to stop our preview thread so it doesn't fight for bandwidth/CPU
         self._stop_thread = True
@@ -231,20 +241,42 @@ class InternetTVView:
         
         try:
             # Re-enforce volume
-            subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
-            # This is blocking in terms of the subprocess, but we want it to run
-            # until the user exits mpv.
-            subprocess.run(cmd, env=env)
+            if shutil.which("amixer"):
+                subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
+            
+            self.playing_proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env
+            )
         except Exception as e:
-            print(f"[tv] Fullscreen error: {e}")
-        
-        # Restart preview
+            self.error_msg = f"launch failed: {e}"
+            self._start_stream_thread()
+
+    def _stop_fullscreen(self):
+        if self.playing_proc:
+            try:
+                self.playing_proc.terminate()
+                self.playing_proc.wait(timeout=1.0)
+            except:
+                try:
+                    self.playing_proc.kill()
+                except:
+                    pass
+            self.playing_proc = None
         self._start_stream_thread()
 
     def handle(self, ev: ButtonEvent, ctx: any) -> None:
         if not ev.pressed:
             return
             
+        if self.playing_proc:
+            if ev.button in (Button.A, Button.B, Button.START):
+                self._stop_fullscreen()
+            return
+
         if ev.button is Button.B:
             self._stop_thread = True
             self.dismissed = True
@@ -261,6 +293,11 @@ class InternetTVView:
             self._play_fullscreen()
 
     def render(self, surf: pygame.Surface) -> None:
+        # Check if playback ended externally (e.g. user pressed 'q' in mpv)
+        if self.playing_proc and self.playing_proc.poll() is not None:
+            self.playing_proc = None
+            self._start_stream_thread()
+
         surf.fill(theme.BG)
         
         # Header
@@ -325,7 +362,11 @@ class InternetTVView:
         chan = self.channels[self.selected]
         
         # Top-left OSD
-        tag = f_small.render(f"LIVE :: {chan.name.upper()}", True, theme.ACCENT)
+        if self.playing_proc:
+            tag_text = f"PLAYING :: {chan.name.upper()}"
+        else:
+            tag_text = f"LIVE :: {chan.name.upper()}"
+        tag = f_small.render(tag_text, True, theme.ACCENT)
         surf.blit(tag, (view_rect.x + 15, view_rect.y + 15))
         
         # Bottom-right OSD
@@ -334,7 +375,10 @@ class InternetTVView:
         surf.blit(ts_surf, (view_rect.right - ts_surf.get_width() - 15, view_rect.bottom - 25))
         
         # Status indicators
-        if self.is_loading:
+        if self.playing_proc:
+            msg = f_small.render("FULL SCREEN ACTIVE - PRESS A/B TO STOP", True, theme.ACCENT)
+            surf.blit(msg, (view_rect.centerx - msg.get_width() // 2, view_rect.centery))
+        elif self.is_loading:
             msg = f_small.render("BUFFERING...", True, theme.ACCENT)
             surf.blit(msg, (view_rect.centerx - msg.get_width() // 2, view_rect.centery))
         elif self.error_msg and not self._frame_buffer:
@@ -342,5 +386,9 @@ class InternetTVView:
             surf.blit(err, (view_rect.centerx - err.get_width() // 2, view_rect.centery))
 
         # Controls Hint
-        hint = f_small.render("UP/DOWN: Channels  A: FULL SCREEN  B: Back", True, theme.FG_DIM)
+        if self.playing_proc:
+            hint_text = "A/B: Stop Playback"
+        else:
+            hint_text = "UP/DOWN: Channels  A: FULL SCREEN  B: Back"
+        hint = f_small.render(hint_text, True, theme.FG_DIM)
         surf.blit(hint, (view_rect.x, theme.SCREEN_H - 30))
