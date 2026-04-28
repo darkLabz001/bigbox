@@ -16,6 +16,12 @@ from typing import Callable
 
 import pygame
 
+# Install the process-wide pygame.font.Font cache *before* anything
+# else imports pygame.font in this process. Several views re-create
+# fonts inside render() at 30 fps, which strace showed re-reading the
+# TTF file ~15k times/sec — the single biggest CPU hog on this Pi.
+from bigbox import _font_cache  # noqa: F401  (side-effect import)
+
 from bigbox import theme
 from bigbox.events import Button, ButtonEvent, EventBus
 from bigbox.input import load_button_config
