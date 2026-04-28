@@ -115,14 +115,25 @@ async def press_button(button_name: str):
         return {"error": "Invalid button"}
 
 async def frame_generator():
+    import time as _time
     while True:
-        if _bb_app and _bb_app.last_frame:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + _bb_app.last_frame + b'\r\n')
+        if _bb_app:
+            # Tell the main loop "yes, somebody is watching" so it keeps
+            # encoding. Bumped per-iteration so the encode gate stays
+            # open as long as a client keeps the connection.
+            _bb_app.last_web_view_request = _time.time()
+            if _bb_app.last_frame:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + _bb_app.last_frame + b'\r\n')
         await asyncio.sleep(0.1) # 10 FPS mirror is plenty for remote
 
 @app.get("/video_feed")
 async def video_feed():
+    # Bump immediately so the first frame request kicks off encoding
+    # even before frame_generator's first iteration.
+    if _bb_app:
+        import time as _time
+        _bb_app.last_web_view_request = _time.time()
     return StreamingResponse(frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 

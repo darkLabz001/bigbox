@@ -59,9 +59,15 @@ class App:
         self.show_status = True
         self.held_buttons: set[Button] = set()
         self._last_vol_enforce = 0
-        
-        # Web UI state
+
+        # Web UI state.
+        # last_frame: most recent JPEG of the screen for /video_feed.
+        # last_web_view_request: monotonic-ish timestamp updated by the
+        # web server every time /video_feed is hit. We use it to skip the
+        # screen-capture JPEG encode entirely when nobody's watching —
+        # default state on a handheld used standalone.
         self.last_frame: bytes | None = None
+        self.last_web_view_request: float = 0.0
         self._frame_counter = 0
 
     # ---------- lifecycle ----------
@@ -251,6 +257,33 @@ class App:
         # Lightweight: just print for now; could become an on-screen toast widget.
         print(f"[toast] {msg}")
 
+    # ---------- target FPS ----------
+    def _target_fps(self) -> int:
+        """Cap the main loop FPS to whatever the foreground view needs.
+
+        Saves a measurable chunk of CPU + battery on a handheld. Most
+        views are static menus that don't need 60 fps; live-video views
+        get 30; when an external fullscreen subprocess is on-screen
+        (mpv, emulator, hostapd) pygame is hidden underneath and we
+        only need to keep the event pump alive.
+        """
+        # External fullscreen subprocesses own the display.
+        if self.media_view is not None and getattr(self.media_view, "proc", None) is not None:
+            return 5
+        if self.games_view is not None and getattr(self.games_view, "proc", None) is not None:
+            return 5
+        if self.eviltwin_view is not None:
+            sess = getattr(self.eviltwin_view, "session", None)
+            if sess is not None and getattr(sess, "is_running", lambda: False)():
+                return 5
+        # Live video / animation views — keep them smooth.
+        if self.cctv_view is not None:
+            return 30
+        if self.flock_view is not None:
+            return 30
+        # Default: menus and most modals.
+        return 30
+
     # ---------- main loop ----------
     def run(self) -> int:
         screen = self._init_display()
@@ -407,25 +440,28 @@ class App:
                 if self.menu_view.dismissed:
                     self.menu_view = None
 
-            # 4. Web UI Screen Capture (approx 10 FPS at 60Hz loop)
+            # 4. Web UI screen capture — only encode when somebody's
+            #    actually watching. The web server bumps
+            #    last_web_view_request on every /video_feed hit; if it's
+            #    been quiet for >5s, skip the encode entirely. Big
+            #    battery save when the device is being used standalone.
             self._frame_counter += 1
             if self._frame_counter >= 6:
                 self._frame_counter = 0
-                try:
-                    # Capture current surface
-                    raw_data = pygame.image.tostring(screen, "RGB")
-                    img = pygame.image.fromstring(raw_data, (theme.SCREEN_W, theme.SCREEN_H), "RGB")
-                    
-                    # Encode to JPEG
-                    import io
-                    buf = io.BytesIO()
-                    pygame.image.save(img, buf, "jpg")
-                    self.last_frame = buf.getvalue()
-                except Exception:
-                    pass
+                if time.time() - self.last_web_view_request < 5.0:
+                    try:
+                        # pygame.image.save accepts the display surface
+                        # directly — drop the old tostring/fromstring
+                        # round-trip that copied a full RGB buffer.
+                        import io
+                        buf = io.BytesIO()
+                        pygame.image.save(screen, buf, "jpg")
+                        self.last_frame = buf.getvalue()
+                    except Exception:
+                        pass
 
             pygame.display.flip()
-            clock.tick(60)
+            clock.tick(self._target_fps())
 
         pygame.quit()
         return 0
