@@ -2,6 +2,7 @@ import pygame
 import os
 import time
 import threading
+import sys
 try:
     from gpiozero import Button as GZButton
 except ImportError:
@@ -67,6 +68,7 @@ class Pager:
         self._fonts = {}
         self._buttons = {}
         self._lock = threading.Lock()
+        self._b_held_since = 0
 
     def init(self):
         os.environ["SDL_VIDEODRIVER"] = "x11"
@@ -95,7 +97,7 @@ class Pager:
         
         mapping = {
             "UP": self.BTN_UP, "DOWN": self.BTN_DOWN, "LEFT": self.BTN_LEFT, "RIGHT": self.BTN_RIGHT,
-            "A": self.BTN_A, "B": self.BTN_B, "X": self.BTN_A, "Y": self.BTN_A
+            "A": self.BTN_A, "B": self.BTN_B
         }
 
         for name, pin in pins.items():
@@ -107,6 +109,11 @@ class Pager:
 
     def _add_gpio_event(self, btn, type):
         with self._lock:
+            if btn == self.BTN_B:
+                if type == self.EVENT_PRESS:
+                    if self._b_held_since == 0: self._b_held_since = time.time()
+                else:
+                    self._b_held_since = 0
             self._events.append(PagerInputEvent(btn, type, self.get_ticks()))
 
     def cleanup(self):
@@ -143,6 +150,7 @@ class Pager:
         self._screen.blit(scaled, (x, y))
         pygame.display.flip()
 
+        now = time.time()
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
                 btn = None
@@ -155,8 +163,18 @@ class Pager:
                 elif event.key == pygame.K_RETURN: btn = self.BTN_A
                 elif event.key == pygame.K_ESCAPE: btn = self.BTN_B
                 if btn:
+                    if btn == self.BTN_B:
+                        if event.type == pygame.KEYDOWN:
+                            if self._b_held_since == 0: self._b_held_since = now
+                        else:
+                            self._b_held_since = 0
                     with self._lock:
                         self._events.append(PagerInputEvent(btn, self.EVENT_PRESS if event.type == pygame.KEYDOWN else self.EVENT_RELEASE, self.get_ticks()))
+
+        if self._b_held_since > 0 and (now - self._b_held_since) > 2.0:
+            print("[pagerctl] Kill switch triggered! Exiting Loki.")
+            self.cleanup()
+            sys.exit(0)
 
     def clear(self, color=0): self._surf.fill(self._rgb565_to_rgb(color))
     def get_ticks(self): return pygame.time.get_ticks()
@@ -233,8 +251,8 @@ class Pager:
     def led_rgb(self, button, r, g, b): pass
     def led_dpad(self, direction, color): pass
     def led_all_off(self): pass
-    def random(self, max_val): return int(time.time()) % max_val
-    def seed_random(self, seed): pass
+    def random(self, max_val): return random.randint(0, max_val-1) if max_val > 0 else 0
+    def seed_random(self, seed): random.seed(seed)
 
     def wait_button(self):
         while True:
