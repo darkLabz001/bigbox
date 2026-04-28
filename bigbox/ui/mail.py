@@ -364,9 +364,15 @@ class MailView:
             msg = self.body_font.render("No messages in Inbox.", True, theme.FG_DIM)
             surf.blit(msg, (theme.PADDING, y + 20))
         
-        for i, m in enumerate(self.messages):
-            ry = y + i * row_h
-            if ry > theme.SCREEN_H - 70: break # Leave room for hint
+        # Calculate scroll offset to keep selected item visible
+        max_rows = (theme.SCREEN_H - y - 40) // row_h
+        scroll_idx = max(0, self.selected_idx - max_rows // 2)
+        if scroll_idx + max_rows > len(self.messages):
+            scroll_idx = max(0, len(self.messages) - max_rows)
+
+        for i in range(scroll_idx, min(scroll_idx + max_rows, len(self.messages))):
+            m = self.messages[i]
+            ry = y + (i - scroll_idx) * row_h
             
             sel = i == self.selected_idx
             rect = pygame.Rect(5, ry, theme.SCREEN_W - 10, row_h - 2)
