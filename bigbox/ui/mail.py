@@ -10,6 +10,7 @@ import threading
 import time
 import os
 import json
+import dataclasses
 from dataclasses import dataclass, asdict
 from typing import Optional, List, TYPE_CHECKING
 
@@ -43,9 +44,14 @@ class MailConfig:
     password: str = "" # Recommend App Password
 
     def save(self):
-        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-        with open(CONFIG_PATH, "w") as f:
-            json.dump(asdict(self), f)
+        try:
+            os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+            with open(CONFIG_PATH, "w") as f:
+                json.dump(asdict(self), f)
+            # Set restrictive permissions (600) for security
+            os.chmod(CONFIG_PATH, 0o600)
+        except Exception as e:
+            print(f"[mail] Save failed: {e}")
 
     @classmethod
     def load(cls):
@@ -53,8 +59,12 @@ class MailConfig:
             try:
                 with open(CONFIG_PATH, "r") as f:
                     data = json.load(f)
-                return cls(**data)
-            except: pass
+                # Filter out keys not in dataclass to avoid TypeError
+                valid_keys = {f.name for f in dataclasses.fields(cls)}
+                filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+                return cls(**filtered_data)
+            except Exception as e:
+                print(f"[mail] Load failed: {e}")
         return cls()
 
 class MailView:
@@ -74,6 +84,7 @@ class MailView:
         
         self.is_loading = False
         self.error_msg: Optional[str] = None
+        self.status_msg: Optional[str] = None
         
         self.scroll_y = 0
         self.body_scroll_y = 0
@@ -94,6 +105,7 @@ class MailView:
         if self.is_loading: return
         self.is_loading = True
         self.error_msg = None
+        self.status_msg = "Fetching messages..."
         threading.Thread(target=self._fetch_mails_thread, daemon=True).start()
 
     def _fetch_mails_thread(self):
@@ -159,14 +171,38 @@ class MailView:
             
             self.messages = new_msgs
             self.is_loading = False
+            self.status_msg = None
             mail.logout()
         except Exception as e:
             self.error_msg = str(e)
             self.is_loading = False
+            self.status_msg = None
+
+    def _test_connection(self):
+        if self.is_loading: return
+        self.is_loading = True
+        self.error_msg = None
+        self.status_msg = "Testing connection..."
+        threading.Thread(target=self._test_connection_thread, daemon=True).start()
+
+    def _test_connection_thread(self):
+        try:
+            mail = imaplib.IMAP4_SSL(self.config.imap_server, self.config.imap_port)
+            mail.login(self.config.email, self.config.password)
+            mail.logout()
+            self.status_msg = "Connection Successful!"
+            self.is_loading = False
+            time.sleep(2)
+            self.status_msg = None
+        except Exception as e:
+            self.error_msg = str(e)
+            self.is_loading = False
+            self.status_msg = None
 
     def _send_mail(self):
         if self.is_loading: return
         self.is_loading = True
+        self.status_msg = "Sending mail..."
         threading.Thread(target=self._send_mail_thread, daemon=True).start()
 
     def _send_mail_thread(self):
@@ -184,10 +220,28 @@ class MailView:
             
             self.phase = self.PHASE_INBOX
             self.is_loading = False
+            self.status_msg = "Mail Sent!"
+            time.sleep(1)
             self._refresh_inbox()
         except Exception as e:
             self.error_msg = str(e)
             self.is_loading = False
+            self.status_msg = None
+
+    def _on_email_done(self, v):
+        if v:
+            self.config.email = v.strip()
+            self.config.save()
+            
+    def _on_pass_done(self, v):
+        if v:
+            self.config.password = v.strip()
+            self.config.save()
+
+    def _on_server_done(self, v):
+        if v:
+            self.config.imap_server = v.strip()
+            self.config.save()
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
         if not ev.pressed: return
@@ -200,7 +254,9 @@ class MailView:
             elif self.phase == self.PHASE_COMPOSING:
                 self.phase = self.PHASE_INBOX
             elif self.phase == self.PHASE_CONFIG:
-                if self.config.email: self.phase = self.PHASE_INBOX
+                if self.config.email: 
+                    self.phase = self.PHASE_INBOX
+                    self._refresh_inbox()
                 else: self.dismissed = True
             return
 
@@ -231,10 +287,7 @@ class MailView:
                 self.body_scroll_y += 30 # capped in render
 
         elif self.phase == self.PHASE_COMPOSING:
-            if ev.button is Button.UP:
-                # Select field? Simpler: use A to cycle through fields
-                pass
-            elif ev.button is Button.A:
+            if ev.button is Button.A:
                 # Context sensitive input
                 if not self.comp_to:
                     ctx.get_input("To:", lambda v: setattr(self, "comp_to", v or ""))
@@ -252,16 +305,13 @@ class MailView:
             elif ev.button is Button.X:
                 ctx.get_input("Password/App Pass:", self._on_pass_done)
             elif ev.button is Button.Y:
-                ctx.get_input("IMAP Server:", lambda v: setattr(self.config, "imap_server", v or "imap.gmail.com"), initial=self.config.imap_server)
+                ctx.get_input("IMAP Server:", self._on_server_done, initial=self.config.imap_server)
+            elif ev.button is Button.START:
+                self._test_connection()
             elif ev.button is Button.SELECT:
                 self.config.save()
                 self.phase = self.PHASE_INBOX
                 self._refresh_inbox()
-
-    def _on_email_done(self, v):
-        if v: self.config.email = v
-    def _on_pass_done(self, v):
-        if v: self.config.password = v
 
     def render(self, surf: pygame.Surface) -> None:
         surf.fill(theme.BG)
@@ -285,9 +335,10 @@ class MailView:
         elif self.phase == self.PHASE_CONFIG:
             self._render_config(surf, head_h)
 
-        if self.is_loading:
+        if self.is_loading or self.status_msg:
             pygame.draw.rect(surf, (0,0,0,180), (0,0,theme.SCREEN_W, theme.SCREEN_H))
-            msg = self.body_font.render("WORKING...", True, theme.ACCENT)
+            msg_text = self.status_msg or "WORKING..."
+            msg = self.body_font.render(msg_text, True, theme.ACCENT)
             surf.blit(msg, (theme.SCREEN_W//2 - msg.get_width()//2, theme.SCREEN_H//2))
 
     def _render_inbox(self, surf: pygame.Surface, head_h: int):
@@ -295,7 +346,7 @@ class MailView:
         row_h = 60
         
         if self.error_msg:
-            err = self.body_font.render(f"ERROR: {self.error_msg}", True, theme.ERR)
+            err = self.body_font.render(f"ERROR: {self.error_msg[:60]}", True, theme.ERR)
             surf.blit(err, (theme.PADDING, y + 20))
             hint = self.small_font.render("Check config (SELECT) or try Y to refresh", True, theme.FG_DIM)
             surf.blit(hint, (theme.PADDING, y + 60))
@@ -334,8 +385,8 @@ class MailView:
         
         # Header Info
         pygame.draw.rect(surf, theme.BG_ALT, (10, head_h + 10, theme.SCREEN_W - 20, 80), border_radius=4)
-        surf.blit(self.body_font.render(f"Subj: {m.subject}", True, theme.ACCENT), (20, head_h + 20))
-        surf.blit(self.small_font.render(f"From: {m.sender}", True, theme.FG), (20, head_h + 50))
+        surf.blit(self.body_font.render(f"Subj: {m.subject[:60]}", True, theme.ACCENT), (20, head_h + 20))
+        surf.blit(self.small_font.render(f"From: {m.sender[:80]}", True, theme.FG), (20, head_h + 50))
         
         # Body
         body_rect = pygame.Rect(10, head_h + 100, theme.SCREEN_W - 20, theme.SCREEN_H - head_h - 140)
@@ -382,8 +433,9 @@ class MailView:
         lines = [
             f"A: Email: {self.config.email or 'NOT SET'}",
             f"X: Password: {'********' if self.config.password else 'NOT SET'}",
-            f"Y: IMAP Server: {self.config.imap_server}:{self.config.imap_port}",
+            f"Y: IMAP Server: {self.config.imap_server}",
             "",
+            "START: Test Connection",
             "SELECT: Save and Return",
             "B: Cancel"
         ]
@@ -396,5 +448,5 @@ class MailView:
         surf.blit(hint, (40, y + len(lines)*40 + 10))
         
         if self.error_msg:
-            err = self.small_font.render(f"LAST ERROR: {self.error_msg}", True, theme.ERR)
+            err = self.small_font.render(f"LAST ERROR: {self.error_msg[:80]}", True, theme.ERR)
             surf.blit(err, (40, theme.SCREEN_H - 100))
