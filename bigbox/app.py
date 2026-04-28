@@ -28,7 +28,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView
 
 
 class App:
@@ -51,6 +51,7 @@ class App:
         self.cracker_view: OfflineCrackerView | None = None
         self.media_view: MediaPlayerView | None = None
         self.chat_view: ChatView | None = None
+        self.sherlock_view: SherlockView | None = None
         self.deaddrop_view: DeadDropView | None = None
         self.bbs_view: BBSView | None = None
         self.ble_view: BLEChatView | None = None
@@ -203,6 +204,9 @@ class App:
     def show_chat(self) -> None:
         self.chat_view = ChatView()
 
+    def show_sherlock(self, username: str) -> None:
+        self.sherlock_view = SherlockView(username)
+
     def show_deaddrop(self) -> None:
         self.deaddrop_view = DeadDropView()
 
@@ -247,6 +251,7 @@ class App:
         self.cracker_view = None
         self.media_view = None
         self.chat_view = None
+        self.sherlock_view = None
         self.deaddrop_view = None
         self.bbs_view = None
         self.ble_view = None
@@ -384,6 +389,10 @@ class App:
                 self.chat_view.render(screen)
                 if self.chat_view.dismissed:
                     self.chat_view = None
+            elif self.sherlock_view is not None:
+                self.sherlock_view.render(screen)
+                if self.sherlock_view.dismissed:
+                    self.sherlock_view = None
             elif self.deaddrop_view is not None:
                 self.deaddrop_view.render(screen)
                 if self.deaddrop_view.dismissed:
@@ -550,6 +559,10 @@ class App:
 
         if self.chat_view is not None:
             self.chat_view.handle(bev, self)
+            return
+
+        if self.sherlock_view is not None:
+            self.sherlock_view.handle(bev, self)
             return
 
         if self.deaddrop_view is not None:

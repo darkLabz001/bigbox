@@ -62,23 +62,12 @@ def _wardrive(ctx: SectionContext) -> None:
 
 
 def _username_search(ctx: SectionContext) -> None:
-    """Sherlock — search a username across hundreds of social networks.
-
-    Wrapped with `stdbuf -oL` because sherlock (Python, no -u in its
-    apt wrapper) block-buffers stdout when stdin isn't a TTY. Without
-    this, bigbox's run_streaming sees nothing for minutes while
-    sherlock churns through 400+ sites — the user reads that as a
-    timeout. Line-buffered, matches stream in as found.
-    """
+    """Sherlock — search a username across hundreds of social networks."""
     def _go(val: str | None) -> None:
         v = (val or "").strip()
         if not v:
             return
-        ctx.run_streaming(
-            f"sherlock · {v}",
-            ["stdbuf", "-oL",
-             "sherlock", "--print-found", "--timeout", "5", v],
-        )
+        ctx.show_sherlock(v)
     ctx.get_input("Username (e.g. johndoe)", _go)
 
 

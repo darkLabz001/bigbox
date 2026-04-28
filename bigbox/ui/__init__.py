@@ -13,10 +13,14 @@ from bigbox.ui.wifi_attack import WifiAttackView
 from bigbox.ui.eviltwin import EvilTwinView
 from bigbox.ui.games import GamesView
 from bigbox.ui.trackers import TrackerView
+from bigbox.ui.wifi_lite import (
+    ProbeSnifferView, BeaconFloodView, KarmaLiteView,
+)
 from bigbox.ui.wifi_multi_tool import WifiMultiToolView
 from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.chat import ChatView
+from bigbox.ui.sherlock import SherlockView
 from bigbox.ui.deaddrop import DeadDropView
 from bigbox.ui.bbs import BBSView
 from bigbox.ui.ble_chat import BLEChatView
@@ -51,6 +55,7 @@ __all__ = [
     "OfflineCrackerView",
     "MediaPlayerView",
     "ChatView",
+    "SherlockView",
     "DeadDropView",
     "BBSView",
     "BLEChatView",
