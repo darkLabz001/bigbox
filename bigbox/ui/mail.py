@@ -346,9 +346,13 @@ class MailView:
         row_h = 60
         
         if self.error_msg:
-            err = self.body_font.render(f"ERROR: {self.error_msg[:60]}", True, theme.ERR)
+            msg = self.error_msg
+            if "application-specific password required" in msg.lower():
+                msg = "GMAIL ERROR: You must use an 'App Password'!"
+            
+            err = self.body_font.render(f"ERROR: {msg[:60]}", True, theme.ERR)
             surf.blit(err, (theme.PADDING, y + 20))
-            hint = self.small_font.render("Check config (SELECT) or try Y to refresh", True, theme.FG_DIM)
+            hint = self.small_font.render("Check Google Account -> Security -> App Passwords", True, theme.FG_DIM)
             surf.blit(hint, (theme.PADDING, y + 60))
             return
 
