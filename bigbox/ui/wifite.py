@@ -53,6 +53,9 @@ class WifiteView:
         self.process = None
         self._stop_event = threading.Event()
         self._reader_thread = None
+        
+        self.cursor = 0 # Config cursor
+        self.is_scanning = False
 
     def _get_full_args(self) -> List[str]:
         args = ["--dict", "/usr/share/wordlists/rockyou.txt"]
@@ -66,14 +69,13 @@ class WifiteView:
         return args
 
     def _start_wifite(self):
-        # Check for wordlist
         wordlist = "/usr/share/wordlists/rockyou.txt"
-        # (check logic already exists, we'll keep it)
         if not os.path.exists(wordlist):
             self.status_msg = "ERROR: Wordlist missing"
             return
 
         self.phase = PHASE_RUNNING
+        self.is_scanning = True
         self.history.clear()
         
         cmd = ["wifite", "-i", self.selected_iface] + self._get_full_args()
@@ -92,6 +94,7 @@ class WifiteView:
             self._stop_event.clear()
             self._reader_thread = threading.Thread(target=self._read_output, daemon=True)
             self._reader_thread.start()
+            self.status_msg = "Scanning for targets..."
         except Exception as e:
             self.status_msg = f"Error: {e}"
 
@@ -103,13 +106,14 @@ class WifiteView:
                     data = os.read(self.master_fd, 1024).decode("utf-8", "replace")
                     if data:
                         import re
-                        # Improved stripping for interactive wifite
                         clean_data = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', data)
-                        # Keep control chars that wifite uses for UI if possible, 
-                        # but for simple pygame we strip them.
                         for line in clean_data.splitlines():
                             if line.strip():
                                 self.history.append(line)
+                                # Auto-detect if wifite is asking for targets
+                                if "select target" in line.lower() or "enter number" in line.lower():
+                                    self.is_scanning = False
+                                    self.status_msg = "SELECT TARGETS (A to input)"
                 except OSError:
                     break
 
@@ -118,8 +122,14 @@ class WifiteView:
             os.write(self.master_fd, (text + "\n").encode())
 
     def _send_ctrl_c(self):
-        if self.master_fd:
-            os.write(self.master_fd, b'\x03')
+        """Sends SIGINT to the entire process group to stop scanning."""
+        if self.process and self.process.poll() is None:
+            try:
+                os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
+                self.is_scanning = False
+                self.status_msg = "Wait for prompt..."
+            except Exception as e:
+                print(f"[wifite] ctrl-c error: {e}")
 
     def _cleanup(self):
         self._stop_event.set()
@@ -139,6 +149,7 @@ class WifiteView:
             except: pass
             
         self.master_fd = self.slave_fd = self.process = None
+        self.is_scanning = False
         hardware.ensure_wifi_managed()
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
@@ -176,14 +187,18 @@ class WifiteView:
 
         elif self.phase == PHASE_RUNNING:
             if ev.button is Button.A:
-                ctx.get_input("Target # / Input", self._on_terminal_input)
+                # Always allow input in running phase
+                ctx.get_input("Input / Targets", self._on_terminal_input)
             elif ev.button is Button.X:
-                self._send_ctrl_c()
+                if self.is_scanning:
+                    self._send_ctrl_c()
+                else:
+                    # In attack phase, X can send another ctrl-c to skip or stop
+                    self._send_ctrl_c()
             elif ev.button is Button.Y:
                 self.history.clear()
 
     def _toggle_config_option(self, ctx: App):
-        # 0: Iface, 1: WPS, 2: WPA, 3: PMKID, 4: Pixie, 5: Kill, 6: Custom
         if self.cursor == 0:
             common = ["wlan0", "wlan1", "wlan0mon", "wlan1mon"]
             active = hardware.list_wifi_clients() + hardware.list_monitor_ifaces()
@@ -228,9 +243,11 @@ class WifiteView:
         surf.blit(h_surf, (theme.SCREEN_W - h_surf.get_width() - 10, theme.SCREEN_H - 22))
 
     def _get_hint(self) -> str:
-        if self.phase == PHASE_LANDING: return "A: Start  X: Customize Attacks  B: Back"
+        if self.phase == PHASE_LANDING: return "A: Start  X: Config  B: Back"
         if self.phase == PHASE_CONFIG: return "UP/DN: Select  A: Toggle  START: Done"
-        if self.phase == PHASE_RUNNING: return "A: Select Targets  X: Stop Scan (Ctrl+C)  B: Exit"
+        if self.phase == PHASE_RUNNING:
+            if self.is_scanning: return "X: STOP SCAN (CTRL+C)  B: Exit"
+            return "A: INPUT TARGET #  X: SKIP/CTRL+C  B: Exit"
         return "B: Back"
 
     def _render_landing(self, surf: pygame.Surface, head_h: int):
@@ -270,7 +287,7 @@ class WifiteView:
             ("CUSTOM ARGS", self.custom_args or "(none)"),
         ]
         for i, (lbl, val) in enumerate(opts):
-            sel = i == getattr(self, "cursor", 0)
+            sel = i == self.cursor
             color = theme.ACCENT if sel else theme.FG
             if sel: pygame.draw.rect(surf, (30, 30, 40), (40, y + i*40, 500, 35), border_radius=4)
             surf.blit(self.font.render(f"{lbl}:", True, theme.FG_DIM), (60, y + 10 + i*40))
