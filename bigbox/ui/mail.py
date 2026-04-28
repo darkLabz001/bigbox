@@ -345,6 +345,10 @@ class MailView:
         y = head_h + 5
         row_h = 60
         
+        # Always render hint first to ensure visibility regardless of early returns
+        hint = self.small_font.render("A: Read  X: Compose  Y: Refresh  SELECT: Config  B: Exit", True, theme.FG_DIM)
+        surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 25))
+
         if self.error_msg:
             msg = self.error_msg
             if "application-specific password required" in msg.lower():
@@ -352,8 +356,8 @@ class MailView:
             
             err = self.body_font.render(f"ERROR: {msg[:60]}", True, theme.ERR)
             surf.blit(err, (theme.PADDING, y + 20))
-            hint = self.small_font.render("Check Google Account -> Security -> App Passwords", True, theme.FG_DIM)
-            surf.blit(hint, (theme.PADDING, y + 60))
+            err_hint = self.small_font.render("Check Google Account -> Security -> App Passwords", True, theme.FG_DIM)
+            surf.blit(err_hint, (theme.PADDING, y + 60))
             return
 
         if not self.messages and not self.is_loading:
@@ -362,7 +366,7 @@ class MailView:
         
         for i, m in enumerate(self.messages):
             ry = y + i * row_h
-            if ry > theme.SCREEN_H - 40: break
+            if ry > theme.SCREEN_H - 70: break # Leave room for hint
             
             sel = i == self.selected_idx
             rect = pygame.Rect(5, ry, theme.SCREEN_W - 10, row_h - 2)
@@ -371,17 +375,17 @@ class MailView:
                 pygame.draw.rect(surf, theme.ACCENT, rect, 1, border_radius=4)
             
             color = theme.ACCENT if sel else theme.FG
-            subj = self.body_font.render(m.subject[:50], True, color)
+            subj_text = m.subject[:50] or "(No Subject)"
+            subj = self.body_font.render(subj_text, True, color)
             surf.blit(subj, (rect.x + 10, rect.y + 5))
             
-            from_str = self.small_font.render(f"From: {m.sender[:40]}", True, theme.FG_DIM)
+            sender_text = f"From: {m.sender[:40]}"
+            from_str = self.small_font.render(sender_text, True, theme.FG_DIM)
             surf.blit(from_str, (rect.x + 10, rect.y + 30))
             
-            date_str = self.small_font.render(m.date[:20], True, theme.FG_DIM)
+            date_text = m.date[:20]
+            date_str = self.small_font.render(date_text, True, theme.FG_DIM)
             surf.blit(date_str, (rect.right - date_str.get_width() - 10, rect.y + 30))
-
-        hint = self.small_font.render("A: Read  X: Compose  Y: Refresh  SELECT: Config  B: Exit", True, theme.FG_DIM)
-        surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 25))
 
     def _render_reading(self, surf: pygame.Surface, head_h: int):
         if not self.current_msg: return
