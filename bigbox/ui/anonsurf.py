@@ -75,10 +75,22 @@ class AnonSurfView:
                     
                     # IPTables rules for transparent proxy
                     rules = [
+                        # Allow loopback
+                        ["iptables", "-t", "nat", "-A", "OUTPUT", "-o", "lo", "-j", "RETURN"],
+                        # Allow local networks
+                        ["iptables", "-t", "nat", "-A", "OUTPUT", "-d", "192.168.0.0/16", "-j", "RETURN"],
+                        ["iptables", "-t", "nat", "-A", "OUTPUT", "-d", "172.16.0.0/12", "-j", "RETURN"],
+                        ["iptables", "-t", "nat", "-A", "OUTPUT", "-d", "10.0.0.0/8", "-j", "RETURN"],
+                        # Exception for GitHub (allows OTA updates to function)
+                        ["iptables", "-t", "nat", "-A", "OUTPUT", "-d", "140.82.112.0/20", "-j", "RETURN"],
+                        # Tor's own traffic
                         ["iptables", "-t", "nat", "-A", "OUTPUT", "-m", "owner", "--uid-owner", "debian-tor", "-j", "RETURN"],
+                        # Redirect DNS to Tor's DNSPort
                         ["iptables", "-t", "nat", "-A", "OUTPUT", "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-ports", "5353"],
+                        # Redirect all other TCP to Tor's TransPort
                         ["iptables", "-t", "nat", "-A", "OUTPUT", "-p", "tcp", "--syn", "-j", "REDIRECT", "--to-ports", "9040"],
-                        ["iptables", "-t", "nat", "-A", "OUTPUT", "-p", "udp", "-j", "REJECT"], # Block other UDP to prevent leaks
+                        # Block other UDP to prevent leaks
+                        ["iptables", "-t", "nat", "-A", "OUTPUT", "-p", "udp", "-j", "REJECT"],
                     ]
                     for r in rules:
                         subprocess.run(["sudo"] + r)
