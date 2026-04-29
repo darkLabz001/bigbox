@@ -178,7 +178,9 @@ class WifiteView:
             self.status_msg = f"LAUNCH_FAIL: {e}"
 
     def _read_output(self):
-        target_re = re.compile(r"^\s*(\d+)\s+(.*?)\s+([0-9A-F:]{17})\s+(\d+)\s+(\w+)\s+(-\d+)\s+(\d+)")
+        # Improved Lenient Regex for target lines
+        target_re = re.compile(r"^\s*(\d+)\s+([0-9A-F:]{17}|.*?)\s+([0-9A-F:]{17}|.*?)\s+(\d+)\s+(\w+)\s+(-\d+)\s+(\d+)", re.IGNORECASE)
+        
         while not self._stop_event.is_set() and self.master_fd:
             r, w, e = select.select([self.master_fd], [], [], 0.1)
             if self.master_fd in r:
@@ -191,19 +193,34 @@ class WifiteView:
                             if not stripped: continue
                             self.history.append(stripped)
                             
-                            m = target_re.match(stripped)
-                            if m:
-                                tid, ssid, bssid, chan, enc, pwr, clis = m.groups()
-                                found = False
-                                for t in self.targets:
-                                    if t.bssid == bssid:
-                                        t.ssid = ssid; t.power = pwr; t.clients = clis
-                                        t.power_history.append(int(pwr))
-                                        if len(t.power_history) > 20: t.power_history.pop(0)
-                                        found = True
-                                        break
-                                if not found:
-                                    self.targets.append(WifiteTarget(int(tid), ssid, bssid, chan, enc, pwr, clis, [int(pwr)]))
+                            # More flexible target identification
+                            parts = stripped.split()
+                            if len(parts) >= 6 and parts[0].isdigit() and (":" in parts[1] or ":" in parts[2]):
+                                try:
+                                    tid = int(parts[0])
+                                    # Identify BSSID vs SSID by searching for ':'
+                                    bssid_idx = 1 if ":" in parts[1] else 2
+                                    bssid = parts[bssid_idx].upper()
+                                    ssid = parts[bssid_idx-1] if bssid_idx == 2 else parts[0] # Very fallback
+                                    
+                                    # Find power (usually starts with -)
+                                    pwr = "-100"
+                                    for p in parts:
+                                        if p.startswith("-") and p[1:].isdigit():
+                                            pwr = p
+                                            break
+                                    
+                                    found = False
+                                    for t in self.targets:
+                                        if t.bssid == bssid:
+                                            t.power = pwr
+                                            t.power_history.append(int(pwr))
+                                            if len(t.power_history) > 20: t.power_history.pop(0)
+                                            found = True
+                                            break
+                                    if not found:
+                                        self.targets.append(WifiteTarget(tid, ssid, bssid, "0", "WPA", pwr, "0", [int(pwr)]))
+                                except: pass
 
                             if "captured" in stripped.lower() or "cracked" in stripped.lower():
                                 self._award_coins(50)
@@ -211,7 +228,7 @@ class WifiteView:
                             if "select target" in stripped.lower() or "enter number" in stripped.lower():
                                 if self.phase == PHASE_SCANNING:
                                     self.phase = PHASE_TARGETS
-                                    self.status_msg = "TARGETS_ACQUIRED"
+                                    self.status_msg = "SPECTRUM_LOCKED"
                 except OSError: break
 
     def _send_input(self, text: str):
@@ -220,7 +237,12 @@ class WifiteView:
 
     def _send_ctrl_c(self):
         if self.process and self.process.poll() is None:
-            try: os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
+            try:
+                os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
+                # Force switch to target selection if we are scanning
+                if self.phase == PHASE_SCANNING:
+                    self.phase = PHASE_TARGETS
+                    self.status_msg = "MANUAL_OVERRIDE_ACTIVE"
             except: pass
 
     def _cleanup(self):
@@ -259,7 +281,9 @@ class WifiteView:
         elif self.phase == PHASE_SCANNING:
             if ev.button is Button.LL: self._send_ctrl_c()
         elif self.phase == PHASE_TARGETS:
-            if not self.targets: return
+            if not self.targets: 
+                if ev.button is Button.B: self._cleanup(); self.phase = PHASE_LANDING
+                return
             if ev.button is Button.UP: self.target_cursor = (self.target_cursor - 1) % len(self.targets)
             elif ev.button is Button.DOWN: self.target_cursor = (self.target_cursor + 1) % len(self.targets)
             elif ev.button is Button.A:
@@ -353,6 +377,9 @@ class WifiteView:
     def _render_targets(self, surf: pygame.Surface):
         list_rect = pygame.Rect(20, 110, theme.SCREEN_W-40, 300)
         pygame.draw.rect(surf, (10, 10, 20), list_rect, border_radius=8)
+        if not self.targets:
+            surf.blit(self.f_med.render("WAITING_FOR_SIGNAL_LOCK...", True, theme.FG_DIM), (40, 150))
+            return
         visible = self.targets[self.target_scroll : self.target_scroll + 8]
         for i, t in enumerate(visible):
             sel = (self.target_scroll + i) == self.target_cursor
@@ -362,7 +389,6 @@ class WifiteView:
 
     def _render_attacking(self, surf: pygame.Surface):
         center_x = theme.SCREEN_W // 2
-        # Oscilloscope graph
         t = self.targets[self.target_cursor]
         gh, gw = 100, 300
         gx, gy = center_x - gw//2, 100
