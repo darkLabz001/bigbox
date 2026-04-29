@@ -64,6 +64,9 @@ class TailscaleView:
         def _worker():
             try:
                 # Use sudo as tailscale up needs root to configure networking
+                # --timeout=0 prevents it from exiting before we can see the QR
+                # We use a short timeout on the process itself if needed, but 
+                # tailscale up --qr usually waits for a bit then exits.
                 proc = subprocess.Popen(
                     ["sudo", "tailscale", "up", "--qr"],
                     stdout=subprocess.PIPE,
@@ -71,26 +74,41 @@ class TailscaleView:
                     text=True
                 )
                 
-                lines = []
+                output, _ = proc.communicate(timeout=30)
+                
+                lines = output.splitlines()
                 url = None
+                qr_content = []
                 
-                if proc.stdout:
-                    for line in proc.stdout:
-                        lines.append(line.strip("\n"))
-                        if "https://" in line:
-                            # Extract URL
-                            parts = line.split()
-                            for p in parts:
-                                if p.startswith("https://"):
-                                    url = p
-                                    break
+                in_qr = False
+                for line in lines:
+                    if "https://" in line and not url:
+                        # Extract URL
+                        parts = line.split()
+                        for p in parts:
+                            if p.startswith("https://"):
+                                url = p
+                                break
+                    
+                    # QR code lines usually start with special characters or blocks
+                    if "█" in line or (len(line) > 10 and all(c in " █▀▄" for c in line.strip())):
+                        in_qr = True
+                    
+                    if in_qr:
+                        qr_content.append(line)
                 
-                self.qr_lines = lines
+                self.qr_lines = qr_content
                 self.qr_url = url
-                if not url and not lines:
-                    self.status_msg = "AUTH_ERROR: EMPTY RESPONSE"
+                
+                if not url and not qr_content:
+                    self.status_msg = f"AUTH_ERROR: NO QR DATA"
+                    # Log raw output for debugging
+                    print(f"[tailscale] Raw output: {output}")
                 else:
-                    self.status_msg = "WAITING_FOR_AUTH"
+                    self.status_msg = "SCAN QR TO AUTHENTICATE"
+            except subprocess.TimeoutExpired:
+                self.status_msg = "AUTH_ERROR: TIMEOUT"
+                proc.kill()
             except FileNotFoundError:
                 self.status_msg = "ERROR: TAILSCALE NOT INSTALLED"
             except Exception as e:
@@ -195,8 +213,8 @@ class TailscaleView:
             surf.blit(self.f_small.render("PRESS A TO CONNECT OR X TO AUTHENTICATE", True, theme.ACCENT_DIM), (x, y + 50))
 
     def _render_login(self, surf: pygame.Surface, head_h: int):
-        y = head_h + 20
-        x = 40
+        y = head_h + 10
+        x_start = 20
         
         if self.is_loading:
             msg = self.f_main.render("NEGOTIATING HANDSHAKE...", True, theme.ACCENT)
@@ -205,16 +223,27 @@ class TailscaleView:
 
         if self.qr_lines:
             # Render the ASCII QR code
-            # Since it's block-based, we'll try to render it small
+            # We want to center it horizontally
+            # Find the widest line to determine center
+            max_w = 0
+            for line in self.qr_lines:
+                lw, _ = self.f_tiny.size(line)
+                max_w = max(max_w, lw)
+            
+            x_qr = (theme.SCREEN_W - max_w) // 2
             qr_y = y
             for line in self.qr_lines:
-                if "https" in line: continue # Skip the URL line in the QR area
-                # Use a monospaced-style rendering
                 q_surf = self.f_tiny.render(line, True, theme.FG)
-                surf.blit(q_surf, (x, qr_y))
-                qr_y += 10
+                surf.blit(q_surf, (x_qr, qr_y))
+                qr_y += 10 # Adjust line height for the tiny font
             
             if self.qr_url:
                 y_text = theme.SCREEN_H - 80
-                surf.blit(self.f_small.render("SCAN QR OR VISIT LINK:", True, theme.FG_DIM), (x, y_text))
-                surf.blit(self.f_small.render(self.qr_url, True, theme.ACCENT), (x, y_text + 20))
+                u_surf = self.f_small.render("SCAN QR OR VISIT LINK:", True, theme.FG_DIM)
+                surf.blit(u_surf, (theme.SCREEN_W//2 - u_surf.get_width()//2, y_text))
+                
+                link_surf = self.f_small.render(self.qr_url, True, theme.ACCENT)
+                surf.blit(link_surf, (theme.SCREEN_W//2 - link_surf.get_width()//2, y_text + 20))
+        elif self.status_msg.startswith("AUTH_ERROR"):
+            msg = self.f_main.render(self.status_msg, True, theme.ERR)
+            surf.blit(msg, (theme.SCREEN_W//2 - msg.get_width()//2, theme.SCREEN_H//2))
