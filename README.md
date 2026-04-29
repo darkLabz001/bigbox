@@ -35,7 +35,8 @@ BigB0X is a self-contained, gamepad-driven tactical firmware designed for the **
 ## 📸 Screenshots
 
 <img width="605" height="354" alt="abot" src="https://github.com/user-attachments/assets/d94c161a-0141-4c97-8f2d-330e985a178c" />  <img width="600" height="357" alt="2" src="https://github.com/user-attachments/assets/dc62d6d7-599b-4e17-8d82-be5b071be5fc" />   <img width="610" height="371" alt="3" src="https://github.com/user-attachments/assets/99b6b361-9902-4360-92de-c90c79a52400" />    <img width="601" height="369" alt="4" src="https://github.com/user-attachments/assets/2f2180fa-61cf-4265-8221-6117480b0c27" />   <img width="602" height="359" alt="7" src="https://github.com/user-attachments/assets/1c71d676-e153-4609-a8b6-df8b384e33af" />   <img width="610" height="366" alt="6" src="https://github.com/user-attachments/assets/0fe44bb9-a894-48ec-bf9e-4b5abafaaced" />   
-<img width="1866" height="792" alt="8" src="https://github.com/user-attachments/assets/f4e693c1-a860-43a3-9b97-79a7abae0bad" />   <img width="1086" height="1448" alt="box" src="https://github.com/user-attachments/assets/55613f75-78dd-4a1d-96a4-428a60744252" />
+<img width="1866" height="792" alt="8" src="https://github.com/user-attachments/assets/f4e693c1-a860-43a3-9b97-79a7abae0bad" />   <img width="1086" height="1448" alt="box" src="https://github.com/user-attachments/assets/55613f75-78dd-4a1d-96a4-428a60744252" />   <img width="1086" height="1132" alt="DarkBox2" src="https://github.com/user-attachments/assets/c1ad7e53-2ee9-4302-90fe-94843196db22" />
+
 
 ---
 
