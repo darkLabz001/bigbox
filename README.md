@@ -33,9 +33,13 @@ BigB0X is a self-contained, gamepad-driven tactical firmware designed for the **
 ---
 
 ## ⚡ BigB0X :: Setup Edition (EASY INSTALL)
-For new users, we recommend the **Setup Edition**. It includes a guided on-screen wizard that handles Wi-Fi connection and automated tool installation for you.
+The fastest way to deploy BigB0X. This version includes a guided on-screen wizard and a high-fidelity web configurator.
 
-👉 **[Download Setup Edition (setup-wizard branch)](https://github.com/darkLabz001/bigbox/tree/setup-wizard)**
+### 🌐 [BigB0X Tactical Web Deployer](https://darkLabz001.github.io/bigbox/)
+1.  **Flash:** Use Raspberry Pi Imager to flash **Pi OS Lite (64-bit)** to your SD card.
+2.  **Configure:** Visit the **[Web Deployer](https://darkLabz001.github.io/bigbox/)** to enter your Wi-Fi credentials and generate a `setup.json` file.
+3.  **Deploy:** Drop the `setup.json` onto the **boot** partition of your SD card.
+4.  **Boot:** Insert the card and power on. BigB0X will automatically link to Wi-Fi and launch the **Guided Initialization Wizard**.
 
 ---
 
