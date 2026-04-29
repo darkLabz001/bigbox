@@ -50,6 +50,11 @@ def _signal_scraper(ctx: SectionContext) -> None:
     ctx.show_signal_scraper()
 
 
+def _traffic_cam(ctx: SectionContext) -> None:
+    """Traffic Cam Browser — Public traffic camera browser."""
+    ctx.show_traffic_cam()
+
+
 def _cam_scanner(ctx: SectionContext) -> None:
     ctx.show_camscan()
 
@@ -145,6 +150,7 @@ def build() -> Section:
         background_img=load_background("recon"),
         actions=[
             Action("Signal Scraper", _signal_scraper, "proximity profiling"),
+            Action("Traffic Cam Browser", _traffic_cam, "public traffic camera feeds"),
             Action("FlockSeeker", _flock_seeker, "detect ALPR infrastructure"),
             Action("Wardriving", _wardrive, "GPS-tagged Wi-Fi+BT for WiGLE"),
             Action("Ping sweep", _ping_sweep, "host discovery"),

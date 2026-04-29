@@ -22,14 +22,24 @@ import pygame
 from bigbox import theme
 from bigbox.events import Button, ButtonEvent
 
-# MAC Prefixes associated with Flock infrastructure
+# Expanded MAC Prefixes for ALPR, IoT, and Traffic Infrastructure
 OUI_DB = {
-    "74:4C:A1": "FALCON_CAM",
-    "9C:2F:9D": "FALCON_CAM",
-    "EC:62:60": "RAVEN_AUDIO", # Shot detector
-    "54:E8:23": "LITEON_BACKHAUL",
-    "7E:B8:71": "LITEON_BACKHAUL",
-    "48:B0:2D": "FLOCK_UNIT",
+    "74:4C:A1": "FLOCK_FALCON",
+    "9C:2F:9D": "FLOCK_FALCON",
+    "EC:62:60": "FLOCK_RAVEN",
+    "54:E8:23": "LITEON_IOT",
+    "7E:B8:71": "LITEON_IOT",
+    "48:B0:2D": "FLOCK_GATEWAY",
+    "00:13:B9": "BOSCH_SECURITY",
+    "00:40:8C": "AXIS_COMM",
+    "00:09:18": "SAMSUNG_TECHWIN",
+    "00:16:6C": "SAMSUNG_HANWHA",
+    "B0:C5:54": "HIKVISION",
+    "BC:AD:28": "HIKVISION",
+    "A4:14:37": "DAHUA",
+    "BC:15:A8": "DAHUA",
+    "00:14:D1": "TRENDNET",
+    "00:26:BB": "PELCO",
 }
 
 @dataclass
@@ -54,7 +64,10 @@ class FlockScannerView:
         self.status_msg = "INITIALIZING..."
         
         # Heuristics
-        self.KNOWN_NAMES = ["PENGUIN", "PIGVISION", "FS EXT", "FLOCK", "RAVEN", "FALCON"]
+        self.KNOWN_NAMES = [
+            "PENGUIN", "PIGVISION", "FS EXT", "FLOCK", "RAVEN", "FALCON",
+            "TRAFFIC", "CAM", "ALPR", "LPR", "SAFETY", "V-CELL"
+        ]
         self.MANUFACTURER_ID = "09c8"
         
         self.selected_idx = 0
