@@ -232,15 +232,15 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", "/root/.Xauthority")
-    # Force the emulator's ALSA usage onto card 1 (BCM2835 Headphones —
-    # the GamePi43's speaker output). Without this, SDL audio falls back
-    # to ALSA's default device which on this hardware is HDMI (silent).
+    # Force the emulator's ALSA usage onto the primary card.
     # Per-process env so the wider system audio policy stays whatever
     # the user has set.
     env.setdefault("SDL_AUDIODRIVER", "alsa")
-    env.setdefault("ALSA_PCM_CARD", "1")
-    env.setdefault("ALSA_CARD", "Headphones")
-    env.setdefault("AUDIODEV", "plughw:1,0")
+    try:
+        # Pre-bump system volume for this card just in case
+        subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
+    except:
+        pass
 
     cmd = [binary, *sd.extra_args, str(rom_path.resolve())]
 
@@ -292,19 +292,18 @@ def _write_mgba_display_config() -> None:
     for section in ("ports.qt", "ports.sdl"):
         if not cp.has_section(section):
             cp.add_section(section)
-        # Fullscreen + 4x integer scale = ~960x640 for GBA, the SDL
-        # backend will fit-to-screen. Aspect ratio locked so the GB / GBC
-        # 10:9 frame doesn't stretch into a fat smear on the 5:3 panel.
+        # Fullscreen + 3x integer scale = 720x480 for GBA, fits the 800x480 
+        # panel vertically with small side bars. 4x (960x640) would overflow.
         cp.set(section, "fullscreen", "1")
-        cp.set(section, "videoScale", "4")
+        cp.set(section, "videoScale", "3")
         cp.set(section, "lockAspectRatio", "1")
         cp.set(section, "lockIntegerScaling", "0")
         cp.set(section, "resampleVideo", "1")
         cp.set(section, "audioBuffers", "2048")
         cp.set(section, "sampleRate", "44100")
         # mGBA volume is 0..0x100 (256). 0x100 = 100%.
-        cp.set(section, "volume", "0x100")
-        cp.set(section, "fastForwardVolume", "0x100")
+        cp.set(section, "volume", "256")
+        cp.set(section, "fastForwardVolume", "256")
         cp.set(section, "mute", "0")
 
         # Key mappings

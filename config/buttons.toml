@@ -9,6 +9,9 @@ X      = 15
 Y      = 18
 LL     = 14
 RR     = 23
+SELECT = 6
+START  = 12
+HK     = 16
 
 [behavior]
 debounce_ms = 30

@@ -64,12 +64,18 @@ class GamesView:
                 pygame.font.SysFont("monospace", 20)
 
         self._refresh_systems()
+        # If only one system (e.g. GBA), skip the picker
+        if len(self.systems) == 1:
+            self.current_system = self.systems[0][0]
+            self.list = self._build_rom_list()
+            self.phase = PHASE_ROM
 
     # ---------- refresh ----------
     def _refresh_systems(self) -> None:
         out: list[tuple[str, str, int]] = []
         for key, sd in _emu.SYSTEMS.items():
-            out.append((key, sd.label, len(sd.list_roms())))
+            if key == "gba":  # Only GBA as requested
+                out.append((key, sd.label, len(sd.list_roms())))
         self.systems = out
         if self.sys_cursor >= len(out):
             self.sys_cursor = max(0, len(out) - 1)
@@ -133,10 +139,12 @@ class GamesView:
     # ---------- input ----------
     def handle(self, ev: ButtonEvent, ctx: App) -> bool:
         if self.phase == PHASE_RUNNING:
-            if ev.button is Button.HK:
-                if ev.pressed:
+            # Hotkey combo to stop: HK + B (matches global hotkey for go_back)
+            if ev.button is Button.B and ev.pressed:
+                if Button.HK in ctx.held_buttons:
                     self._stop()
-                return True
+                    return True
+            
             if self.injector:
                 self.injector.inject(ev.button, ev.pressed)
             return True  # Consume all events during gameplay
