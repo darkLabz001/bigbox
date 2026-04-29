@@ -32,6 +32,13 @@ BigB0X is a self-contained, gamepad-driven tactical firmware designed for the **
 
 ---
 
+## ⚡ BigB0X :: Setup Edition (EASY INSTALL)
+For new users, we recommend the **Setup Edition**. It includes a guided on-screen wizard that handles Wi-Fi connection and automated tool installation for you.
+
+👉 **[Download Setup Edition (setup-wizard branch)](https://github.com/darkLabz001/bigbox/tree/setup-wizard)**
+
+---
+
 ## 📸 Screenshots
 
 <img width="605" height="354" alt="abot" src="https://github.com/user-attachments/assets/d94c161a-0141-4c97-8f2d-330e985a178c" />  <img width="600" height="357" alt="2" src="https://github.com/user-attachments/assets/dc62d6d7-599b-4e17-8d82-be5b071be5fc" />   <img width="610" height="371" alt="3" src="https://github.com/user-attachments/assets/99b6b361-9902-4360-92de-c90c79a52400" />    <img width="601" height="369" alt="4" src="https://github.com/user-attachments/assets/2f2180fa-61cf-4265-8221-6117480b0c27" />   <img width="602" height="359" alt="7" src="https://github.com/user-attachments/assets/1c71d676-e153-4609-a8b6-df8b384e33af" />   <img width="610" height="366" alt="6" src="https://github.com/user-attachments/assets/0fe44bb9-a894-48ec-bf9e-4b5abafaaced" />   
