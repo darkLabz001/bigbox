@@ -139,9 +139,9 @@ class GamesView:
     # ---------- input ----------
     def handle(self, ev: ButtonEvent, ctx: App) -> bool:
         if self.phase == PHASE_RUNNING:
-            # Hotkey combo to stop: HK + B (matches global hotkey for go_back)
-            if ev.button is Button.B and ev.pressed:
-                if Button.HK in ctx.held_buttons:
+            # Hotkey combo to stop: SELECT + START
+            if ev.button is Button.START and ev.pressed:
+                if Button.SELECT in ctx.held_buttons:
                     self._stop()
                     return True
             
@@ -293,7 +293,7 @@ class GamesView:
         surf.blit(warn, (center_x - warn.get_width() // 2, center_y + 30))
 
         hint = self.hint_font.render(
-            "HK to stop", True, theme.FG_DIM)
+            "SELECT + START to stop", True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
 
     def _render_result(self, surf: pygame.Surface, head_h: int) -> None:

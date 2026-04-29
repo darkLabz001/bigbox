@@ -140,7 +140,7 @@ SYSTEMS: dict[str, SystemDef] = {
         rom_subdir="gba",
         extensions=(".gba", ".zip"),
         binary_candidates=("mgba", "mgba-sdl", "mgba-qt"),
-        extra_args=("-f",),
+        extra_args=("-f", "-3"),  # Fullscreen + 3x scale
     ),
     "ps1": SystemDef(
         key="ps1",
@@ -237,8 +237,9 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     # the user has set.
     env.setdefault("SDL_AUDIODRIVER", "alsa")
     try:
-        # Pre-bump system volume for this card just in case
-        subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
+        # Pre-bump system volume for card 1 (GamePi43 headphones/speaker)
+        subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%"], capture_output=True)
+        subprocess.run(["amixer", "-c", "1", "sset", "Master", "100%"], capture_output=True)
     except:
         pass
 
@@ -246,6 +247,8 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
 
     try:
         log_fd: int | object = open(EMULATOR_LOG, "w")
+        log_fd.write(f"# command: {' '.join(cmd)}\n")  # type: ignore
+        log_fd.flush()  # type: ignore
     except Exception:
         log_fd = subprocess.DEVNULL
 
@@ -269,57 +272,57 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
 
 
 def _write_mgba_display_config() -> None:
-    """Pre-write ~/.config/mgba/config.ini display + audio settings so
-    the emulator goes fullscreen + scales up + plays audio. Idempotent;
-    leaves any existing keys alone. Compatible with the
-    retroachievements.py patcher — both write to the same file."""
+    """Pre-write mgba config.ini display + audio settings. Idempotent.
+    Writes to both ~/.config/mgba/ and ~/.mgba/ for maximum compatibility."""
     import configparser
-    cfg_dir = Path("/root/.config/mgba")
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    cfg_path = cfg_dir / "config.ini"
+    
+    # Paths to try writing to
+    paths = [
+        Path("/root/.config/mgba/config.ini"),
+        Path("/root/.mgba/config.ini")
+    ]
 
-    cp = configparser.ConfigParser()
-    cp.optionxform = str
-    if cfg_path.exists():
-        try:
-            cp.read(cfg_path)
-        except Exception:
-            cp = configparser.ConfigParser()
-            cp.optionxform = str
+    for cfg_path in paths:
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Apply to both qt and sdl ports — whichever build the user's mgba
-    # binary is, it'll find its own section.
-    for section in ("ports.qt", "ports.sdl"):
-        if not cp.has_section(section):
-            cp.add_section(section)
-        # Fullscreen + 3x integer scale = 720x480 for GBA, fits the 800x480 
-        # panel vertically with small side bars. 4x (960x640) would overflow.
-        cp.set(section, "fullscreen", "1")
-        cp.set(section, "videoScale", "3")
-        cp.set(section, "lockAspectRatio", "1")
-        cp.set(section, "lockIntegerScaling", "0")
-        cp.set(section, "resampleVideo", "1")
-        cp.set(section, "audioBuffers", "2048")
-        cp.set(section, "sampleRate", "44100")
-        # mGBA volume is 0..0x100 (256). 0x100 = 100%.
-        cp.set(section, "volume", "256")
-        cp.set(section, "fastForwardVolume", "256")
-        cp.set(section, "mute", "0")
+        cp = configparser.ConfigParser()
+        cp.optionxform = str
+        if cfg_path.exists():
+            try:
+                cp.read(cfg_path)
+            except Exception:
+                cp = configparser.ConfigParser()
+                cp.optionxform = str
 
-        # Key mappings
-        cp.set(section, "keyB", "120")       # 'x' -> B
-        cp.set(section, "keyA", "122")       # 'z' -> A
-        cp.set(section, "keySelect", "8")    # backspace
-        cp.set(section, "keyStart", "13")    # enter
-        cp.set(section, "keyRight", "1073741903") # right arrow
-        cp.set(section, "keyLeft", "1073741904")  # left arrow
-        cp.set(section, "keyUp", "1073741906")    # up arrow
-        cp.set(section, "keyDown", "1073741905")  # down arrow
-        cp.set(section, "keyR", "115")       # 's' -> R
-        cp.set(section, "keyL", "97")        # 'a' -> L
+        # Apply to both qt and sdl ports
+        for section in ("ports.qt", "ports.sdl"):
+            if not cp.has_section(section):
+                cp.add_section(section)
+            cp.set(section, "fullscreen", "1")
+            cp.set(section, "videoScale", "3")
+            cp.set(section, "lockAspectRatio", "1")
+            cp.set(section, "lockIntegerScaling", "0")
+            cp.set(section, "resampleVideo", "1")
+            cp.set(section, "audioBuffers", "2048")
+            cp.set(section, "sampleRate", "44100")
+            cp.set(section, "volume", "256")
+            cp.set(section, "fastForwardVolume", "256")
+            cp.set(section, "mute", "0")
 
-    with cfg_path.open("w") as f:
-        cp.write(f, space_around_delimiters=False)
+            # Key mappings
+            cp.set(section, "keyB", "120")       # 'x' -> B
+            cp.set(section, "keyA", "122")       # 'z' -> A
+            cp.set(section, "keySelect", "8")    # backspace
+            cp.set(section, "keyStart", "13")    # enter
+            cp.set(section, "keyRight", "1073741903") # right arrow
+            cp.set(section, "keyLeft", "1073741904")  # left arrow
+            cp.set(section, "keyUp", "1073741906")    # up arrow
+            cp.set(section, "keyDown", "1073741905")  # down arrow
+            cp.set(section, "keyR", "115")       # 's' -> R
+            cp.set(section, "keyL", "97")        # 'a' -> L
+
+        with cfg_path.open("w") as f:
+            cp.write(f, space_around_delimiters=False)
 
 
 def read_emulator_log_tail(n: int = 8) -> list[str]:

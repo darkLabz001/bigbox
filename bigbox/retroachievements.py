@@ -31,8 +31,10 @@ CRED_PATH = CONFIG_DIR / "retroachievements.json"
 
 # mGBA's per-user config. We write here as root (bigbox runs as root)
 # and mGBA picks it up at launch.
-MGBA_CONFIG_DIR = Path("/root/.config/mgba")
-MGBA_CONFIG = MGBA_CONFIG_DIR / "config.ini"
+MGBA_CONFIG_PATHS = [
+    Path("/root/.config/mgba/config.ini"),
+    Path("/root/.mgba/config.ini")
+]
 
 
 @dataclass
@@ -118,50 +120,52 @@ def login(username: str, password: str) -> tuple[bool, str, Optional[RACreds]]:
 def apply_to_mgba_config(creds: RACreds) -> None:
     """Write cheevosUsername / cheevosToken to mGBA's config.ini, leaving
     every other setting alone. Idempotent."""
-    MGBA_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    for cfg_path in MGBA_CONFIG_PATHS:
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
 
-    cp = configparser.ConfigParser()
-    cp.optionxform = str  # preserve case for keys
+        cp = configparser.ConfigParser()
+        cp.optionxform = str  # preserve case for keys
 
-    if MGBA_CONFIG.exists():
-        try:
-            cp.read(MGBA_CONFIG)
-        except Exception:
-            # If the existing file is malformed, start fresh — better
-            # than refusing to apply creds.
-            cp = configparser.ConfigParser()
-            cp.optionxform = str
+        if cfg_path.exists():
+            try:
+                cp.read(cfg_path)
+            except Exception:
+                # If the existing file is malformed, start fresh — better
+                # than refusing to apply creds.
+                cp = configparser.ConfigParser()
+                cp.optionxform = str
 
-    # mGBA stores cheevos creds under [ports.qt] and [ports.sdl] depending
-    # on the binary. Write to both so launching either picks them up.
-    for section in ("ports.qt", "ports.sdl"):
-        if not cp.has_section(section):
-            cp.add_section(section)
-        cp.set(section, "cheevosUsername", creds.username)
-        cp.set(section, "cheevosToken", creds.token)
-        cp.set(section, "cheevosEnabled", "1")
+        # mGBA stores cheevos creds under [ports.qt] and [ports.sdl] depending
+        # on the binary. Write to both so launching either picks them up.
+        for section in ("ports.qt", "ports.sdl"):
+            if not cp.has_section(section):
+                cp.add_section(section)
+            cp.set(section, "cheevosUsername", creds.username)
+            cp.set(section, "cheevosToken", creds.token)
+            cp.set(section, "cheevosEnabled", "1")
 
-    with MGBA_CONFIG.open("w") as f:
-        cp.write(f, space_around_delimiters=False)
+        with cfg_path.open("w") as f:
+            cp.write(f, space_around_delimiters=False)
 
 
 def remove_from_mgba_config() -> None:
     """Strip cheevosUsername/Token from mGBA's config — used by logout."""
-    if not MGBA_CONFIG.exists():
-        return
-    cp = configparser.ConfigParser()
-    cp.optionxform = str
-    try:
-        cp.read(MGBA_CONFIG)
-    except Exception:
-        return
-    for section in ("ports.qt", "ports.sdl"):
-        if cp.has_section(section):
-            for k in ("cheevosUsername", "cheevosToken"):
-                cp.remove_option(section, k)
-            cp.set(section, "cheevosEnabled", "0")
-    try:
-        with MGBA_CONFIG.open("w") as f:
-            cp.write(f, space_around_delimiters=False)
-    except Exception:
-        pass
+    for cfg_path in MGBA_CONFIG_PATHS:
+        if not cfg_path.exists():
+            continue
+        cp = configparser.ConfigParser()
+        cp.optionxform = str
+        try:
+            cp.read(cfg_path)
+        except Exception:
+            continue
+        for section in ("ports.qt", "ports.sdl"):
+            if cp.has_section(section):
+                for k in ("cheevosUsername", "cheevosToken"):
+                    cp.remove_option(section, k)
+                cp.set(section, "cheevosEnabled", "0")
+        try:
+            with cfg_path.open("w") as f:
+                cp.write(f, space_around_delimiters=False)
+        except Exception:
+            pass
