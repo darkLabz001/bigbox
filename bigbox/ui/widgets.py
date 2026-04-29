@@ -33,7 +33,7 @@ class StatusBar:
         except OSError:
             self._ip = "—"
 
-    def render(self, surf: pygame.Surface) -> None:
+    def render(self, surf: pygame.Surface, app: Optional[App] = None) -> None:
         self._refresh_ip()
         bar = pygame.Rect(0, 0, theme.SCREEN_W, theme.STATUS_BAR_H)
         pygame.draw.rect(surf, theme.BG_ALT, bar)
@@ -41,6 +41,15 @@ class StatusBar:
         font = pygame.font.Font(None, theme.FS_STATUS)
         left = font.render(f"bigbox · {self._hostname}", True, theme.FG_DIM)
         surf.blit(left, (theme.PADDING, (bar.height - left.get_height()) // 2))
+
+        # Update Notification
+        if app and getattr(app, "update_checker", None) and app.update_checker.update_ready:
+            import math
+            pulse = int(127 + 128 * math.sin(time.time() * 4))
+            notif = font.render("UPDATE AVAILABLE", True, theme.ACCENT)
+            notif.set_alpha(pulse)
+            surf.blit(notif, (theme.SCREEN_W // 2 - notif.get_width() // 2, (bar.height - notif.get_height()) // 2))
+
         right = font.render(
             f"{self._ip}   {datetime.now().strftime('%H:%M')}",
             True,

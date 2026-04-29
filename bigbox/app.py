@@ -28,6 +28,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
+from bigbox.update_checker import UpdateChecker
 from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, MailView, MessengerView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
@@ -36,6 +37,7 @@ class App:
         self.dev_mode = bool(os.environ.get("BIGBOX_DEV"))
         self.bus = EventBus()
         self.running = True
+        self.update_checker = UpdateChecker(self)
         self.result_view: ResultView | None = None
         self.update_view: UpdateView | None = None
         self.menu_view: MenuView | None = None
@@ -372,7 +374,9 @@ class App:
                 _splash.play(screen)
             except Exception as e:
                 print(f"[bigbox] splash failed: {e}")
+        
         self._start_input()
+        self.update_checker.start()
 
         carousel = Carousel(build_sections())
         statusbar = StatusBar()
@@ -551,7 +555,7 @@ class App:
                     self.result_view = None
             else:
                 if self.show_status:
-                    statusbar.render(screen)
+                    statusbar.render(screen, self)
                 carousel.render(screen, body_font, title_font)
 
             if self.menu_view is not None:
