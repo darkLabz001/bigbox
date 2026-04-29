@@ -29,7 +29,7 @@ from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.update_checker import UpdateChecker
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, YouTubeView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 class App:
@@ -53,6 +53,7 @@ class App:
         self.cracker_view: OfflineCrackerView | None = None
         self.media_view: MediaPlayerView | None = None
         self.tv_view: InternetTVView | None = None
+        self.youtube_view: YouTubeView | None = None
         self.mail_view: MailView | None = None
         self.messenger_view: MessengerView | None = None
         self.ragnar_view: RagnarView | None = None
@@ -211,6 +212,9 @@ class App:
     def show_tv(self) -> None:
         self.tv_view = InternetTVView()
 
+    def show_youtube(self) -> None:
+        self.youtube_view = YouTubeView()
+
     def show_mail(self) -> None:
         self.mail_view = MailView()
 
@@ -303,6 +307,7 @@ class App:
         self.cracker_view = None
         self.media_view = None
         self.tv_view = None
+        self.youtube_view = None
         self.mail_view = None
         self.messenger_view = None
         self.ragnar_view = None
@@ -462,6 +467,10 @@ class App:
                 self.tv_view.render(screen)
                 if self.tv_view.dismissed:
                     self.tv_view = None
+            elif self.youtube_view is not None:
+                self.youtube_view.render(screen)
+                if self.youtube_view.dismissed:
+                    self.youtube_view = None
             elif self.mail_view is not None:
                 self.mail_view.render(screen)
                 if self.mail_view.dismissed:
@@ -672,6 +681,10 @@ class App:
                 self.show_result("TV Error", f"{type(e).__name__}: {e}")
             return
 
+        if self.youtube_view is not None:
+            self.youtube_view.handle(bev, self)
+            return
+
         if self.mail_view is not None:
             self.mail_view.handle(bev, self)
             return
@@ -686,22 +699,6 @@ class App:
 
         if self.scraper_view is not None:
             self.scraper_view.handle(bev, self)
-            return
-
-        if self.traffic_cam_view is not None:
-            self.traffic_cam_view.handle(bev, self)
-            return
-
-        if self.camera_view is not None:
-            self.camera_view.handle(bev, self)
-            return
-
-        if self.wifite_view is not None:
-            self.wifite_view.handle(bev, self)
-            return
-
-        if self.chat_view is not None:
-            self.chat_view.handle(bev, self)
             return
 
         if self.sherlock_view is not None:

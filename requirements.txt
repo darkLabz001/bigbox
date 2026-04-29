@@ -30,3 +30,4 @@ python-prctl>=1.8.1
 pandas
 numpy
 psutil
+yt-dlp
