@@ -1,8 +1,8 @@
-# 🏴‍☠️ DaRkb0x (bigbox)
+# 🏴‍☠️ BigB0X
 ### Tactical Handheld Pentesting Framework for Raspberry Pi
 **Ghost Protocol // High-Fidelity Signal Intelligence // Portable Auditing**
 
-DaRkb0x is a self-contained, gamepad-driven tactical firmware designed for the **Raspberry Pi 4** and **Zero 2W**. It transforms your handheld into a powerful signal intelligence and network auditing tool with a high-contrast "Ghost Protocol" interface.
+BigB0X is a self-contained, gamepad-driven tactical firmware designed for the **Raspberry Pi 4** and **Zero 2W**. It transforms your handheld into a powerful signal intelligence and network auditing tool with a high-contrast "Ghost Protocol" interface.
 
 ---
 
@@ -41,7 +41,7 @@ DaRkb0x is a self-contained, gamepad-driven tactical firmware designed for the *
 
 ## 🎮 Interface & Controls
 
-DaRkb0x is designed for fast, one-handed operation using the GamePi43 controller or any external USB/BLE keyboard.
+BigB0X is designed for fast, one-handed operation using the GamePi43 controller or any external USB/BLE keyboard.
 
 | Command | GamePi43 Button | Keyboard |
 | :--- | :--- | :--- |
@@ -72,7 +72,7 @@ DaRkb0x is designed for fast, one-handed operation using the GamePi43 controller
 ### 1. Fast Deployment (SD Card Prep)
 Flash **Raspberry Pi OS Lite (64-bit)** with Raspberry Pi Imager. Then, run our prep script on your Linux machine:
 ```bash
-sudo BIGBOX_HOSTNAME=darkbox ./scripts/sdcard-prepare.sh /dev/sdX
+sudo BIGBOX_HOSTNAME=bigbox ./scripts/sdcard-prepare.sh /dev/sdX
 ```
 
 ### 2. Manual Installation
@@ -87,7 +87,12 @@ sudo systemctl enable --now bigbox
 ---
 
 ## 🔄 System Updates (OTA)
-DaRkb0x features a high-fidelity **OTA Update System**. Go to **Settings > Check for Updates** to pull the latest tactical payloads, dependencies, and bug fixes. The update process includes real-time Discord notifications for repository changes.
+BigB0X features a high-fidelity **OTA Update System**. Go to **Settings > Check for Updates** to pull the latest tactical payloads, dependencies, and bug fixes. The update process includes real-time Discord notifications for repository changes.
+
+---
+
+## 🎨 Custom Theming
+BigB0X includes a robust theme engine. Edit JSON files in `config/themes/` to change colors, background grids, and icon sets. Check the [Theming Guide](config/themes/README.md) for more info.
 
 ---
 
