@@ -81,23 +81,23 @@ class FlockScannerView:
         self._wifi_thread.start()
 
     def _bt_worker(self):
-        """Advanced BLE monitor using raw btmon for dual-adapter support."""
+        """Advanced BLE monitor using raw btmon with prioritized TP-Link adapter."""
+        from bigbox import hardware
         print("[flock] bt_worker: started")
         try:
-            # Ensure both adapters are powered and scanning
-            adapters = ["hci1", "hci0"]
-            for hci in adapters:
-                print(f"[flock] bringing up {hci}...")
-                subprocess.run(["sudo", "-n", "hciconfig", hci, "up"], capture_output=True)
-                subprocess.run(["sudo", "-n", "bluetoothctl", "select", hci], capture_output=True)
-                subprocess.run(["sudo", "-n", "bluetoothctl", "power", "on"], capture_output=True)
-                subprocess.Popen(["sudo", "-n", "bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Ensure adapters are up and scanning (hci0 is prioritized in hardware.py)
+            hardware.ensure_bluetooth_on()
+            
+            # Start LE scan on both to ensure coverage
+            for hci in ["hci0", "hci1"]:
+                subprocess.run(["bluetoothctl", "select", hci], capture_output=True)
+                subprocess.Popen(["bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             self.status_msg = "SENSORS ACTIVE"
 
             # Use btmon for raw access to all controllers
             print("[flock] bt_worker: launching btmon")
-            proc = subprocess.Popen(["sudo", "-n", "btmon"], stdout=subprocess.PIPE, text=True)
+            proc = subprocess.Popen(["btmon"], stdout=subprocess.PIPE, text=True)
             if not proc.stdout: 
                 self.status_msg = "BTMON_START_FAILED"
                 return

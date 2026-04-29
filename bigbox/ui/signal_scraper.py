@@ -124,12 +124,18 @@ class SignalScraperView:
         except Exception: pass
 
         try:
+            # Ensure adapters are up and scanning (hci0 is prioritized in hardware.py)
+            hardware.ensure_bluetooth_on()
+            # Trigger scanning on both to be sure
+            for hci in ["hci0", "hci1"]:
+                subprocess.run(["bluetoothctl", "select", hci], capture_output=True)
+                subprocess.run(["bluetoothctl", "scan", "le", "on"], 
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+
             self._btmon = subprocess.Popen(
                 ["btmon"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 text=True, preexec_fn=os.setsid
             )
-            subprocess.run(["bluetoothctl", "scan", "le", "on"], 
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
         except Exception: pass
 
         threading.Thread(target=self._poll_wifi, daemon=True).start()

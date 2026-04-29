@@ -93,16 +93,20 @@ def ensure_wifi_managed(iface: str | None = None) -> None:
 
 def ensure_bluetooth_on() -> None:
     """Ensure the BT controller is unblocked and powered.
-
-    - rfkill unblock bluetooth (handles soft-block from a flight-mode toggle)
-    - bluetoothctl power on (idempotent)
-    - kill stale btmon / hcidump that FlockSeeker might have left behind
+    Prioritizes hci0 (usually USB) over hci1 (onboard).
     """
     kill_by_name("btmon", "hcidump")
     if shutil.which("rfkill"):
         _run(["rfkill", "unblock", "bluetooth"], timeout=3)
+    
     if shutil.which("bluetoothctl"):
+        # Explicitly power on both, but try to select hci0 as default
+        _run(["bluetoothctl", "select", "hci0"], timeout=3)
         _run(["bluetoothctl", "power", "on"], timeout=5)
+        _run(["bluetoothctl", "select", "hci1"], timeout=3)
+        _run(["bluetoothctl", "power", "on"], timeout=5)
+        # Re-select hci0 to make it the active context
+        _run(["bluetoothctl", "select", "hci0"], timeout=3)
 
 
 def stop_bluetooth_scan() -> None:
