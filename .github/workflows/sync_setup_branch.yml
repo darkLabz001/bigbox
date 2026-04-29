@@ -1,0 +1,26 @@
+name: Sync Setup Branch
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Git
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+
+      - name: Merge main into setup-wizard
+        run: |
+          git checkout setup-wizard
+          git merge origin/main --no-edit || echo "Merge conflict detected - manual resolution required"
+          git push origin setup-wizard
