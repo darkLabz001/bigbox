@@ -61,6 +61,7 @@ class WifiteView:
         
         self.cursor = 0 # Config cursor
         self.is_scanning = False
+        self.scroll_idx = 0
 
     def _get_full_args(self) -> List[str]:
         args = ["--dict", "/usr/share/wordlists/rockyou.txt"]
@@ -112,6 +113,7 @@ class WifiteView:
                     if data:
                         import re
                         clean_data = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', data)
+                        was_at_bottom = self.scroll_idx >= len(self.history) - 1
                         for line in clean_data.splitlines():
                             if line.strip():
                                 self.history.append(line)
@@ -119,6 +121,9 @@ class WifiteView:
                                 if "select target" in line.lower() or "enter number" in line.lower():
                                     self.is_scanning = False
                                     self.status_msg = "SELECT TARGETS (A to input)"
+                        
+                        if was_at_bottom:
+                            self.scroll_idx = max(0, len(self.history) - 1)
                 except OSError:
                     break
 
@@ -155,6 +160,7 @@ class WifiteView:
             
         self.master_fd = self.slave_fd = self.process = None
         self.is_scanning = False
+        self.scroll_idx = 0
         hardware.ensure_wifi_managed()
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
@@ -191,9 +197,13 @@ class WifiteView:
                 self.phase = PHASE_LANDING
 
         elif self.phase == PHASE_RUNNING:
-            if ev.button is Button.A:
+            if ev.button in (Button.A, Button.RR):
                 # Always allow input in running phase
                 ctx.get_input("Input / Targets", self._on_terminal_input)
+            elif ev.button is Button.UP:
+                self.scroll_idx = max(0, self.scroll_idx - 1)
+            elif ev.button is Button.DOWN:
+                self.scroll_idx = min(len(self.history) - 1, self.scroll_idx + 1)
             elif ev.button is Button.LL:
                 if self.is_scanning:
                     self._send_ctrl_c()
@@ -202,6 +212,7 @@ class WifiteView:
                 self._send_ctrl_c()
             elif ev.button is Button.Y:
                 self.history.clear()
+                self.scroll_idx = 0
 
     def _toggle_config_option(self, ctx: App):
         if self.cursor == 0:
@@ -251,8 +262,8 @@ class WifiteView:
         if self.phase == PHASE_LANDING: return "A: Start  X: Config  B: Back"
         if self.phase == PHASE_CONFIG: return "UP/DN: Select  A: Toggle  START: Done"
         if self.phase == PHASE_RUNNING:
-            if self.is_scanning: return "LL: STOP SCAN (Select Targets)  B: Exit"
-            return "A: INPUT TARGET #  X: SKIP/CTRL+C  B: Exit"
+            if self.is_scanning: return "LL: STOP SCAN  UP/DN: Scroll  B: Exit"
+            return "A: INPUT TARGET #  UP/DN: Scroll  X: SKIP  B: Exit"
         return "B: Back"
 
     def _render_landing(self, surf: pygame.Surface, head_h: int):
@@ -302,8 +313,27 @@ class WifiteView:
         term_rect = pygame.Rect(5, head_h + 5, theme.SCREEN_W - 10, theme.SCREEN_H - head_h - 40)
         pygame.draw.rect(surf, (5, 5, 10), term_rect)
         pygame.draw.rect(surf, theme.DIVIDER, term_rect, 1)
+        
         line_h = self.font_size + 2
         max_lines = term_rect.height // line_h
-        visible_lines = list(self.history)[-max_lines:]
+        
+        # Calculate window of history to show
+        total = len(self.history)
+        if total <= max_lines:
+            visible_lines = list(self.history)
+            offset_y = 0
+        else:
+            # We want to show 'max_lines' starting from scroll_idx
+            # but capped so we don't go past the end.
+            start = max(0, min(self.scroll_idx, total - max_lines))
+            visible_lines = list(self.history)[start : start + max_lines]
+            
+            # Scrollbar indicator
+            sb_w = 4
+            sb_h = max(20, int(term_rect.height * (max_lines / total)))
+            sb_y = term_rect.y + int((start / total) * term_rect.height)
+            pygame.draw.rect(surf, theme.ACCENT_DIM, (term_rect.right - sb_w - 2, sb_y, sb_w, sb_h))
+
         for i, line in enumerate(visible_lines):
             surf.blit(self.font.render(line[:110], True, (220, 220, 220)), (term_rect.x + 10, term_rect.y + 10 + i * line_h))
+
