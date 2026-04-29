@@ -43,6 +43,12 @@ apt-get install -y --no-install-recommends \
     curl ca-certificates \
     fonts-dejavu-core
 
+# --- 1b. tailscale ------------------------------------------------------------
+if ! command -v tailscale >/dev/null 2>&1; then
+    echo "==> tailscale"
+    curl -fsSL https://tailscale.com/install.sh | sh
+fi
+
 # --- 2. copy source to /opt/bigbox -------------------------------------------
 echo "==> copy source -> $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"

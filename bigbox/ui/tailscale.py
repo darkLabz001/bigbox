@@ -42,7 +42,7 @@ class TailscaleView:
     def _refresh_status(self):
         def _worker():
             try:
-                cmd = ["tailscale", "status", "--json"]
+                cmd = ["sudo", "tailscale", "status", "--json"]
                 out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
                 self.info = json.loads(out)
                 self.status_msg = "UPLINK_STABLE"
@@ -63,9 +63,9 @@ class TailscaleView:
 
         def _worker():
             try:
-                # 'tailscale up --qr' outputs the QR code in text format and the URL
+                # Use sudo as tailscale up needs root to configure networking
                 proc = subprocess.Popen(
-                    ["tailscale", "up", "--qr"],
+                    ["sudo", "tailscale", "up", "--qr"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True
@@ -87,7 +87,12 @@ class TailscaleView:
                 
                 self.qr_lines = lines
                 self.qr_url = url
-                self.status_msg = "WAITING_FOR_AUTH"
+                if not url and not lines:
+                    self.status_msg = "AUTH_ERROR: EMPTY RESPONSE"
+                else:
+                    self.status_msg = "WAITING_FOR_AUTH"
+            except FileNotFoundError:
+                self.status_msg = "ERROR: TAILSCALE NOT INSTALLED"
             except Exception as e:
                 self.status_msg = f"AUTH_ERROR: {str(e)}"
             self.is_loading = False
@@ -96,15 +101,15 @@ class TailscaleView:
 
     def _toggle(self):
         backend_state = self.info.get("BackendState", "NoState")
-        cmd = ["tailscale", "down" if backend_state == "Running" else "up"]
+        cmd = ["sudo", "tailscale", "down" if backend_state == "Running" else "up"]
         
         def _worker():
             try:
                 subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
                 time.sleep(1)
                 self._refresh_status()
-            except:
-                self.status_msg = "TOGGLE_FAILED"
+            except Exception as e:
+                self.status_msg = f"TOGGLE_FAILED: {str(e)}"
         
         threading.Thread(target=_worker, daemon=True).start()
 
