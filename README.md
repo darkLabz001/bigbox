@@ -1,4 +1,5 @@
-<img width="1086" height="1448" alt="box" src="https://github.com/user-attachments/assets/9ee36a4e-deb1-4c01-b8a6-d2e602f947a7" /># bigbox
+## BIGBOX
+
 
 A pentesting handheld firmware for Raspberry Pi 4 + Waveshare GamePi43.
 
