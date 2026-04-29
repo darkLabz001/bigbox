@@ -32,8 +32,6 @@ class WifiteView:
         self.status_msg = "INITIALIZING CORE..."
         
         # UI dimensions
-        self.font_size = 18
-        self.font = pygame.font.Font(None, self.font_size)
         self.f_title = pygame.font.Font(None, 42)
         self.f_med = pygame.font.Font(None, 24)
         self.f_tiny = pygame.font.Font(None, 16)
@@ -47,6 +45,7 @@ class WifiteView:
         self.custom_args = ""
         
         self.selected_iface: Optional[str] = None
+        # Prioritize hardware interfaces: Alfa is usually wlan0 on your setup
         active = hardware.list_wifi_clients() + hardware.list_monitor_ifaces()
         if "wlan0" in active: self.selected_iface = "wlan0"
         elif active: self.selected_iface = active[0]
@@ -59,7 +58,7 @@ class WifiteView:
         self._stop_event = threading.Event()
         self._reader_thread = None
         
-        self.cursor = 0 
+        self.cursor = 0 # Config cursor
         self.is_scanning = False
         self.scroll_idx = 0
         
@@ -126,7 +125,11 @@ class WifiteView:
                     if data:
                         import re
                         clean_data = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', data)
-                        was_at_bottom = self.scroll_idx >= len(self.history) - 1
+                        
+                        line_h = self.f_med.get_linesize()
+                        max_lines = (theme.SCREEN_H - 120) // line_h
+                        was_at_bottom = self.scroll_idx >= len(self.history) - max_lines
+
                         for line in clean_data.splitlines():
                             if line.strip():
                                 self.history.append(line)
@@ -135,7 +138,7 @@ class WifiteView:
                                     self.status_msg = "SPECTRUM LOCKED. SELECT TARGETS."
                         
                         if was_at_bottom:
-                            self.scroll_idx = max(0, len(self.history) - 1)
+                            self.scroll_idx = max(0, len(self.history) - max_lines)
                 except OSError:
                     break
 
@@ -191,10 +194,15 @@ class WifiteView:
             elif ev.button is Button.A: self._toggle_config_option(ctx)
             elif ev.button is Button.START: self.phase = PHASE_LANDING
         elif self.phase == PHASE_RUNNING:
+            line_h = self.f_med.get_linesize()
+            max_lines = (theme.SCREEN_H - 120) // line_h
+            
             if ev.button in (Button.A, Button.RR):
                 ctx.get_input("SYSTEM INPUT", self._on_terminal_input)
-            elif ev.button is Button.UP: self.scroll_idx = max(0, self.scroll_idx - 1)
-            elif ev.button is Button.DOWN: self.scroll_idx = min(len(self.history) - 1, self.scroll_idx + 1)
+            elif ev.button is Button.UP:
+                self.scroll_idx = max(0, self.scroll_idx - 1)
+            elif ev.button is Button.DOWN:
+                self.scroll_idx = min(self.scroll_idx + 1, max(0, len(self.history) - max_lines))
             elif ev.button is Button.LL:
                 if self.is_scanning: self._send_ctrl_c()
             elif ev.button is Button.X: self._send_ctrl_c()
@@ -307,7 +315,7 @@ class WifiteView:
         pygame.draw.rect(surf, (5, 5, 10, 200), term_rect)
         pygame.draw.rect(surf, theme.DIVIDER, term_rect, 1)
         
-        line_h = self.font_size + 2
+        line_h = self.f_med.get_linesize()
         max_lines = term_rect.height // line_h
         total = len(self.history)
         
