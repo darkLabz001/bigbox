@@ -60,6 +60,16 @@ echo "STATUS: Initializing..."
 echo "PROGRESS: 2"
 cd "$REPO_DIR" || fail "cannot cd to $REPO_DIR"
 
+# Ensure system time is roughly correct. Raspberry Pis without RTC often drift,
+# which breaks HTTPS and Git (SSL certificate validation fails).
+if command -v timedatectl >/dev/null 2>&1; then
+    # Try to wait for NTP sync if it's enabled but not synced.
+    echo "STATUS: Syncing system time..."
+    if ! bounded 10 timedatectl wait-sync; then
+        echo "Warning: timedatectl wait-sync timed out, continuing anyway." >>"$LOG"
+    fi
+fi
+
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>>"$LOG")
 [ -n "$BRANCH" ] || fail "not on a branch"
 

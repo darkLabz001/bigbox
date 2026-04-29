@@ -51,6 +51,7 @@ class ChatView:
                 if res.status_code == 200:
                     new_msgs = res.json()
                     if new_msgs:
+                        was_at_bottom = self.scroll_y >= self.max_scroll - 10 or self.max_scroll == 0
                         for m in new_msgs:
                             self.messages.append(m)
                             if m['id'] > self.last_id:
@@ -60,10 +61,17 @@ class ChatView:
                             self.messages = self.messages[-100:]
                         self.is_loading = False
                         self.error_msg = None
+                        
+                        # Trigger a re-calculation of max_scroll and scroll to bottom if needed
+                        # (The next render will update max_scroll, but we can hint it)
+                        if was_at_bottom:
+                            self.scroll_y = 999999 # Hack to stay at bottom
+                elif res.status_code == 401:
+                    self.error_msg = "UNAUTHORIZED: API KEY REQUIRED"
                 else:
-                    self.error_msg = f"HTTP {res.status_code}"
+                    self.error_msg = f"SERVER ERROR: {res.status_code}"
             except Exception as e:
-                self.error_msg = str(e)
+                self.error_msg = f"CONNECTION ERROR: {str(e)[:20]}"
             
             self._stop_event.wait(POLL_INTERVAL)
 
@@ -160,6 +168,7 @@ class ChatView:
         line_h = 24
         total_h = len(rendered_lines) * line_h
         self.max_scroll = max(0, total_h - chat_rect.height)
+        self.scroll_y = min(self.scroll_y, self.max_scroll)
         
         # Create a surface for the chat content
         content_surf = pygame.Surface((chat_rect.width, total_h), pygame.SRCALPHA)
