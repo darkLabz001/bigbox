@@ -30,9 +30,9 @@ class UpdateChecker:
     def _check_now(self) -> bool:
         """Runs git fetch and compares local HEAD to remote."""
         try:
-            # 1. Fetch remote changes without merging
+            # 1. Fetch remote changes without merging. Increased timeout for slow connections.
             subprocess.run(["git", "fetch", "origin"], 
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
             
             # 2. Check if main is behind origin/main
             # rev-list --count main..origin/main returns > 0 if there are new commits

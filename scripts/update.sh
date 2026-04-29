@@ -81,13 +81,30 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>>"$LOG")
 [ -n "$BRANCH" ] || fail "not on a branch"
 
 echo "STATUS: Fetching from GitHub..."
-# 120s is safer for slow cellular/hotspot connections.
-if ! bounded 120 git \
-        -c credential.helper= \
-        -c core.askpass=true \
-        fetch origin "$BRANCH"; then
+# Retry loop for unstable connections (e.g. mobile hotspots)
+MAX_RETRIES=3
+RETRY_COUNT=0
+FETCH_SUCCESS=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    # 120s per attempt. 
+    if bounded 120 git \
+            -c credential.helper= \
+            -c core.askpass=true \
+            fetch origin "$BRANCH"; then
+        FETCH_SUCCESS=1
+        break
+    fi
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+        echo "STATUS: Fetch failed, retrying ($RETRY_COUNT/$MAX_RETRIES)..."
+        sleep 5
+    fi
+done
+
+if [ $FETCH_SUCCESS -eq 0 ]; then
     LAST_ERR=$(tail -n 2 "$LOG" | tr '\n' ' ')
-    fail "fetch failed: $LAST_ERR"
+    fail "fetch failed after $MAX_RETRIES attempts: $LAST_ERR"
 fi
 echo "PROGRESS: 15"
 
