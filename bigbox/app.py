@@ -28,7 +28,7 @@ from bigbox.input import load_button_config
 from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, MailView, SignalScraperView, TrafficCamView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, MailView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 class App:
@@ -54,6 +54,7 @@ class App:
         self.mail_view: MailView | None = None
         self.scraper_view: SignalScraperView | None = None
         self.traffic_cam_view: TrafficCamView | None = None
+        self.camera_view: CameraInterceptorView | None = None
         self.wifite_view: WifiteView | None = None
         self.chat_view: ChatView | None = None
         self.sherlock_view: SherlockView | None = None
@@ -210,6 +211,9 @@ class App:
     def show_traffic_cam(self) -> None:
         self.traffic_cam_view = TrafficCamView()
 
+    def show_camera_interceptor(self) -> None:
+        self.camera_view = CameraInterceptorView()
+
     def show_wifite(self) -> None:
         self.wifite_view = WifiteView()
 
@@ -287,6 +291,7 @@ class App:
         self.mail_view = None
         self.scraper_view = None
         self.traffic_cam_view = None
+        self.camera_view = None
         self.wifite_view = None
         self.chat_view = None
         self.sherlock_view = None
@@ -336,6 +341,8 @@ class App:
         if self.tv_view is not None:
             return 30
         if self.traffic_cam_view is not None:
+            return 30
+        if self.camera_view is not None:
             return 30
         if self.flock_view is not None:
             return 30
@@ -448,6 +455,10 @@ class App:
                 self.traffic_cam_view.render(screen)
                 if self.traffic_cam_view.dismissed:
                     self.traffic_cam_view = None
+            elif self.camera_view is not None:
+                self.camera_view.render(screen)
+                if self.camera_view.dismissed:
+                    self.camera_view = None
             elif self.wifite_view is not None:
                 self.wifite_view.render(screen)
                 if self.wifite_view.dismissed:
@@ -644,6 +655,10 @@ class App:
 
         if self.traffic_cam_view is not None:
             self.traffic_cam_view.handle(bev, self)
+            return
+
+        if self.camera_view is not None:
+            self.camera_view.handle(bev, self)
             return
 
         if self.wifite_view is not None:

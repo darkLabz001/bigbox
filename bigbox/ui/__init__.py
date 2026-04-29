@@ -20,6 +20,7 @@ from bigbox.ui.tv import InternetTVView
 from bigbox.ui.mail import MailView
 from bigbox.ui.signal_scraper import SignalScraperView
 from bigbox.ui.traffic_cam import TrafficCamView
+from bigbox.ui.camera_interceptor import CameraInterceptorView
 from bigbox.ui.wifite import WifiteView
 from bigbox.ui.chat import ChatView
 from bigbox.ui.sherlock import SherlockView
@@ -63,6 +64,7 @@ __all__ = [
     "MailView",
     "SignalScraperView",
     "TrafficCamView",
+    "CameraInterceptorView",
     "WifiteView",
     "ChatView",
     "SherlockView",
