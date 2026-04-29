@@ -3,20 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BigB0X // Web Deployer</title>
+    <title>BigB0X // Tactical Deployer</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@300;500&display=swap');
+
         :root {
             --bg: #050508;
-            --panel: #0a0a0f;
+            --panel: rgba(10, 10, 15, 0.95);
             --accent: #00ffcc;
-            --accent-dim: #006652;
+            --accent-glow: rgba(0, 255, 204, 0.4);
+            --error: #ff3366;
             --fg: #e0e0e0;
-            --glow: 0 0 15px rgba(0, 255, 204, 0.4);
         }
+
         body {
             background-color: var(--bg);
+            background-image: 
+                linear-gradient(rgba(0, 255, 204, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 204, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
             color: var(--fg);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'JetBrains Mono', monospace;
             margin: 0;
             display: flex;
             justify-content: center;
@@ -24,158 +31,276 @@
             min-height: 100vh;
             overflow-x: hidden;
         }
+
+        /* Scanline Effect */
+        body::before {
+            content: " ";
+            position: fixed;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            background-size: 100% 4px, 3px 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
         .hud-container {
-            width: 90%;
-            max-width: 800px;
+            width: 95%;
+            max-width: 900px;
             background: var(--panel);
-            border: 2px solid var(--accent-dim);
-            padding: 40px;
+            border: 1px solid var(--accent);
+            padding: 30px;
             position: relative;
-            box-shadow: var(--glow);
+            box-shadow: 0 0 30px rgba(0, 0, 0, 1), inset 0 0 20px var(--accent-glow);
+            clip-path: polygon(0 0, 95% 0, 100% 5%, 100% 100%, 5% 100%, 0 95%);
         }
-        .hud-container::before {
-            content: "SECURE_DEPLOYMENT_UPLINK";
-            position: absolute;
-            top: -10px;
-            left: 20px;
-            background: var(--bg);
-            padding: 0 10px;
-            color: var(--accent);
-            font-size: 0.7rem;
-            letter-spacing: 2px;
-        }
-        h1 {
-            color: var(--accent);
-            font-weight: 300;
-            letter-spacing: 8px;
-            margin: 0 0 10px 0;
-            text-align: center;
-        }
-        .status-bar {
-            height: 4px;
-            background: var(--accent-dim);
+
+        header {
+            text-align: left;
+            border-bottom: 1px solid var(--accent);
             margin-bottom: 30px;
-            position: relative;
-            overflow: hidden;
-        }
-        .status-bar::after {
-            content: "";
-            position: absolute;
-            width: 40%;
-            height: 100%;
-            background: var(--accent);
-            animation: scan 2s infinite linear;
-        }
-        @keyframes scan {
-            0% { left: -40%; }
-            100% { left: 100%; }
-        }
-        .config-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .input-group {
+            padding-bottom: 10px;
             display: flex;
-            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-end;
         }
-        label {
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
             color: var(--accent);
-            font-size: 0.8rem;
-            margin-bottom: 5px;
+            margin: 0;
+            font-size: 2rem;
+            letter-spacing: 4px;
+            text-shadow: 0 0 10px var(--accent);
+        }
+
+        .sys-status {
+            font-size: 0.7rem;
+            color: var(--accent);
             text-transform: uppercase;
         }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 30px;
+        }
+
+        @media (max-width: 800px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        .config-section label {
+            display: block;
+            color: var(--accent);
+            font-size: 0.7rem;
+            margin: 15px 0 5px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
         input, select {
-            background: #14141f;
-            border: 1px solid var(--accent-dim);
+            width: 100%;
+            background: #1a1a24;
+            border: 1px solid #333;
             color: white;
             padding: 12px;
-            border-radius: 4px;
+            box-sizing: border-box;
+            outline: none;
+            transition: 0.3s;
         }
+
+        input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        .terminal-preview {
+            background: #000;
+            border: 1px solid #222;
+            padding: 15px;
+            font-size: 0.75rem;
+            height: 250px;
+            overflow: hidden;
+            color: #00cc88;
+            position: relative;
+        }
+
+        .terminal-preview::after {
+            content: "";
+            position: absolute;
+            bottom: 0; left: 0; width: 100%; height: 50px;
+            background: linear-gradient(transparent, #000);
+        }
+
         .deploy-btn {
+            margin-top: 30px;
             width: 100%;
             padding: 20px;
             background: transparent;
-            border: 1px solid var(--accent);
+            border: 2px solid var(--accent);
             color: var(--accent);
+            font-family: 'Orbitron', sans-serif;
             font-weight: bold;
             font-size: 1.2rem;
-            letter-spacing: 4px;
+            letter-spacing: 6px;
             cursor: pointer;
             transition: 0.3s;
+            position: relative;
+            overflow: hidden;
         }
+
         .deploy-btn:hover {
             background: var(--accent);
             color: var(--bg);
-            box-shadow: var(--glow);
+            box-shadow: 0 0 30px var(--accent);
         }
-        .instructions {
+
+        .visual-guide {
             margin-top: 40px;
-            border-top: 1px solid #2a2a35;
-            padding-top: 20px;
-            font-size: 0.9rem;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            text-align: center;
+        }
+
+        .guide-step {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 15px;
+            border: 1px solid #222;
+            border-radius: 4px;
+        }
+
+        .guide-step i {
+            display: block;
+            font-size: 1.5rem;
+            color: var(--accent);
+            margin-bottom: 10px;
+        }
+
+        .guide-step p {
+            font-size: 0.8rem;
+            margin: 0;
             color: #888;
         }
-        .step { margin-bottom: 15px; }
-        .step b { color: var(--accent); }
+
+        .guide-step b { color: var(--fg); }
+
+        .blinking-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 15px;
+            background: var(--accent);
+            animation: blink 1s infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes blink { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
     </style>
 </head>
 <body>
     <div class="hud-container">
-        <h1>BigB0X // DEPLOYER</h1>
-        <div class="status-bar"></div>
+        <header>
+            <div>
+                <h1>BigB0X // DEPLOYER</h1>
+                <div class="sys-status">Link_Status: <span id="conn-status" style="color: var(--accent);">Encrypted</span></div>
+            </div>
+            <div class="sys-status">v2.0_GHOST_PROTOCOL</div>
+        </header>
 
-        <div class="config-grid">
-            <div class="input-group">
-                <label>Target Hardware</label>
-                <select>
-                    <option>Raspberry Pi 4</option>
-                    <option>Raspberry Pi Zero 2W</option>
-                </select>
+        <div class="main-grid">
+            <div class="config-section">
+                <div style="color: var(--accent); font-size: 0.9rem; margin-bottom: 10px;">[ INITIALIZATION_PARAMETERS ]</div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label>Hardware_ID</label>
+                        <select id="hw">
+                            <option>PI_4_B</option>
+                            <option>PI_ZERO_2W</option>
+                            <option>GENERIC_ARM64</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Node_Name</label>
+                        <input type="text" value="bigbox" id="hostname" oninput="updateTerm()">
+                    </div>
+                </div>
+
+                <label>Field_WiFi_SSID</label>
+                <input type="text" placeholder="Access Point SSID" id="ssid" oninput="updateTerm()">
+
+                <label>Uplink_Password</label>
+                <input type="password" placeholder="••••••••" id="pass" oninput="updateTerm()">
             </div>
-            <div class="input-group">
-                <label>Hostname</label>
-                <input type="text" value="bigbox" id="hostname">
-            </div>
-            <div class="input-group">
-                <label>Field Wi-Fi SSID</label>
-                <input type="text" placeholder="Access Point Name" id="ssid">
-            </div>
-            <div class="input-group">
-                <label>Wi-Fi Password</label>
-                <input type="password" placeholder="••••••••" id="pass">
+
+            <div>
+                <div style="color: var(--accent); font-size: 0.8rem; margin-bottom: 5px;">NEURAL_LINK_PREVIEW:</div>
+                <div class="terminal-preview" id="term">
+                    > SYSTEM_READY<br>
+                    > AWAITING_INPUT...<br>
+                    <span class="blinking-cursor"></span>
+                </div>
             </div>
         </div>
 
-        <button class="deploy-btn" onclick="generateConfig()">GENERATE FIRMWARE BUNDLE</button>
+        <button class="deploy-btn" onclick="generateConfig()">INITIATE_UPLINK</button>
 
-        <div class="instructions">
-            <div class="step">1. Flash <b>Pi OS Lite (64-bit)</b> using the Raspberry Pi Imager.</div>
-            <div class="step">2. Click the button above to build your <b>Tactical Config</b>.</div>
-            <div class="step">3. Download the resulting <code>.zip</code> and extract it to the <b>boot</b> partition of your SD card.</div>
-            <div class="step">4. Power on your BigB0X. The system will auto-initialize.</div>
+        <div class="visual-guide">
+            <div class="guide-step">
+                <i>💾</i>
+                <p>Flash <b>Pi OS Lite</b> to your SD card.</p>
+            </div>
+            <div class="guide-step">
+                <i>📄</i>
+                <p>Click Uplink to get your <b>setup.json</b>.</p>
+            </div>
+            <div class="guide-step">
+                <i>👉</i>
+                <p>Drag <b>setup.json</b> into the <b>/boot</b> drive.</p>
+            </div>
         </div>
     </div>
 
     <script>
+        function updateTerm() {
+            const h = document.getElementById('hostname').value;
+            const s = document.getElementById('ssid').value;
+            const t = document.getElementById('term');
+            
+            t.innerHTML = `
+                > INJECTING_PARAMS...<br>
+                > SET_HOST: ${h}<br>
+                > SET_SSID: ${s || '???'}<br>
+                > CRYPT_KEY: SHA256_ACTIVE<br>
+                > STATUS: READY_TO_DEPLOY<br>
+                <span class="blinking-cursor"></span>
+            `;
+        }
+
         function generateConfig() {
             const config = {
                 hostname: document.getElementById('hostname').value,
                 ssid: document.getElementById('ssid').value,
                 pass: document.getElementById('pass').value,
-                timestamp: Date.now()
+                deploy_ts: new Date().toISOString()
             };
             
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", "setup.json");
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
+            const btn = document.querySelector('.deploy-btn');
+            btn.innerHTML = "GENERATING_ENCRYPTED_BUNDLE...";
             
-            alert("TACTICAL CONFIG GENERATED.\n\nPlace the 'setup.json' file into the root of your SD card /boot partition.");
+            setTimeout(() => {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 2));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", "setup.json");
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+                
+                btn.innerHTML = "INITIATE_UPLINK";
+                alert("TACTICAL BUNDLE READY.\n\nNow, drag the 'setup.json' from your Downloads folder directly into the root of your SD card (the drive named 'boot').");
+            }, 1000);
         }
     </script>
 </body>
