@@ -93,14 +93,18 @@ class ChatView:
         if ev.button is Button.B:
             self._stop_event.set()
             self.dismissed = True
-        elif ev.button is Button.A:
+        elif ev.button in (Button.A, Button.START):
             ctx.get_input("Chat Message", self._on_keyboard_done)
-        elif ev.button is Button.X:
+        elif ev.button in (Button.X, Button.SELECT):
             ctx.get_input("Set Handle", self._on_handle_done, initial=self.username)
         elif ev.button is Button.UP:
             self.scroll_y = max(0, self.scroll_y - 40)
         elif ev.button is Button.DOWN:
             self.scroll_y = min(self.max_scroll, self.scroll_y + 40)
+        elif ev.button is Button.LL:
+            self.scroll_y = max(0, self.scroll_y - 200)
+        elif ev.button is Button.RR:
+            self.scroll_y = min(self.max_scroll, self.scroll_y + 200)
 
     def _on_keyboard_done(self, text: str | None):
         if text:
@@ -206,5 +210,5 @@ class ChatView:
             surf.blit(err, (chat_rect.centerx - err.get_width()//2, chat_rect.centery))
 
         # Footer
-        hint = self.f_hint.render("A: Send Message  X: Set Handle  UP/DN: Scroll  B: Back", True, theme.FG_DIM)
+        hint = self.f_hint.render("A/START: Send  X/SEL: Handle  UP/DN: Scroll (LL/RR page)  B: Back", True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
