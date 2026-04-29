@@ -55,6 +55,7 @@ class App:
         self.tv_view: InternetTVView | None = None
         self.youtube_view: YouTubeView | None = None
         self.tailscale_view: TailscaleView | None = None
+        self.anon_surf_view: AnonSurfView | None = None
         self.mail_view: MailView | None = None
         self.messenger_view: MessengerView | None = None
         self.ragnar_view: RagnarView | None = None
@@ -219,6 +220,9 @@ class App:
     def show_tailscale(self) -> None:
         self.tailscale_view = TailscaleView()
 
+    def show_anonsurf(self) -> None:
+        self.anon_surf_view = AnonSurfView()
+
     def show_mail(self) -> None:
         self.mail_view = MailView()
 
@@ -313,6 +317,7 @@ class App:
         self.tv_view = None
         self.youtube_view = None
         self.tailscale_view = None
+        self.anon_surf_view = None
         self.mail_view = None
         self.messenger_view = None
         self.ragnar_view = None
@@ -480,6 +485,10 @@ class App:
                 self.tailscale_view.render(screen)
                 if self.tailscale_view.dismissed:
                     self.tailscale_view = None
+            elif self.anon_surf_view is not None:
+                self.anon_surf_view.render(screen)
+                if self.anon_surf_view.dismissed:
+                    self.anon_surf_view = None
             elif self.mail_view is not None:
                 self.mail_view.render(screen)
                 if self.mail_view.dismissed:
@@ -701,6 +710,10 @@ class App:
 
         if self.tailscale_view is not None:
             self.tailscale_view.handle(bev, self)
+            return
+
+        if self.anon_surf_view is not None:
+            self.anon_surf_view.handle(bev, self)
             return
 
         if self.mail_view is not None:
