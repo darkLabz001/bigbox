@@ -4,8 +4,7 @@
 
 BigB0X is a self-contained, gamepad-driven tactical firmware designed for the **Raspberry Pi 4** and **Zero 2W**. It transforms your handheld into a powerful signal intelligence and network auditing tool with a high-contrast "Ghost Protocol" interface.
 
----   <iframe width="560" height="315" src="https://www.youtube.com/embed/dqFvlW6bW6Y?si=Lu3N5F0AFpjLVSIt" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-
+---   
 
 ## 🛠️ Core Tactical Suite
 
