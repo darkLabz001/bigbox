@@ -43,9 +43,14 @@ class WifiteView:
         self.custom_args = ""
         
         self.selected_iface: Optional[str] = None
-        clients = hardware.list_wifi_clients()
-        if clients: self.selected_iface = clients[0]
-        else: self.selected_iface = "wlan0"
+        # Prioritize hardware interfaces: Alfa is usually wlan0 on your setup
+        active = hardware.list_wifi_clients() + hardware.list_monitor_ifaces()
+        if "wlan0" in active:
+            self.selected_iface = "wlan0"
+        elif active:
+            self.selected_iface = active[0]
+        else:
+            self.selected_iface = "wlan0" # Default guess
 
         # Process management
         self.master_fd = None
@@ -189,12 +194,12 @@ class WifiteView:
             if ev.button is Button.A:
                 # Always allow input in running phase
                 ctx.get_input("Input / Targets", self._on_terminal_input)
-            elif ev.button is Button.X:
+            elif ev.button is Button.LL:
                 if self.is_scanning:
                     self._send_ctrl_c()
-                else:
-                    # In attack phase, X can send another ctrl-c to skip or stop
-                    self._send_ctrl_c()
+            elif ev.button is Button.X:
+                # X remains a secondary skip in attack phase
+                self._send_ctrl_c()
             elif ev.button is Button.Y:
                 self.history.clear()
 
@@ -246,7 +251,7 @@ class WifiteView:
         if self.phase == PHASE_LANDING: return "A: Start  X: Config  B: Back"
         if self.phase == PHASE_CONFIG: return "UP/DN: Select  A: Toggle  START: Done"
         if self.phase == PHASE_RUNNING:
-            if self.is_scanning: return "X: STOP SCAN (CTRL+C)  B: Exit"
+            if self.is_scanning: return "LL: STOP SCAN (Select Targets)  B: Exit"
             return "A: INPUT TARGET #  X: SKIP/CTRL+C  B: Exit"
         return "B: Back"
 
