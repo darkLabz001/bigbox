@@ -166,7 +166,7 @@ class TailscaleView:
         pygame.draw.rect(surf, (10, 10, 15), (0, theme.SCREEN_H - 35, theme.SCREEN_W, 35))
         surf.blit(self.f_small.render(f"STATUS: {self.status_msg}", True, theme.ACCENT), (10, theme.SCREEN_H - 26))
         
-        hint = "A: TOGGLE  X: LOGIN  Y: REFRESH  B: BACK" if self.phase == PHASE_STATUS else "B: BACK"
+        hint = "A: START/STOP  X: LOGIN  Y: REFRESH  B: BACK" if self.phase == PHASE_STATUS else "B: BACK"
         h_surf = self.f_small.render(hint, True, theme.FG_DIM)
         surf.blit(h_surf, (theme.SCREEN_W - h_surf.get_width() - 10, theme.SCREEN_H - 26))
 
@@ -175,13 +175,18 @@ class TailscaleView:
         x = 50
         
         backend_state = self.info.get("BackendState", "OFFLINE")
-        color = theme.ACCENT if backend_state == "Running" else theme.ERR
+        is_running = backend_state == "Running"
+        color = theme.ACCENT if is_running else theme.ERR
         
         surf.blit(self.f_main.render("BACKEND_STATE:", True, theme.FG_DIM), (x, y))
         surf.blit(self.f_main.render(backend_state.upper(), True, color), (x + 180, y))
         
+        # Explicit Start/Stop indicator
+        action_text = "STOP SERVICE" if is_running else "START SERVICE"
+        surf.blit(self.f_small.render(f"(A) TO {action_text}", True, theme.ACCENT_DIM), (x + 350, y))
+
         y += 40
-        if backend_state == "Running":
+        if is_running:
             self_info = self.info.get("Self", {})
             ip = self_info.get("TailscaleIPs", ["0.0.0.0"])[0]
             name = self_info.get("DNSName", "unknown").split(".")[0]

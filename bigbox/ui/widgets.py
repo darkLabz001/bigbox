@@ -19,6 +19,8 @@ class StatusBar:
         self._hostname = socket.gethostname()
         self._last_ip_check = 0.0
         self._ip = "—"
+        self._ts_ip = ""
+        self._last_ts_check = 0.0
 
     def _refresh_ip(self) -> None:
         now = time.monotonic()
@@ -33,8 +35,22 @@ class StatusBar:
         except OSError:
             self._ip = "—"
 
+    def _refresh_tailscale_ip(self) -> None:
+        import subprocess
+        now = time.monotonic()
+        if now - self._last_ts_check < 10.0:
+            return
+        self._last_ts_check = now
+        try:
+            # tailscale ip -4 is fast and returns just the IP
+            out = subprocess.check_output(["tailscale", "ip", "-4"], text=True, stderr=subprocess.DEVNULL).strip()
+            self._ts_ip = out
+        except Exception:
+            self._ts_ip = ""
+
     def render(self, surf: pygame.Surface, app: Optional[App] = None) -> None:
         self._refresh_ip()
+        self._refresh_tailscale_ip()
         bar = pygame.Rect(0, 0, theme.SCREEN_W, theme.STATUS_BAR_H)
         pygame.draw.rect(surf, theme.BG_ALT, bar)
         pygame.draw.line(surf, theme.DIVIDER, (0, bar.bottom - 1), (bar.right, bar.bottom - 1))
@@ -50,8 +66,13 @@ class StatusBar:
             notif.set_alpha(pulse)
             surf.blit(notif, (theme.SCREEN_W // 2 - notif.get_width() // 2, (bar.height - notif.get_height()) // 2))
 
+        # Display IPs: Local and optionally Tailscale
+        ip_str = self._ip
+        if self._ts_ip:
+            ip_str = f"TS: {self._ts_ip}   {ip_str}"
+
         right = font.render(
-            f"{self._ip}   {datetime.now().strftime('%H:%M')}",
+            f"{ip_str}   {datetime.now().strftime('%H:%M')}",
             True,
             theme.FG_DIM,
         )
