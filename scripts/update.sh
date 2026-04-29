@@ -138,7 +138,7 @@ echo "PROGRESS: 25"
 #   (b) run a single apt install instead of one per package
 #   (c) skip the slow apt-get update too
 NEEDED=()
-for pkg in libturbojpeg0 vlc mpv mgba-sdl mednafen pcsxr python3-serial rfkill hcxdumptool hcxtools dnsmasq hostapd sherlock tcpdump mdk4 wifite reaver bully pixiewps tshark hashcat macchanger; do
+for pkg in libturbojpeg0 vlc mpv mgba-sdl mednafen pcsxr python3-serial rfkill hcxdumptool hcxtools dnsmasq hostapd sherlock tcpdump mdk4 wifite reaver bully pixiewps tshark hashcat macchanger traceroute dnsutils iputils-ping sqlite3 build-essential pkg-config rustc cargo libffi-dev libssl-dev libcap-dev libjpeg-dev zlib1g-dev libopenjp2-7-dev libtiff-dev; do
     if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "ok installed"; then
         NEEDED+=("$pkg")
     fi

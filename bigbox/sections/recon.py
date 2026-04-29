@@ -50,6 +50,11 @@ def _signal_scraper(ctx: SectionContext) -> None:
     ctx.show_signal_scraper()
 
 
+def _ragnar(ctx: SectionContext) -> None:
+    """Ragnar — Automated AI-driven pentesting auditor."""
+    ctx.show_ragnar()
+
+
 def _traffic_cam(ctx: SectionContext) -> None:
     """Traffic Cam Browser — Public traffic camera browser."""
     ctx.show_traffic_cam()
@@ -155,6 +160,7 @@ def build() -> Section:
         background_img=load_background("recon"),
         actions=[
             Action("Signal Scraper", _signal_scraper, "proximity profiling"),
+            Action("Ragnar AI Auditor", _ragnar, "autonomous pentesting engine"),
             Action("Camera Interceptor", _camera_interceptor, "scan & view local cams"),
             Action("Traffic Cam Browser", _traffic_cam, "public traffic camera feeds"),
             Action("FlockSeeker", _flock_seeker, "detect ALPR infrastructure"),
