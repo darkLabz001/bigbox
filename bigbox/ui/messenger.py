@@ -1,4 +1,4 @@
-"""Tactical Messenger — Free web-based and gateway SMS."""
+"""Tactical Messenger — Free web-based and gateway SMS with threaded conversations."""
 from __future__ import annotations
 
 import os
@@ -7,42 +7,93 @@ import threading
 import time
 import requests
 import smtplib
+import imaplib
+import email
 from email.mime.text import MIMEText
+from email.header import decode_header
+from dataclasses import dataclass, asdict, field
+from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional, Dict
 
 import pygame
 
 from bigbox import theme
 from bigbox.events import Button, ButtonEvent
-from bigbox.ui.mail import MailConfig # Shared config
+from bigbox.ui.mail import MailConfig
 
 if TYPE_CHECKING:
     from bigbox.app import App
 
-PHASE_START = "start"
-PHASE_METHOD = "method"
+MSG_DB_PATH = os.path.expanduser("~/.bigbox/messages.json")
+
+@dataclass
+class SMSMessage:
+    sender: str
+    body: str
+    timestamp: str
+    is_me: bool = False
+
+@dataclass
+class Conversation:
+    number: str
+    messages: List[SMSMessage] = field(default_factory=list)
+
+class MessageStore:
+    def __init__(self):
+        self.conversations: Dict[str, Conversation] = {}
+        self.load()
+
+    def load(self):
+        if os.path.exists(MSG_DB_PATH):
+            try:
+                with open(MSG_DB_PATH, "r") as f:
+                    data = json.load(f)
+                    for num, conv_data in data.items():
+                        msgs = [SMSMessage(**m) for m in conv_data['messages']]
+                        self.conversations[num] = Conversation(number=num, messages=msgs)
+            except: pass
+
+    def save(self):
+        os.makedirs(os.path.dirname(MSG_DB_PATH), exist_ok=True)
+        try:
+            data = {num: {"number": c.number, "messages": [asdict(m) for m in c.messages]} 
+                    for num, c in self.conversations.items()}
+            with open(MSG_DB_PATH, "w") as f:
+                json.dump(data, f)
+        except: pass
+
+    def add_message(self, number: str, body: str, is_me: bool = False):
+        if number not in self.conversations:
+            self.conversations[number] = Conversation(number=number)
+        
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.conversations[number].messages.append(SMSMessage(number, body, ts, is_me))
+        self.save()
+
+    def delete_conversation(self, number: str):
+        if number in self.conversations:
+            del self.conversations[number]
+            self.save()
+
+PHASE_CONVS = "conversations"
+PHASE_CHAT = "chat"
 PHASE_TARGET = "target"
 PHASE_MSG = "msg"
 PHASE_SENDING = "sending"
 
 GATEWAYS = {
-    "Verizon": "vtext.com",
-    "AT&T": "txt.att.net",
-    "T-Mobile": "tmomail.net",
-    "Sprint": "messaging.sprintpcs.com",
-    "Virgin": "vmobl.com",
-    "Boost": "myboostmobile.com",
-    "Cricket": "sms.cricketwireless.net",
-    "Google Fi": "msg.fi.google.com"
+    "Verizon": "vtext.com", "AT&T": "txt.att.net", "T-Mobile": "tmomail.net",
+    "Sprint": "messaging.sprintpcs.com", "Virgin": "vmobl.com", "Boost": "myboostmobile.com",
+    "Cricket": "sms.cricketwireless.net", "Google Fi": "msg.fi.google.com"
 }
 
 class MessengerView:
     def __init__(self) -> None:
         self.dismissed = False
-        self.phase = PHASE_START
+        self.phase = PHASE_CONVS
         self.mail_config = MailConfig.load()
+        self.store = MessageStore()
         
-        self.method: str = "TEXTBELT" # "TEXTBELT" or "GATEWAY"
         self.target_num: str = ""
         self.target_gateway: str = "vtext.com"
         self.message: str = ""
@@ -56,92 +107,148 @@ class MessengerView:
         
         self.gateway_keys = list(GATEWAYS.keys())
         self.cursor = 0
+        self.chat_scroll = 0
+        
+        # Start background sync
+        self._stop_sync = False
+        if self.mail_config.email:
+            threading.Thread(target=self._sync_worker, daemon=True).start()
+
+    def _sync_worker(self):
+        """Polls email for SMS replies from gateways."""
+        while not self._stop_sync:
+            try:
+                mail = imaplib.IMAP4_SSL(self.mail_config.imap_server)
+                mail.login(self.mail_config.email, self.mail_config.password)
+                mail.select("inbox")
+                
+                # Search for emails from known gateway domains
+                for domain in GATEWAYS.values():
+                    status, data = mail.search(None, f'(FROM "{domain}")')
+                    if status != "OK": continue
+                    
+                    for m_id in data[0].split():
+                        res, msg_data = mail.fetch(m_id, "(RFC822)")
+                        for part in msg_data:
+                            if isinstance(part, tuple):
+                                msg = email.message_from_bytes(part[1])
+                                sender = msg.get("From", "")
+                                # Extract number: "5551234567@vtext.com"
+                                num_match = re.search(r'(\d+)@', sender)
+                                if num_match:
+                                    number = num_match.group(1)
+                                    body = ""
+                                    if msg.is_multipart():
+                                        for p in msg.walk():
+                                            if p.get_content_type() == "text/plain":
+                                                body = p.get_payload(decode=True).decode(errors="replace")
+                                                break
+                                    else:
+                                        body = msg.get_payload(decode=True).decode(errors="replace")
+                                    
+                                    # Clean up wifite/carrier signatures
+                                    body = body.split("\n--")[0].strip()
+                                    self.store.add_message(number, body, is_me=False)
+                                    # Mark as read/deleted so we don't process again? 
+                                    # For now just rely on local dedupe logic if we wanted, 
+                                    # but IMAP 'DELETED' is safer.
+                                    # mail.store(m_id, '+FLAGS', '\\Deleted')
+                
+                mail.close()
+                mail.logout()
+            except: pass
+            time.sleep(30) # Poll every 30s
 
     def _send_sms(self):
         self.phase = PHASE_SENDING
-        self.status_msg = "UPLINKING MESSAGE..."
-        self.error_msg = None
+        self.status_msg = "UPLINKING..."
         threading.Thread(target=self._send_worker, daemon=True).start()
 
     def _send_worker(self):
         try:
-            if self.method == "TEXTBELT":
-                res = requests.post('https://textbelt.com/text', {
-                    'phone': self.target_num,
-                    'message': self.message,
-                    'key': 'textbelt',
-                }, timeout=10)
-                data = res.json()
-                if not data.get('success'):
-                    raise Exception(data.get('error', 'Unknown Textbelt error'))
+            # For simplicity, always use Gateway if configured, else Textbelt
+            use_gateway = bool(self.mail_config.email and self.mail_config.password)
             
-            else: # GATEWAY
-                if not self.mail_config.email or not self.mail_config.password:
-                    raise Exception("Email not configured! Set up in Tactical Mail first.")
-                
+            if not use_gateway:
+                res = requests.post('https://textbelt.com/text', {
+                    'phone': self.target_num, 'message': self.message, 'key': 'textbelt'
+                }, timeout=10)
+                if not res.json().get('success'): raise Exception(res.json().get('error'))
+            else:
                 recipient = f"{self.target_num}@{self.target_gateway}"
                 msg = MIMEText(self.message)
-                msg['Subject'] = ""
-                msg['From'] = self.mail_config.email
                 msg['To'] = recipient
-                
+                msg['From'] = self.mail_config.email
                 server = smtplib.SMTP(self.mail_config.smtp_server, self.mail_config.smtp_port)
                 server.starttls()
                 server.login(self.mail_config.email, self.mail_config.password)
                 server.send_message(msg)
                 server.quit()
 
-            self.status_msg = "MESSAGE SENT SUCCESSFULLY"
-            time.sleep(2)
-            self.dismissed = True
+            self.store.add_message(self.target_num, self.message, is_me=True)
+            self.status_msg = "SENT"
+            time.sleep(1)
+            self.phase = PHASE_CHAT
         except Exception as e:
             self.error_msg = str(e)
-            self.status_msg = "TRANSMISSION FAILED"
             self.phase = PHASE_MSG
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
         if not ev.pressed: return
         
         if ev.button is Button.B:
-            if self.phase == PHASE_START: self.dismissed = True
-            elif self.phase == PHASE_METHOD: self.phase = PHASE_START
-            elif self.phase == PHASE_TARGET: self.phase = PHASE_METHOD
-            elif self.phase == PHASE_MSG: self.phase = PHASE_TARGET
+            if self.phase == PHASE_CONVS: self.dismissed = True; self._stop_sync = True
+            elif self.phase == PHASE_CHAT: self.phase = PHASE_CONVS
+            elif self.phase == PHASE_TARGET: self.phase = PHASE_CONVS
+            elif self.phase == PHASE_MSG: self.phase = PHASE_CHAT if self.target_num in self.store.conversations else PHASE_TARGET
             return
 
-        if self.phase == PHASE_START:
-            if ev.button is Button.A: self.phase = PHASE_METHOD
-        
-        elif self.phase == PHASE_METHOD:
-            if ev.button is Button.UP: self.cursor = (self.cursor - 1) % 2
-            elif ev.button is Button.DOWN: self.cursor = (self.cursor + 1) % 2
+        conv_list = sorted(self.store.conversations.values(), key=lambda c: c.messages[-1].timestamp if c.messages else "", reverse=True)
+
+        if self.phase == PHASE_CONVS:
+            if ev.button is Button.UP: self.cursor = max(0, self.cursor - 1)
+            elif ev.button is Button.DOWN: self.cursor = min(len(conv_list) - 1, self.cursor + 1)
             elif ev.button is Button.A:
-                self.method = "TEXTBELT" if self.cursor == 0 else "GATEWAY"
-                self.cursor = 0
+                if conv_list:
+                    self.target_num = conv_list[self.cursor].number
+                    self.phase = PHASE_CHAT
+                    self.chat_scroll = 0
+            elif ev.button is Button.X:
                 self.phase = PHASE_TARGET
-        
+                self.target_num = ""
+            elif ev.button is Button.Y: # DELETE
+                if conv_list:
+                    self.store.delete_conversation(conv_list[self.cursor].number)
+                    self.cursor = max(0, self.cursor - 1)
+
+        elif self.phase == PHASE_CHAT:
+            if ev.button is Button.UP: self.chat_scroll = max(0, self.chat_scroll - 1)
+            elif ev.button is Button.DOWN: self.chat_scroll += 1
+            elif ev.button is Button.A:
+                self.phase = PHASE_MSG
+                self.message = ""
+            elif ev.button is Button.Y:
+                self.store.delete_conversation(self.target_num)
+                self.phase = PHASE_CONVS
+
         elif self.phase == PHASE_TARGET:
-            if self.method == "TEXTBELT":
-                if ev.button is Button.A:
-                    ctx.get_input("Phone (e.g. +1...)", self._on_target_done, initial=self.target_num)
-            else:
-                # Select Gateway
-                if ev.button is Button.UP: self.cursor = (self.cursor - 1) % len(self.gateway_keys)
-                elif ev.button is Button.DOWN: self.cursor = (self.cursor + 1) % len(self.gateway_keys)
-                elif ev.button is Button.A:
-                    ctx.get_input("Phone (digits only)", self._on_target_done, initial=self.target_num)
-                elif ev.button is Button.X:
-                    self.target_gateway = GATEWAYS[self.gateway_keys[self.cursor]]
-        
+            if ev.button is Button.UP: self.cursor = (self.cursor - 1) % len(self.gateway_keys)
+            elif ev.button is Button.DOWN: self.cursor = (self.cursor + 1) % len(self.gateway_keys)
+            elif ev.button is Button.A:
+                ctx.get_input("Phone Number", self._on_target_done, initial=self.target_num)
+            elif ev.button is Button.X:
+                self.target_gateway = GATEWAYS[self.gateway_keys[self.cursor]]
+                self.status_msg = f"GATEWAY: {self.target_gateway}"
+
         elif self.phase == PHASE_MSG:
             if ev.button is Button.A:
-                ctx.get_input("Message Content", self._on_msg_done, initial=self.message)
-            elif ev.button is Button.X and self.target_num and self.message:
+                ctx.get_input("Message", self._on_msg_done, initial=self.message)
+            elif ev.button is Button.X and self.message:
                 self._send_sms()
 
     def _on_target_done(self, v):
         if v: 
-            self.target_num = v.strip()
+            self.target_num = v.strip().replace("-","").replace(" ","")
             self.phase = PHASE_MSG
 
     def _on_msg_done(self, v):
@@ -153,51 +260,69 @@ class MessengerView:
         pygame.draw.rect(surf, theme.BG_ALT, (0, 0, theme.SCREEN_W, head_h))
         pygame.draw.line(surf, theme.ACCENT, (0, head_h-1), (theme.SCREEN_W, head_h-1), 2)
         surf.blit(self.f_title.render("SOCIAL :: TACTICAL_MESSENGER", True, theme.ACCENT), (theme.PADDING, 8))
-        
-        y = head_h + 40
-        if self.phase == PHASE_START:
-            surf.blit(self.f_main.render("ENCRYPTED TRANSMISSION PROTOCOL", True, theme.FG), (50, y))
-            surf.blit(self.f_small.render("Send text messages via web-API or Carrier Gateway.", True, theme.FG_DIM), (50, y + 30))
-            surf.blit(self.f_main.render("> PRESS A TO INITIATE", True, theme.ACCENT), (50, y + 80))
 
-        elif self.phase == PHASE_METHOD:
-            surf.blit(self.f_main.render("SELECT TRANSMISSION METHOD:", True, theme.FG), (50, y))
-            m1 = "TEXTBELT (1 free msg/day, no config)"
-            m2 = "CARRIER GATEWAY (Requires Email setup)"
-            for i, txt in enumerate([m1, m2]):
-                sel = i == self.cursor
-                color = theme.ACCENT if sel else theme.FG
-                surf.blit(self.f_main.render(f"{'> ' if sel else '  '}{txt}", True, color), (60, y + 50 + i*40))
-
-        elif self.phase == PHASE_TARGET:
-            surf.blit(self.f_main.render(f"DESTINATION: {self.target_num or '[A: ENTER NUMBER]'}", True, theme.FG), (50, y))
-            if self.method == "GATEWAY":
-                surf.blit(self.f_small.render(f"CARRIER: {self.target_gateway}", True, theme.ACCENT), (50, y + 30))
-                y += 60
-                surf.blit(self.f_small.render("SELECT CARRIER (X to Confirm):", True, theme.FG_DIM), (50, y))
-                for i, g in enumerate(self.gateway_keys):
-                    if abs(i - self.cursor) > 4: continue
-                    sel = i == self.cursor
-                    color = theme.ACCENT if sel else theme.FG
-                    surf.blit(self.f_main.render(f"{'> ' if sel else '  '}{g}", True, color), (60, y + 30 + (i-self.cursor+4)*25))
-
-        elif self.phase == PHASE_MSG:
-            surf.blit(self.f_main.render(f"TO: {self.target_num}", True, theme.FG_DIM), (50, y))
-            surf.blit(self.f_main.render(f"MSG: {self.message or '[A: COMPOSE]'}", True, theme.FG), (50, y + 40))
-            if self.message:
-                surf.blit(self.f_main.render("> PRESS X TO TRANSMIT", True, theme.WARN), (50, y + 120))
-
+        if self.phase == PHASE_CONVS: self._render_convs(surf, head_h)
+        elif self.phase == PHASE_CHAT: self._render_chat(surf, head_h)
+        elif self.phase == PHASE_TARGET: self._render_target(surf, head_h)
+        elif self.phase == PHASE_MSG: self._render_msg_input(surf, head_h)
         elif self.phase == PHASE_SENDING:
-            msg = self.status_msg
-            s = self.f_main.render(msg, True, theme.ACCENT)
+            s = self.f_main.render(self.status_msg, True, theme.ACCENT)
             surf.blit(s, (theme.SCREEN_W//2 - s.get_width()//2, theme.SCREEN_H//2))
 
         # Footer
         pygame.draw.rect(surf, (10, 10, 15), (0, theme.SCREEN_H - 35, theme.SCREEN_W, 35))
-        if self.error_msg:
-            surf.blit(self.f_small.render(f"ERROR: {self.error_msg[:70]}", True, theme.ERR), (10, theme.SCREEN_H - 26))
-        else:
-            surf.blit(self.f_small.render(f"STATUS: {self.status_msg}", True, theme.ACCENT), (10, theme.SCREEN_H - 26))
-        hint = "UP/DN: Nav  A: Action  B: Back"
-        h_surf = self.f_small.render(hint, True, theme.FG_DIM)
+        msg = self.error_msg if self.error_msg else self.status_msg
+        surf.blit(self.f_small.render(f"STATUS: {msg[:70]}", True, theme.ERR if self.error_msg else theme.ACCENT), (10, theme.SCREEN_H - 26))
+        h_surf = self.f_small.render("UP/DN: Nav  A: Select  X: New  Y: Delete  B: Back", True, theme.FG_DIM)
         surf.blit(h_surf, (theme.SCREEN_W - h_surf.get_width() - 10, theme.SCREEN_H - 26))
+
+    def _render_convs(self, surf: pygame.Surface, head_h: int):
+        convs = sorted(self.store.conversations.values(), key=lambda c: c.messages[-1].timestamp if c.messages else "", reverse=True)
+        y = head_h + 10
+        if not convs:
+            surf.blit(self.f_main.render("NO CONVERSATIONS FOUND", True, theme.FG_DIM), (50, y + 40))
+        for i, c in enumerate(convs):
+            sel = i == self.cursor
+            rect = pygame.Rect(10, y + i*55, theme.SCREEN_W - 20, 50)
+            pygame.draw.rect(surf, (30, 30, 50) if sel else (15, 15, 25), rect, border_radius=4)
+            if sel: pygame.draw.rect(surf, theme.ACCENT, rect, 1, border_radius=4)
+            surf.blit(self.f_main.render(c.number, True, theme.ACCENT if sel else theme.FG), (rect.x + 15, rect.y + 10))
+            last_msg = c.messages[-1].body[:60] if c.messages else ""
+            surf.blit(self.f_small.render(last_msg, True, theme.FG_DIM), (rect.x + 15, rect.y + 30))
+
+    def _render_chat(self, surf: pygame.Surface, head_h: int):
+        conv = self.store.conversations.get(self.target_num)
+        if not conv: return
+        y = head_h + 10
+        surf.blit(self.f_main.render(f"CHAT: {self.target_num}", True, theme.ACCENT), (20, y))
+        
+        chat_rect = pygame.Rect(10, y + 30, theme.SCREEN_W - 20, theme.SCREEN_H - head_h - 80)
+        pygame.draw.rect(surf, (5, 5, 10), chat_rect, border_radius=4)
+        
+        msgs = conv.messages
+        max_v = chat_rect.height // 40
+        self.chat_scroll = min(self.chat_scroll, max(0, len(msgs) - max_v))
+        visible = msgs[self.chat_scroll : self.chat_scroll + max_v]
+        
+        for i, m in enumerate(visible):
+            my = chat_rect.y + 10 + i*40
+            color = (40, 60, 100) if m.is_me else (40, 40, 40)
+            bubble = pygame.Rect(chat_rect.x + (150 if m.is_me else 10), my, theme.SCREEN_W - 200, 35)
+            pygame.draw.rect(surf, color, bubble, border_radius=6)
+            surf.blit(self.f_small.render(m.body[:80], True, theme.FG), (bubble.x + 10, bubble.y + 10))
+
+    def _render_target(self, surf: pygame.Surface, head_h: int):
+        y = head_h + 40
+        surf.blit(self.f_main.render(f"DESTINATION: {self.target_num or '[A: ENTER NUMBER]'}", True, theme.FG), (50, y))
+        surf.blit(self.f_small.render(f"GATEWAY: {self.target_gateway}", True, theme.ACCENT), (50, y + 30))
+        y += 60
+        for i, g in enumerate(self.gateway_keys):
+            if abs(i - self.cursor) > 4: continue
+            sel = i == self.cursor
+            surf.blit(self.f_main.render(f"{'> ' if sel else '  '}{g}", True, theme.ACCENT if sel else theme.FG), (60, y + (i-self.cursor+4)*25))
+
+    def _render_msg_input(self, surf: pygame.Surface, head_h: int):
+        y = head_h + 40
+        surf.blit(self.f_main.render(f"TO: {self.target_num}", True, theme.FG_DIM), (50, y))
+        surf.blit(self.f_main.render(f"MSG: {self.message or '[A: COMPOSE]'}", True, theme.FG), (50, y + 40))
+        if self.message: surf.blit(self.f_main.render("> PRESS X TO TRANSMIT", True, theme.WARN), (50, y + 120))
