@@ -1,7 +1,8 @@
-"""Tactical Messenger — Free web-based and gateway SMS with threaded conversations."""
+"""Tactical Messenger — Free web-based and gateway SMS with background sync and notifications."""
 from __future__ import annotations
 
 import os
+import re
 import json
 import threading
 import time
@@ -17,7 +18,7 @@ from typing import TYPE_CHECKING, List, Optional, Dict
 
 import pygame
 
-from bigbox import theme
+from bigbox import theme, hardware
 from bigbox.events import Button, ButtonEvent
 from bigbox.ui.mail import MailConfig
 
@@ -62,18 +63,106 @@ class MessageStore:
                 json.dump(data, f)
         except: pass
 
-    def add_message(self, number: str, body: str, is_me: bool = False):
+    def add_message(self, number: str, body: str, is_me: bool = False) -> bool:
+        """Adds a message if it doesn't already exist. Returns True if new."""
         if number not in self.conversations:
             self.conversations[number] = Conversation(number=number)
         
+        # Simple dedupe check based on body and timestamp (within same minute)
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for m in self.conversations[number].messages:
+            if m.body == body and m.timestamp[:16] == ts[:16]:
+                return False
+        
         self.conversations[number].messages.append(SMSMessage(number, body, ts, is_me))
         self.save()
+        return True
 
     def delete_conversation(self, number: str):
         if number in self.conversations:
             del self.conversations[number]
             self.save()
+
+class MessengerSync:
+    """Background service that polls for SMS replies and triggers notifications."""
+    def __init__(self, app: App):
+        self.app = app
+        self.store = MessageStore()
+        self.config = MailConfig.load()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self):
+        if self._thread and self._thread.is_alive(): return
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        while not self._stop.is_set():
+            if not self.config.email or not self.config.password:
+                time.sleep(10)
+                self.config = MailConfig.load() # Reload if changed
+                continue
+
+            try:
+                mail = imaplib.IMAP4_SSL(self.config.imap_server)
+                mail.login(self.config.email, self.config.password)
+                mail.select("inbox")
+                
+                new_found = False
+                # Known gateway domains
+                domains = ["vtext.com", "txt.att.net", "tmomail.net", "messaging.sprintpcs.com", "vmobl.com"]
+                for domain in domains:
+                    status, data = mail.search(None, f'(FROM "{domain}")')
+                    if status != "OK": continue
+                    
+                    for m_id in data[0].split():
+                        res, msg_data = mail.fetch(m_id, "(RFC822)")
+                        for part in msg_data:
+                            if isinstance(part, tuple):
+                                msg = email.message_from_bytes(part[1])
+                                sender = msg.get("From", "")
+                                num_match = re.search(r'(\d+)@', sender)
+                                if num_match:
+                                    number = num_match.group(1)
+                                    body = ""
+                                    if msg.is_multipart():
+                                        for p in msg.walk():
+                                            if p.get_content_type() == "text/plain":
+                                                body = p.get_payload(decode=True).decode(errors="replace")
+                                                break
+                                    else:
+                                        body = msg.get_payload(decode=True).decode(errors="replace")
+                                    
+                                    body = body.split("\n--")[0].strip()
+                                    if self.store.add_message(number, body, is_me=False):
+                                        new_found = True
+                                        self.app.toast(f"NEW SMS: {number}")
+                                        self._play_ping()
+                
+                mail.close()
+                mail.logout()
+            except: pass
+            time.sleep(30)
+
+    def _play_ping(self):
+        try:
+            if not pygame.mixer.get_init(): pygame.mixer.init()
+            import array
+            sample_rate = 44100
+            freq = 1200
+            duration = 0.15
+            n_samples = int(sample_rate * duration)
+            buf = array.array('h', [0] * n_samples)
+            for i in range(n_samples):
+                t = i / sample_rate
+                buf[i] = int(16384 * math.sin(2 * math.pi * freq * t))
+            sound = pygame.mixer.Sound(buffer=buf)
+            sound.play()
+        except: pass
 
 PHASE_CONVS = "conversations"
 PHASE_CHAT = "chat"
@@ -92,7 +181,7 @@ class MessengerView:
         self.dismissed = False
         self.phase = PHASE_CONVS
         self.mail_config = MailConfig.load()
-        self.store = MessageStore()
+        self.store = MessageStore() # Local copy
         
         self.target_num: str = ""
         self.target_gateway: str = "vtext.com"
@@ -108,56 +197,6 @@ class MessengerView:
         self.gateway_keys = list(GATEWAYS.keys())
         self.cursor = 0
         self.chat_scroll = 0
-        
-        # Start background sync
-        self._stop_sync = False
-        if self.mail_config.email:
-            threading.Thread(target=self._sync_worker, daemon=True).start()
-
-    def _sync_worker(self):
-        """Polls email for SMS replies from gateways."""
-        while not self._stop_sync:
-            try:
-                mail = imaplib.IMAP4_SSL(self.mail_config.imap_server)
-                mail.login(self.mail_config.email, self.mail_config.password)
-                mail.select("inbox")
-                
-                # Search for emails from known gateway domains
-                for domain in GATEWAYS.values():
-                    status, data = mail.search(None, f'(FROM "{domain}")')
-                    if status != "OK": continue
-                    
-                    for m_id in data[0].split():
-                        res, msg_data = mail.fetch(m_id, "(RFC822)")
-                        for part in msg_data:
-                            if isinstance(part, tuple):
-                                msg = email.message_from_bytes(part[1])
-                                sender = msg.get("From", "")
-                                # Extract number: "5551234567@vtext.com"
-                                num_match = re.search(r'(\d+)@', sender)
-                                if num_match:
-                                    number = num_match.group(1)
-                                    body = ""
-                                    if msg.is_multipart():
-                                        for p in msg.walk():
-                                            if p.get_content_type() == "text/plain":
-                                                body = p.get_payload(decode=True).decode(errors="replace")
-                                                break
-                                    else:
-                                        body = msg.get_payload(decode=True).decode(errors="replace")
-                                    
-                                    # Clean up wifite/carrier signatures
-                                    body = body.split("\n--")[0].strip()
-                                    self.store.add_message(number, body, is_me=False)
-                                    # Mark as read/deleted so we don't process again? 
-                                    # For now just rely on local dedupe logic if we wanted, 
-                                    # but IMAP 'DELETED' is safer.
-                                    # mail.store(m_id, '+FLAGS', '\\Deleted')
-                
-                mail.close()
-                mail.logout()
-            except: pass
-            time.sleep(30) # Poll every 30s
 
     def _send_sms(self):
         self.phase = PHASE_SENDING
@@ -166,9 +205,7 @@ class MessengerView:
 
     def _send_worker(self):
         try:
-            # For simplicity, always use Gateway if configured, else Textbelt
             use_gateway = bool(self.mail_config.email and self.mail_config.password)
-            
             if not use_gateway:
                 res = requests.post('https://textbelt.com/text', {
                     'phone': self.target_num, 'message': self.message, 'key': 'textbelt'
@@ -197,12 +234,14 @@ class MessengerView:
         if not ev.pressed: return
         
         if ev.button is Button.B:
-            if self.phase == PHASE_CONVS: self.dismissed = True; self._stop_sync = True
+            if self.phase == PHASE_CONVS: self.dismissed = True
             elif self.phase == PHASE_CHAT: self.phase = PHASE_CONVS
             elif self.phase == PHASE_TARGET: self.phase = PHASE_CONVS
             elif self.phase == PHASE_MSG: self.phase = PHASE_CHAT if self.target_num in self.store.conversations else PHASE_TARGET
             return
 
+        # Refresh store periodically or on interaction
+        self.store.load()
         conv_list = sorted(self.store.conversations.values(), key=lambda c: c.messages[-1].timestamp if c.messages else "", reverse=True)
 
         if self.phase == PHASE_CONVS:
@@ -301,8 +340,8 @@ class MessengerView:
         
         msgs = conv.messages
         max_v = chat_rect.height // 40
-        self.chat_scroll = min(self.chat_scroll, max(0, len(msgs) - max_v))
-        visible = msgs[self.chat_scroll : self.chat_scroll + max_v]
+        start = max(0, len(msgs) - max_v - self.chat_scroll)
+        visible = msgs[start : start + max_v]
         
         for i, m in enumerate(visible):
             my = chat_rect.y + 10 + i*40

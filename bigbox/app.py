@@ -77,6 +77,11 @@ class App:
         self.held_buttons: set[Button] = set()
         self._last_vol_enforce = 0
 
+        # Messaging background sync
+        from bigbox.ui.messenger import MessengerSync
+        self.msg_sync = MessengerSync(self)
+        self.msg_sync.start()
+
         # Web UI state.
         # last_frame: most recent JPEG of the screen for /video_feed.
         # last_web_view_request: monotonic-ish timestamp updated by the
