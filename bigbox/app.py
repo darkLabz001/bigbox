@@ -29,6 +29,7 @@ from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.update_checker import UpdateChecker
+from bigbox.ui.setup_wizard import SetupWizardView, SETUP_MARKER
 from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
@@ -38,6 +39,9 @@ class App:
         self.bus = EventBus()
         self.running = True
         self.update_checker = UpdateChecker(self)
+        self.wizard_view = None
+        if not os.path.exists(SETUP_MARKER):
+            self.wizard_view = SetupWizardView(self)
         self.result_view: ResultView | None = None
         self.update_view: UpdateView | None = None
         self.menu_view: MenuView | None = None
@@ -390,6 +394,13 @@ class App:
         clock = pygame.time.Clock()
 
         while self.running:
+            if self.wizard_view is not None:
+                self.wizard_view.render(screen)
+                if self.wizard_view.dismissed:
+                    self.wizard_view = None
+                pygame.display.flip()
+                clock.tick(self._target_fps())
+                continue
             # 1. Pump pygame events. Translate keys -> ButtonEvents for external keyboards.
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
@@ -599,6 +610,9 @@ class App:
         return 0
 
     def _dispatch(self, bev: ButtonEvent, carousel: Carousel) -> None:
+        if self.wizard_view is not None:
+            self.wizard_view.handle(bev)
+            return
         if bev.pressed:
             self.held_buttons.add(bev.button)
         else:

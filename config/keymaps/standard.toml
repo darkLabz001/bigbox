@@ -1,0 +1,19 @@
+[pins]
+up = 10
+down = 9
+left = 11
+right = 25
+a = 24
+b = 23
+x = 18
+y = 15
+ll = 17
+rr = 27
+start = 8
+select = 7
+hk = 22
+
+[behavior]
+debounce_ms = 30
+repeat_delay_ms = 400
+repeat_interval_ms = 90

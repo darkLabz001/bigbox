@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BigB0X :: Setup Edition</title>
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --accent: #00ffcc;
+            --accent-dim: #006652;
+            --fg: #e0e0e0;
+            --font-main: 'Courier New', Courier, monospace;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--fg);
+            font-family: var(--font-main);
+            line-height: 1.6;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 90%;
+            max-width: 900px;
+            padding: 40px 0;
+        }
+        header {
+            border-bottom: 2px solid var(--accent);
+            width: 100%;
+            padding: 20px 0;
+            text-align: center;
+            background: linear-gradient(to bottom, #14141f, #0a0a0f);
+        }
+        h1 {
+            color: var(--accent);
+            font-size: 3rem;
+            margin: 0;
+            letter-spacing: 5px;
+            text-shadow: 0 0 10px var(--accent-dim);
+        }
+        .hero {
+            padding: 40px;
+            background: rgba(0, 255, 204, 0.05);
+            border: 1px solid var(--accent-dim);
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .step-card {
+            border-left: 4px solid var(--accent);
+            padding: 20px;
+            margin: 20px 0;
+            background: #14141f;
+        }
+        .btn {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--bg);
+            padding: 15px 30px;
+            text-decoration: none;
+            font-weight: bold;
+            border-radius: 4px;
+            margin-top: 20px;
+            transition: 0.3s;
+        }
+        .btn:hover {
+            box-shadow: 0 0 20px var(--accent);
+            transform: translateY(-2px);
+        }
+        code {
+            background: #000;
+            padding: 2px 6px;
+            color: var(--accent);
+        }
+        footer {
+            margin-top: 50px;
+            padding: 20px;
+            font-size: 0.8rem;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>BigB0X // SETUP_EDITION</h1>
+        <p>GHOST PROTOCOL // AUTOMATED INITIALIZATION</p>
+    </header>
+
+    <div class="container">
+        <div class="hero">
+            <h2>The Zero-Setup Handheld Firmware</h2>
+            <p>BigB0X Setup Edition is designed for immediate deployment. No terminal commands, no manual installations. Flash, boot, and follow the tactical on-screen guide.</p>
+        </div>
+
+        <section id="flashing">
+            <h2>💾 HOW TO FLASH</h2>
+            <div class="step-card">
+                <h3>1. Prepare SD Card</h3>
+                <p>Use <strong>Raspberry Pi Imager</strong> to flash <strong>Pi OS Lite (64-bit)</strong> to a microSD card.</p>
+            </div>
+            <div class="step-card">
+                <h3>2. Inject Firmware</h3>
+                <p>Download the BigB0X Wizard package and copy the files to the <code>/boot</code> partition of your SD card. The system will detect these and handle the rest.</p>
+            </div>
+            <div class="step-card">
+                <h3>3. Initial Boot</h3>
+                <p>Insert the card into your Pi, power on, and follow the <strong>Neural Link Setup</strong> directly on your GamePi43 or generic handheld screen.</p>
+            </div>
+        </section>
+
+        <a href="https://github.com/darkLabz001/bigbox/archive/refs/heads/setup-wizard.zip" class="btn">DOWNLOAD LATEST FIRMWARE</a>
+
+        <footer>
+            BigB0X v2.0 // FOR AUTHORIZED SECURITY TESTING ONLY
+        </footer>
+    </div>
+</body>
+</html>
