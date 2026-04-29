@@ -139,9 +139,9 @@ class GamesView:
     # ---------- input ----------
     def handle(self, ev: ButtonEvent, ctx: App) -> bool:
         if self.phase == PHASE_RUNNING:
-            # Hotkey combo to stop: SELECT + START
-            if ev.button is Button.START and ev.pressed:
-                if Button.SELECT in ctx.held_buttons:
+            # Hotkey combo to stop: START + SELECT (either order)
+            if ev.pressed and ev.button in (Button.START, Button.SELECT):
+                if Button.START in ctx.held_buttons and Button.SELECT in ctx.held_buttons:
                     self._stop()
                     return True
             

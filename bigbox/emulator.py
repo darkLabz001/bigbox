@@ -42,17 +42,16 @@ class InputInjector:
             return
             
         # Map bigbox buttons to standard emulator keys
-        # mGBA defaults: Z=A, X=B, A=L, S=R, Enter=Start, Backspace=Select, Arrows=D-Pad
         from bigbox.events import Button
         self.keymap = {
             Button.UP: e.KEY_UP,
             Button.DOWN: e.KEY_DOWN,
             Button.LEFT: e.KEY_LEFT,
             Button.RIGHT: e.KEY_RIGHT,
-            Button.A: e.KEY_Z,          # GBA A -> Z
-            Button.B: e.KEY_X,          # GBA B -> X
-            Button.X: e.KEY_A,          # GBA L
-            Button.Y: e.KEY_S,          # GBA R
+            Button.A: e.KEY_X,          # GBA A -> KEY_X (matches RetroArch default)
+            Button.B: e.KEY_Z,          # GBA B -> KEY_Z
+            Button.X: e.KEY_A,          # GBA L -> KEY_A
+            Button.Y: e.KEY_S,          # GBA R -> KEY_S
             Button.LL: e.KEY_A,
             Button.RR: e.KEY_S,
             Button.START: e.KEY_ENTER,
@@ -232,14 +231,13 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", "/root/.Xauthority")
-    # Force the emulator's ALSA usage onto the primary card.
-    # Per-process env so the wider system audio policy stays whatever
-    # the user has set.
+    # Force the emulator's ALSA usage onto the Headphones card (Card 1).
     env.setdefault("SDL_AUDIODRIVER", "alsa")
+    env.setdefault("AUDIODEV", "hw:1,0")
     try:
-        # Pre-bump system volume for card 1 (GamePi43 headphones/speaker)
+        # Pre-bump system volume for card 1 (Headphones)
+        subprocess.run(["amixer", "-c", "1", "sset", "Headphones", "100%"], capture_output=True)
         subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%"], capture_output=True)
-        subprocess.run(["amixer", "-c", "1", "sset", "Master", "100%"], capture_output=True)
     except:
         pass
 
@@ -309,17 +307,17 @@ def _write_mgba_display_config() -> None:
             cp.set(section, "fastForwardVolume", "256")
             cp.set(section, "mute", "0")
 
-            # Key mappings
-            cp.set(section, "keyB", "120")       # 'x' -> B
-            cp.set(section, "keyA", "122")       # 'z' -> A
-            cp.set(section, "keySelect", "8")    # backspace
-            cp.set(section, "keyStart", "13")    # enter
+            # Key mappings (SDL scancodes)
+            cp.set(section, "keyB", "122")       # 'z' -> GBA B
+            cp.set(section, "keyA", "120")       # 'x' -> GBA A
+            cp.set(section, "keySelect", "8")    # backspace -> Select
+            cp.set(section, "keyStart", "13")    # enter -> Start
             cp.set(section, "keyRight", "1073741903") # right arrow
             cp.set(section, "keyLeft", "1073741904")  # left arrow
             cp.set(section, "keyUp", "1073741906")    # up arrow
             cp.set(section, "keyDown", "1073741905")  # down arrow
-            cp.set(section, "keyR", "115")       # 's' -> R
-            cp.set(section, "keyL", "97")        # 'a' -> L
+            cp.set(section, "keyR", "115")       # 's' -> GBA R
+            cp.set(section, "keyL", "97")        # 'a' -> GBA L
 
         with cfg_path.open("w") as f:
             cp.write(f, space_around_delimiters=False)
