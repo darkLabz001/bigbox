@@ -3,118 +3,180 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BigB0X :: Setup Edition</title>
+    <title>BigB0X // Web Deployer</title>
     <style>
         :root {
-            --bg: #0a0a0f;
+            --bg: #050508;
+            --panel: #0a0a0f;
             --accent: #00ffcc;
             --accent-dim: #006652;
             --fg: #e0e0e0;
-            --font-main: 'Courier New', Courier, monospace;
+            --glow: 0 0 15px rgba(0, 255, 204, 0.4);
         }
         body {
             background-color: var(--bg);
             color: var(--fg);
-            font-family: var(--font-main);
-            line-height: 1.6;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             display: flex;
-            flex-direction: column;
+            justify-content: center;
             align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
-        .container {
+        .hud-container {
             width: 90%;
-            max-width: 900px;
-            padding: 40px 0;
+            max-width: 800px;
+            background: var(--panel);
+            border: 2px solid var(--accent-dim);
+            padding: 40px;
+            position: relative;
+            box-shadow: var(--glow);
         }
-        header {
-            border-bottom: 2px solid var(--accent);
-            width: 100%;
-            padding: 20px 0;
-            text-align: center;
-            background: linear-gradient(to bottom, #14141f, #0a0a0f);
+        .hud-container::before {
+            content: "SECURE_DEPLOYMENT_UPLINK";
+            position: absolute;
+            top: -10px;
+            left: 20px;
+            background: var(--bg);
+            padding: 0 10px;
+            color: var(--accent);
+            font-size: 0.7rem;
+            letter-spacing: 2px;
         }
         h1 {
             color: var(--accent);
-            font-size: 3rem;
-            margin: 0;
-            letter-spacing: 5px;
-            text-shadow: 0 0 10px var(--accent-dim);
+            font-weight: 300;
+            letter-spacing: 8px;
+            margin: 0 0 10px 0;
+            text-align: center;
         }
-        .hero {
-            padding: 40px;
-            background: rgba(0, 255, 204, 0.05);
-            border: 1px solid var(--accent-dim);
-            border-radius: 8px;
-            margin: 20px 0;
+        .status-bar {
+            height: 4px;
+            background: var(--accent-dim);
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
         }
-        .step-card {
-            border-left: 4px solid var(--accent);
-            padding: 20px;
-            margin: 20px 0;
-            background: #14141f;
-        }
-        .btn {
-            display: inline-block;
+        .status-bar::after {
+            content: "";
+            position: absolute;
+            width: 40%;
+            height: 100%;
             background: var(--accent);
-            color: var(--bg);
-            padding: 15px 30px;
-            text-decoration: none;
-            font-weight: bold;
+            animation: scan 2s infinite linear;
+        }
+        @keyframes scan {
+            0% { left: -40%; }
+            100% { left: 100%; }
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            color: var(--accent);
+            font-size: 0.8rem;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+        input, select {
+            background: #14141f;
+            border: 1px solid var(--accent-dim);
+            color: white;
+            padding: 12px;
             border-radius: 4px;
-            margin-top: 20px;
+        }
+        .deploy-btn {
+            width: 100%;
+            padding: 20px;
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            font-weight: bold;
+            font-size: 1.2rem;
+            letter-spacing: 4px;
+            cursor: pointer;
             transition: 0.3s;
         }
-        .btn:hover {
-            box-shadow: 0 0 20px var(--accent);
-            transform: translateY(-2px);
+        .deploy-btn:hover {
+            background: var(--accent);
+            color: var(--bg);
+            box-shadow: var(--glow);
         }
-        code {
-            background: #000;
-            padding: 2px 6px;
-            color: var(--accent);
+        .instructions {
+            margin-top: 40px;
+            border-top: 1px solid #2a2a35;
+            padding-top: 20px;
+            font-size: 0.9rem;
+            color: #888;
         }
-        footer {
-            margin-top: 50px;
-            padding: 20px;
-            font-size: 0.8rem;
-            color: #555;
-        }
+        .step { margin-bottom: 15px; }
+        .step b { color: var(--accent); }
     </style>
 </head>
 <body>
-    <header>
-        <h1>BigB0X // SETUP_EDITION</h1>
-        <p>GHOST PROTOCOL // AUTOMATED INITIALIZATION</p>
-    </header>
+    <div class="hud-container">
+        <h1>BigB0X // DEPLOYER</h1>
+        <div class="status-bar"></div>
 
-    <div class="container">
-        <div class="hero">
-            <h2>The Zero-Setup Handheld Firmware</h2>
-            <p>BigB0X Setup Edition is designed for immediate deployment. No terminal commands, no manual installations. Flash, boot, and follow the tactical on-screen guide.</p>
+        <div class="config-grid">
+            <div class="input-group">
+                <label>Target Hardware</label>
+                <select>
+                    <option>Raspberry Pi 4</option>
+                    <option>Raspberry Pi Zero 2W</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Hostname</label>
+                <input type="text" value="bigbox" id="hostname">
+            </div>
+            <div class="input-group">
+                <label>Field Wi-Fi SSID</label>
+                <input type="text" placeholder="Access Point Name" id="ssid">
+            </div>
+            <div class="input-group">
+                <label>Wi-Fi Password</label>
+                <input type="password" placeholder="••••••••" id="pass">
+            </div>
         </div>
 
-        <section id="flashing">
-            <h2>💾 HOW TO FLASH</h2>
-            <div class="step-card">
-                <h3>1. Prepare SD Card</h3>
-                <p>Use <strong>Raspberry Pi Imager</strong> to flash <strong>Pi OS Lite (64-bit)</strong> to a microSD card.</p>
-            </div>
-            <div class="step-card">
-                <h3>2. Inject Firmware</h3>
-                <p>Download the BigB0X Wizard package and copy the files to the <code>/boot</code> partition of your SD card. The system will detect these and handle the rest.</p>
-            </div>
-            <div class="step-card">
-                <h3>3. Initial Boot</h3>
-                <p>Insert the card into your Pi, power on, and follow the <strong>Neural Link Setup</strong> directly on your GamePi43 or generic handheld screen.</p>
-            </div>
-        </section>
+        <button class="deploy-btn" onclick="generateConfig()">GENERATE FIRMWARE BUNDLE</button>
 
-        <a href="https://github.com/darkLabz001/bigbox/archive/refs/heads/setup-wizard.zip" class="btn">DOWNLOAD LATEST FIRMWARE</a>
-
-        <footer>
-            BigB0X v2.0 // FOR AUTHORIZED SECURITY TESTING ONLY
-        </footer>
+        <div class="instructions">
+            <div class="step">1. Flash <b>Pi OS Lite (64-bit)</b> using the Raspberry Pi Imager.</div>
+            <div class="step">2. Click the button above to build your <b>Tactical Config</b>.</div>
+            <div class="step">3. Download the resulting <code>.zip</code> and extract it to the <b>boot</b> partition of your SD card.</div>
+            <div class="step">4. Power on your BigB0X. The system will auto-initialize.</div>
+        </div>
     </div>
+
+    <script>
+        function generateConfig() {
+            const config = {
+                hostname: document.getElementById('hostname').value,
+                ssid: document.getElementById('ssid').value,
+                pass: document.getElementById('pass').value,
+                timestamp: Date.now()
+            };
+            
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "setup.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+            
+            alert("TACTICAL CONFIG GENERATED.\n\nPlace the 'setup.json' file into the root of your SD card /boot partition.");
+        }
+    </script>
 </body>
 </html>
