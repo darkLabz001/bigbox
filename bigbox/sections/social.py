@@ -15,6 +15,11 @@ def _open_mail(ctx: SectionContext) -> None:
     ctx.show_mail()
 
 
+def _open_messenger(ctx: SectionContext) -> None:
+    """Tactical SMS (Textbelt/Gateway)."""
+    ctx.show_messenger()
+
+
 def _open_deaddrop(ctx: SectionContext) -> None:
     """Offline chat via captive portal rogue AP."""
     ctx.show_deaddrop()
@@ -44,6 +49,7 @@ def build() -> Section:
         actions=[
             Action("Global Chat", _open_chat, "darksec.uk in-device chat"),
             Action("Tactical Mail", _open_mail, "IMAP/SMTP email client"),
+            Action("Tactical Messenger", _open_messenger, "Free Web/Gateway SMS"),
             Action("Dead Drop", _open_deaddrop, "Rogue AP offline chatroom"),
             Action("BLE Mesh Chat", _open_ble_chat, "Bluetooth peer-to-peer"),
             Action("Local BBS", _open_bbs, "LAN-based message board"),

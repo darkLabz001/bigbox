@@ -18,6 +18,7 @@ from bigbox.ui.cracker import OfflineCrackerView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.tv import InternetTVView
 from bigbox.ui.mail import MailView
+from bigbox.ui.messenger import MessengerView
 from bigbox.ui.signal_scraper import SignalScraperView
 from bigbox.ui.traffic_cam import TrafficCamView
 from bigbox.ui.camera_interceptor import CameraInterceptorView
@@ -62,6 +63,7 @@ __all__ = [
     "MediaPlayerView",
     "InternetTVView",
     "MailView",
+    "MessengerView",
     "SignalScraperView",
     "TrafficCamView",
     "CameraInterceptorView",
