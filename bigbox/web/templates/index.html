@@ -1,539 +1,543 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>DaRkb0x Remote</title>
+    <meta charset="UTF-8">
+    <title>DaRkb0x :: WEB_UI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- xterm.js for the terminal -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <style>
+        :root {
+            --bg: #000000;
+            --bg-alt: #0a0a0a;
+            --fg: #ffffff;
+            --fg-dim: #888888;
+            --accent: #ffffff; /* High contrast White */
+            --accent-glow: 0 0 10px rgba(255, 255, 255, 0.5);
+            --border: #222222;
+            --err: #ff4444;
+        }
+
+        * { box-sizing: border-box; }
         body {
-            background: #0a0c12;
-            color: #5ae6aa;
-            font-family: monospace;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif, monospace;
             margin: 0;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            height: 100vh;
+            overflow: hidden;
             user-select: none;
         }
-        .screen-container {
-            width: 100%;
-            max-width: 600px;
-            margin-top: 10px;
-            border: 2px solid #282e3c;
-            background: #000;
-        }
-        .screen-container img {
-            width: 100%;
-            display: block;
-        }
-        .controls {
-            margin-top: 20px;
-            display: grid;
-            grid-template-columns: repeat(3, 80px);
-            grid-gap: 15px;
-        }
-        .btn {
-            width: 70px;
-            height: 70px;
-            background: #121620;
-            border: 2px solid #5ae6aa;
-            color: #5ae6aa;
+
+        /* --- Header & Tabs --- */
+        header {
+            background: var(--bg-alt);
+            border-bottom: 2px solid var(--accent);
+            padding: 10px 20px;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            justify-content: center;
-            border-radius: 10px;
+            z-index: 100;
+        }
+        .logo {
             font-weight: bold;
-            font-size: 18px;
-            touch-action: manipulation;
+            letter-spacing: 4px;
+            font-size: 20px;
+            text-shadow: var(--accent-glow);
         }
-        .btn:active {
-            background: #5ae6aa;
-            color: #0a0c12;
-        }
-        .dpad {
-            display: grid;
-            grid-template-columns: repeat(3, 70px);
-            grid-gap: 5px;
-        }
-        .face-buttons {
-            display: grid;
-            grid-template-columns: repeat(2, 70px);
-            grid-gap: 15px;
-        }
-        .system-buttons {
-            margin-top: 20px;
+        nav {
             display: flex;
-            gap: 20px;
+            gap: 10px;
         }
-        .btn-rect {
-            width: 100px;
-            height: 40px;
+        .tab-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--fg-dim);
+            padding: 8px 16px;
+            cursor: pointer;
+            font-family: monospace;
             font-size: 14px;
+            text-transform: uppercase;
+            transition: 0.2s;
         }
-        .layout {
+        .tab-btn:hover { color: var(--fg); }
+        .tab-btn.active {
+            color: var(--fg);
+            border: 1px solid var(--accent);
+            box-shadow: var(--accent-glow);
+        }
+
+        /* --- Main Content --- */
+        main {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        .tab-panel {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: none;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .tab-panel.active { display: block; }
+
+        /* --- Remote Tab --- */
+        .remote-container {
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
             gap: 40px;
-            padding: 20px;
+            align-items: flex-start;
         }
-        h1 { font-size: 18px; margin: 10px 0; letter-spacing: 2px; }
+        .screen-box {
+            background: #000;
+            border: 1px solid var(--border);
+            max-width: 640px;
+            width: 100%;
+        }
+        .screen-box img { width: 100%; display: block; }
+
+        .controller {
+            display: flex;
+            gap: 40px;
+            background: var(--bg-alt);
+            padding: 20px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 60px);
+            grid-gap: 5px;
+        }
+        .face {
+            display: grid;
+            grid-template-columns: repeat(2, 60px);
+            grid-gap: 10px;
+        }
+        .btn {
+            width: 60px;
+            height: 60px;
+            background: var(--bg);
+            border: 1px solid var(--fg-dim);
+            color: var(--fg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: bold;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .btn:active { background: var(--fg); color: var(--bg); }
+        .btn-rect {
+            width: 90px;
+            height: 35px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .system-row {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        /* --- Library & Wardrive UI --- */
+        .card {
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            padding: 20px;
+            margin-bottom: 20px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 16px;
+            letter-spacing: 2px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+            color: var(--accent);
+        }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 12px; color: var(--fg-dim); }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--fg);
+            font-family: monospace;
+        }
+        .action-btn {
+            background: transparent;
+            border: 1px solid var(--fg);
+            color: var(--fg);
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: monospace;
+            text-transform: uppercase;
+        }
+        .action-btn:hover { background: var(--fg); color: var(--bg); }
+        .list-container {
+            margin-top: 15px;
+            font-size: 13px;
+        }
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #111;
+        }
+        .list-item:last-child { border-bottom: none; }
+
+        /* --- Terminal Tab --- */
+        #terminal-container {
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); }
+        ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
     </style>
 </head>
 <body>
-    <h1>DaRkb0x :: REMOTE_UI</h1>
-    
-    <div class="screen-container">
-        <img src="/video_feed" id="screen">
-    </div>
 
-    <div class="layout">
-        <!-- D-PAD -->
-        <div class="dpad">
-            <div></div><div class="btn" onmousedown="press('up')" ontouchstart="press('up')">UP</div><div></div>
-            <div class="btn" onmousedown="press('left')" ontouchstart="press('left')">LFT</div>
-            <div></div>
-            <div class="btn" onmousedown="press('right')" ontouchstart="press('right')">RGT</div>
-            <div></div><div class="btn" onmousedown="press('down')" ontouchstart="press('down')">DWN</div><div></div>
-        </div>
+<header>
+    <div class="logo">DaRkb0x</div>
+    <nav>
+        <button class="tab-btn active" onclick="showTab('remote')">Remote</button>
+        <button class="tab-btn" onclick="showTab('library')">Library</button>
+        <button class="tab-btn" onclick="showTab('wardrive')">Wardrive</button>
+        <button class="tab-btn" onclick="showTab('terminal')">Terminal</button>
+    </nav>
+</header>
 
-        <!-- FACE BUTTONS -->
-        <div class="face-buttons">
-            <div class="btn" style="grid-column: 2" onmousedown="press('y')" ontouchstart="press('y')">Y</div>
-            <div class="btn" onmousedown="press('x')" ontouchstart="press('x')">X</div>
-            <div class="btn" onmousedown="press('b')" ontouchstart="press('b')">B</div>
-            <div class="btn" style="grid-column: 2" onmousedown="press('a')" ontouchstart="press('a')">A</div>
-        </div>
-    </div>
-
-    <div class="system-buttons">
-        <div class="btn btn-rect" onmousedown="press('select')" ontouchstart="press('select')">SELECT</div>
-        <div class="btn btn-rect" onmousedown="press('start')" ontouchstart="press('start')">START</div>
-    </div>
-
-    <div style="margin-top: 30px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px;">
-        <h2 style="font-size: 14px; margin-bottom: 15px; text-align: center;">WARDRIVE :: WIGLE</h2>
-
-        <div id="wigleSignedOut" style="display:none;">
-            <div style="font-size:11px; color:#828ba0; margin-bottom:8px;">
-                Sign in with your WiGLE <b>API Name</b> and <b>API Token</b>
-                (mint at wigle.net/account &rarr; Show API Token).
+<main>
+    <!-- REMOTE PANEL -->
+    <div id="remote" class="tab-panel active">
+        <div class="remote-container">
+            <div class="screen-box">
+                <img src="/video_feed" alt="Screen Mirror">
             </div>
-            <input type="text" id="apiName" placeholder="API Name (e.g. AID0000...)"
-                   style="width:100%; box-sizing:border-box; margin-bottom:6px; padding:8px; background:#0a0c12; color:#5ae6aa; border:1px solid #282e3c; font-family:monospace;">
-            <input type="password" id="apiToken" placeholder="API Token"
-                   style="width:100%; box-sizing:border-box; margin-bottom:8px; padding:8px; background:#0a0c12; color:#5ae6aa; border:1px solid #282e3c; font-family:monospace;">
-            <button onclick="wigleLogin()"
-                    style="background:transparent; border:1px solid #5ae6aa; color:#5ae6aa; padding:8px 18px; cursor:pointer; font-family:monospace; width:100%;">
-                SIGN IN
-            </button>
-            <div id="wigleLoginMsg" style="margin-top:8px; font-size:11px; color:#eb5a5a;"></div>
-        </div>
-
-        <div id="wigleSignedIn" style="display:none;">
-            <div style="font-size:12px; color:#5ae6aa;">
-                Signed in as <span id="wigleUser">?</span>
-                <a href="#" onclick="wigleLogout(); return false;"
-                   style="color:#828ba0; margin-left:8px;">[sign out]</a>
-            </div>
-            <div id="wardriveFiles" style="margin-top:14px; font-size:12px;"></div>
-        </div>
-    </div>
-
-    <div style="margin-top: 20px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px;">
-        <h2 style="font-size: 14px; margin-bottom: 15px; text-align: center;">GAMES :: ROMS</h2>
-
-        <div style="margin-bottom: 12px; font-size: 12px; text-align: center;">
-            <label style="margin-right: 10px;">
-                <input type="radio" name="romSystem" value="gbc" checked> GBC
-            </label>
-            <label style="margin-right: 10px;">
-                <input type="radio" name="romSystem" value="gba"> GBA
-            </label>
-            <label style="margin-right: 10px;">
-                <input type="radio" name="romSystem" value="ps1"> PS1
-            </label>
-            <label>
-                <input type="radio" name="romSystem" value="ps1-bios"> PS1-BIOS
-            </label>
-        </div>
-
-        <input type="file" id="romFileInput" style="display: none;">
-        <div style="text-align: center;">
-            <button onclick="document.getElementById('romFileInput').click()"
-                    style="background: transparent; border: 1px solid #5ae6aa; color: #5ae6aa; padding: 8px 18px; cursor: pointer; font-family: monospace;">
-                CHOOSE ROM
-            </button>
-        </div>
-        <div id="romStatus" style="margin-top: 10px; font-size: 12px; text-align: center;"></div>
-
-        <div id="romLibrary" style="margin-top: 18px; font-size: 11px;"></div>
-
-        <h3 style="font-size: 13px; margin: 22px 0 10px; text-align: center;">RETROACHIEVEMENTS</h3>
-
-        <div id="raSignedOut" style="display:none;">
-            <div style="font-size:11px; color:#828ba0; margin-bottom:8px; text-align:center;">
-                Sign in once with your retroachievements.org account.
-            </div>
-            <input type="text" id="raUser" placeholder="Username"
-                   style="width:100%; box-sizing:border-box; margin-bottom:6px; padding:8px; background:#0a0c12; color:#5ae6aa; border:1px solid #282e3c; font-family:monospace;">
-            <input type="password" id="raPass" placeholder="Password"
-                   style="width:100%; box-sizing:border-box; margin-bottom:8px; padding:8px; background:#0a0c12; color:#5ae6aa; border:1px solid #282e3c; font-family:monospace;">
-            <button onclick="raLogin()"
-                    style="background:transparent; border:1px solid #5ae6aa; color:#5ae6aa; padding:8px 18px; cursor:pointer; font-family:monospace; width:100%;">
-                SIGN IN
-            </button>
-            <div id="raMsg" style="margin-top:8px; font-size:11px; text-align:center;"></div>
-        </div>
-
-        <div id="raSignedIn" style="display:none; text-align:center;">
-            <div style="font-size:12px; color:#5ae6aa;">
-                Signed in as <span id="raUserShown">?</span>
-                <a href="#" onclick="raLogout(); return false;"
-                   style="color:#828ba0; margin-left:8px;">[sign out]</a>
+            <div>
+                <div class="controller">
+                    <div class="dpad">
+                        <div></div><div class="btn" onmousedown="press('up')" ontouchstart="press('up')">U</div><div></div>
+                        <div class="btn" onmousedown="press('left')" ontouchstart="press('left')">L</div>
+                        <div></div>
+                        <div class="btn" onmousedown="press('right')" ontouchstart="press('right')">R</div>
+                        <div></div><div class="btn" onmousedown="press('down')" ontouchstart="press('down')">D</div><div></div>
+                    </div>
+                    <div class="face">
+                        <div class="btn" style="grid-column: 2" onmousedown="press('y')" ontouchstart="press('y')">Y</div>
+                        <div class="btn" onmousedown="press('x')" ontouchstart="press('x')">X</div>
+                        <div class="btn" onmousedown="press('b')" ontouchstart="press('b')">B</div>
+                        <div class="btn" style="grid-column: 2" onmousedown="press('a')" ontouchstart="press('a')">A</div>
+                    </div>
+                </div>
+                <div class="system-row">
+                    <div class="btn btn-rect" onmousedown="press('select')" ontouchstart="press('select')">SELECT</div>
+                    <div class="btn btn-rect" onmousedown="press('start')" ontouchstart="press('start')">START</div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div style="margin-top: 20px; padding: 20px; border: 1px dashed #5ae6aa; border-radius: 10px; width: 80%; max-width: 500px; text-align: center;">
-        <h2 style="font-size: 14px; margin-bottom: 15px;">UPLOAD MEDIA</h2>
-
-        <div style="margin-bottom: 12px; font-size: 12px;">
-            <label style="margin-right: 14px;">
-                <input type="radio" name="folder" value="movies" checked> MOVIES
-            </label>
-            <label>
-                <input type="radio" name="folder" value="tv"> TV
-            </label>
+    <!-- LIBRARY PANEL -->
+    <div id="library" class="tab-panel">
+        <div class="card">
+            <h2>GBA :: ROMS</h2>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                <input type="file" id="romInput" style="display: none;">
+                <button class="action-btn" onclick="document.getElementById('romInput').click()">Upload ROM</button>
+                <span id="romStatus" style="font-size: 12px; color: var(--fg-dim);"></span>
+            </div>
+            <div id="romList" class="list-container"></div>
         </div>
 
-        <input type="file" id="fileInput" style="display: none;">
-        <button onclick="document.getElementById('fileInput').click()" style="background: transparent; border: 1px solid #5ae6aa; color: #5ae6aa; padding: 10px 20px; cursor: pointer; font-family: monospace;">CHOOSE FILE</button>
-        <div id="status" style="margin-top: 10px; font-size: 12px;"></div>
+        <div class="card">
+            <h2>MEDIA :: UPLOAD</h2>
+            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 15px;">
+                <select id="mediaFolder" style="background: #000; color: #fff; border: 1px solid var(--border); padding: 8px;">
+                    <option value="movies">MOVIES</option>
+                    <option value="tv">TV SHOWS</option>
+                </select>
+                <input type="file" id="mediaInput" style="display: none;">
+                <button class="action-btn" onclick="document.getElementById('mediaInput').click()">Upload File</button>
+                <span id="mediaStatus" style="font-size: 12px; color: var(--fg-dim);"></span>
+            </div>
+            <div id="mediaList" class="list-container"></div>
+        </div>
 
-        <div id="library" style="margin-top: 18px; text-align: left; font-size: 11px;"></div>
+        <div class="card">
+            <h2>RETROACHIEVEMENTS</h2>
+            <div id="raStatus" style="font-size: 13px; margin-bottom: 10px;">Checking status...</div>
+            <div id="raForm" style="display:none;">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="raUser">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="raPass">
+                </div>
+                <button class="action-btn" onclick="raLogin()">Sign In</button>
+            </div>
+            <div id="raInfo" style="display:none;">
+                <span>Signed in as <b id="raUserLabel"></b></span>
+                <button class="action-btn" style="margin-left: 20px; padding: 5px 10px; font-size: 11px;" onclick="raLogout()">Sign Out</button>
+            </div>
+        </div>
     </div>
 
-    <script>
-        function press(btn) {
-            fetch('/press/' + btn).catch(e => console.error(e));
+    <!-- WARDRIVE PANEL -->
+    <div id="wardrive" class="tab-panel">
+        <div class="card">
+            <h2>WIGLE :: AUTH</h2>
+            <div id="wigleStatus" style="font-size: 13px; margin-bottom: 10px;">Checking status...</div>
+            <div id="wigleForm" style="display:none;">
+                <div class="form-group">
+                    <label>API Name</label>
+                    <input type="text" id="wigleName">
+                </div>
+                <div class="form-group">
+                    <label>API Token</label>
+                    <input type="password" id="wigleToken">
+                </div>
+                <button class="action-btn" onclick="wigleLogin()">Sign In</button>
+            </div>
+            <div id="wigleInfo" style="display:none;">
+                <span>Account: <b id="wigleUserLabel"></b></span>
+                <button class="action-btn" style="margin-left: 20px; padding: 5px 10px; font-size: 11px;" onclick="wigleLogout()">Sign Out</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>WARDRIVE :: SESSIONS</h2>
+            <div id="wardriveList" class="list-container"></div>
+        </div>
+    </div>
+
+    <!-- TERMINAL PANEL -->
+    <div id="terminal" class="tab-panel" style="padding: 0;">
+        <div id="terminal-container"></div>
+    </div>
+</main>
+
+<script>
+    // --- Tabs ---
+    function showTab(tabId) {
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        document.querySelector(`.tab-btn[onclick="showTab('${tabId}')"]`).classList.add('active');
+        
+        if (tabId === 'terminal') {
+            initTerminal();
+        }
+    }
+
+    // --- Remote ---
+    function press(btn) {
+        fetch('/press/' + btn).catch(() => {});
+    }
+
+    // --- Terminal ---
+    let term, termWs, fitAddon;
+    function initTerminal() {
+        if (term) {
+            fitAddon.fit();
+            return;
+        }
+        
+        term = new Terminal({
+            theme: {
+                background: '#000000',
+                foreground: '#ffffff',
+                cursor: '#ffffff',
+                selectionBackground: 'rgba(255, 255, 255, 0.3)'
+            },
+            fontFamily: 'monospace',
+            fontSize: 14,
+            cursorBlink: true
+        });
+        
+        fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal-container'));
+        fitAddon.fit();
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        termWs = new WebSocket(`${protocol}//${window.location.host}/ws/terminal`);
+        
+        termWs.onopen = () => {
+            const dims = { type: 'resize', rows: term.rows, cols: term.cols };
+            termWs.send(JSON.stringify(dims));
+        };
+
+        termWs.onmessage = async (ev) => {
+            const data = await ev.data.arrayBuffer();
+            term.write(new Uint8Array(data));
+        };
+
+        term.onData(data => {
+            if (termWs.readyState === WebSocket.OPEN) {
+                termWs.send(JSON.stringify({ type: 'input', data: data }));
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+            if (termWs.readyState === WebSocket.OPEN) {
+                termWs.send(JSON.stringify({ type: 'resize', rows: term.rows, cols: term.cols }));
+            }
+        });
+    }
+
+    // --- Library (ROMs & Media) ---
+    function refreshLibrary() {
+        // ROMs
+        fetch('/roms').then(r => r.json()).then(data => {
+            const list = document.getElementById('romList');
+            let html = '';
+            (data['gba'] || []).forEach(f => {
+                html += `<div class="list-item"><span>${f}</span><a href="#" style="color:var(--err)" onclick="deleteRom('gba','${encodeURIComponent(f)}')">[DELETE]</a></div>`;
+            });
+            list.innerHTML = html || '<div style="color:var(--fg-dim)">No GBA ROMs found.</div>';
+        });
+
+        // Media
+        fetch('/media').then(r => r.json()).then(data => {
+            const list = document.getElementById('mediaList');
+            let html = '';
+            ['movies', 'tv'].forEach(cat => {
+                const items = data[cat] || [];
+                if (items.length) {
+                    html += `<div style="color:var(--fg-dim); margin: 10px 0 5px; font-weight: bold;">${cat.toUpperCase()}</div>`;
+                    items.forEach(f => {
+                        html += `<div class="list-item"><span>${f}</span></div>`;
+                    });
+                }
+            });
+            list.innerHTML = html || '<div style="color:var(--fg-dim)">No media files found.</div>';
+        });
+    }
+
+    document.getElementById('romInput').onchange = function() {
+        uploadFile(this.files[0], 'roms', 'romStatus', 'gba');
+        this.value = '';
+    };
+    document.getElementById('mediaInput').onchange = function() {
+        uploadFile(this.files[0], 'media', 'mediaStatus', document.getElementById('mediaFolder').value);
+        this.value = '';
+    };
+
+    function uploadFile(file, type, statusId, target) {
+        if (!file) return;
+        const status = document.getElementById(statusId);
+        status.innerText = `UPLOADING ${file.name}...`;
+        
+        const fd = new FormData();
+        fd.append('file', file);
+        
+        let url = '';
+        if (type === 'roms') {
+            fd.append('system', target);
+            url = '/roms/upload';
+        } else {
+            fd.append('folder', target);
+            url = '/upload';
         }
 
-        function selectedFolder() {
-            const r = document.querySelector('input[name="folder"]:checked');
-            return r ? r.value : 'movies';
-        }
-
-        function refreshLibrary() {
-            fetch('/media')
-                .then(r => r.json())
-                .then(data => {
-                    const lib = document.getElementById('library');
-                    let html = '';
-                    for (const folder of ['movies', 'tv']) {
-                        const items = data[folder] || [];
-                        html += '<div style="margin-top:8px;">'
-                             + '<div style="color:#5ae6aa;">[ ' + folder.toUpperCase()
-                             + ' &mdash; ' + items.length + ' file(s) ]</div>';
-                        if (items.length) {
-                            html += '<ul style="margin:4px 0 0 14px; padding:0; color:#828ba0;">';
-                            for (const f of items) {
-                                html += '<li>' + f.replace(/[<>&]/g, '') + '</li>';
-                            }
-                            html += '</ul>';
-                        }
-                        html += '</div>';
-                    }
-                    lib.innerHTML = html;
-                })
-                .catch(() => {});
-        }
-
-        document.getElementById('fileInput').onchange = function() {
-            const file = this.files[0];
-            if (!file) return;
-
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('folder', selectedFolder());
-
-            const status = document.getElementById('status');
-            status.innerText = "UPLOADING: " + file.name + " -> " + selectedFolder() + "...";
-
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
+        fetch(url, { method: 'POST', body: fd })
             .then(r => r.json())
             .then(data => {
-                if (data.status === 'uploaded') {
-                    status.innerText = "UPLOADED: " + data.filename + " (" + data.folder + ")";
-                    refreshLibrary();
-                } else {
-                    status.innerText = "UPLOAD FAILED: " + (data.detail || 'unknown error');
-                }
-                setTimeout(() => { status.innerText = ""; }, 3000);
+                status.innerText = data.status === 'uploaded' ? 'SUCCESS' : 'FAILED';
+                refreshLibrary();
+                setTimeout(() => status.innerText = '', 3000);
             })
-            .catch(e => {
-                status.innerText = "UPLOAD FAILED";
-                console.error(e);
+            .catch(() => { status.innerText = 'ERROR'; });
+    }
+
+    function deleteRom(sys, name) {
+        if (!confirm('Delete ROM?')) return;
+        fetch(`/roms/${sys}/${name}`, { method: 'DELETE' }).then(() => refreshLibrary());
+    }
+
+    // --- Wardrive ---
+    function refreshWardrive() {
+        fetch('/wardrive/files').then(r => r.json()).then(data => {
+            const list = document.getElementById('wardriveList');
+            let html = '';
+            (data.files || []).forEach(f => {
+                html += `<div class="list-item">
+                    <span>${f.name} <small style="color:var(--fg-dim)">(${(f.size/1024).toFixed(1)} KB)</small></span>
+                    <button class="action-btn" style="padding: 2px 8px; font-size: 10px;" onclick="uploadWardrive('${f.name}', this)">WIGLE UPLOAD</button>
+                </div>`;
             });
-            // reset so re-picking the same file fires onchange again
-            this.value = '';
-        };
+            list.innerHTML = html || '<div style="color:var(--fg-dim)">No sessions found.</div>';
+        });
+    }
 
-        // Populate the library list on first paint.
-        refreshLibrary();
+    function uploadWardrive(name, btn) {
+        btn.disabled = true;
+        btn.innerText = '...';
+        fetch('/wardrive/upload/' + encodeURIComponent(name), { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                btn.innerText = data.status === 'uploaded' ? 'OK' : 'FAIL';
+            })
+            .catch(() => btn.innerText = 'ERR');
+    }
 
-        // ---------------- WiGLE / Wardrive ---------------------------------
-        function fmtSize(n) {
-            if (n < 1024) return n + 'B';
-            if (n < 1024*1024) return (n/1024).toFixed(0) + 'KB';
-            return (n/1024/1024).toFixed(1) + 'MB';
-        }
+    // --- WiGLE / RA Auth ---
+    function checkAuth() {
+        fetch('/wigle/status').then(r => r.json()).then(data => {
+            document.getElementById('wigleForm').style.display = data.logged_in ? 'none' : 'block';
+            document.getElementById('wigleInfo').style.display = data.logged_in ? 'block' : 'none';
+            document.getElementById('wigleStatus').innerText = data.logged_in ? 'Connected to WiGLE' : 'Offline';
+            if (data.logged_in) document.getElementById('wigleUserLabel').innerText = data.api_name;
+        });
+        fetch('/retroachievements/status').then(r => r.json()).then(data => {
+            document.getElementById('raForm').style.display = data.logged_in ? 'none' : 'block';
+            document.getElementById('raInfo').style.display = data.logged_in ? 'block' : 'none';
+            document.getElementById('raStatus').innerText = data.logged_in ? 'RA Connected' : 'RA Offline';
+            if (data.logged_in) document.getElementById('raUserLabel').innerText = data.username;
+        });
+    }
 
-        function refreshWigleStatus() {
-            fetch('/wigle/status')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.logged_in) {
-                        document.getElementById('wigleSignedIn').style.display = 'block';
-                        document.getElementById('wigleSignedOut').style.display = 'none';
-                        document.getElementById('wigleUser').innerText = data.api_name;
-                        refreshWardriveFiles();
-                    } else {
-                        document.getElementById('wigleSignedIn').style.display = 'none';
-                        document.getElementById('wigleSignedOut').style.display = 'block';
-                    }
-                })
-                .catch(() => {});
-        }
+    function wigleLogin() {
+        const fd = new FormData();
+        fd.append('api_name', document.getElementById('wigleName').value);
+        fd.append('api_token', document.getElementById('wigleToken').value);
+        fetch('/wigle/login', { method: 'POST', body: fd }).then(() => checkAuth());
+    }
+    function wigleLogout() { fetch('/wigle/logout', { method: 'POST' }).then(() => checkAuth()); }
+    
+    function raLogin() {
+        const fd = new FormData();
+        fd.append('username', document.getElementById('raUser').value);
+        fd.append('password', document.getElementById('raPass').value);
+        fetch('/retroachievements/login', { method: 'POST', body: fd }).then(() => checkAuth());
+    }
+    function raLogout() { fetch('/retroachievements/logout', { method: 'POST' }).then(() => checkAuth()); }
 
-        function wigleLogin() {
-            const name = document.getElementById('apiName').value.trim();
-            const token = document.getElementById('apiToken').value.trim();
-            const msg = document.getElementById('wigleLoginMsg');
-            if (!name || !token) {
-                msg.style.color = '#eb5a5a';
-                msg.innerText = 'API Name and API Token required.';
-                return;
-            }
-            const fd = new FormData();
-            fd.append('api_name', name);
-            fd.append('api_token', token);
-            msg.style.color = '#828ba0';
-            msg.innerText = 'verifying with wigle.net...';
-            fetch('/wigle/login', {method: 'POST', body: fd})
-                .then(r => r.json().then(j => ({ok: r.ok, body: j})))
-                .then(({ok, body}) => {
-                    if (ok) {
-                        msg.style.color = '#5ae6aa';
-                        msg.innerText = body.message || 'signed in';
-                        document.getElementById('apiToken').value = '';
-                        refreshWigleStatus();
-                    } else {
-                        msg.style.color = '#eb5a5a';
-                        msg.innerText = body.detail || 'login failed';
-                    }
-                })
-                .catch(e => {
-                    msg.style.color = '#eb5a5a';
-                    msg.innerText = 'request failed: ' + e;
-                });
-        }
+    // --- Init ---
+    refreshLibrary();
+    refreshWardrive();
+    checkAuth();
+</script>
 
-        function wigleLogout() {
-            fetch('/wigle/logout', {method: 'POST'})
-                .then(() => refreshWigleStatus());
-        }
-
-        function refreshWardriveFiles() {
-            fetch('/wardrive/files')
-                .then(r => r.json())
-                .then(data => {
-                    const box = document.getElementById('wardriveFiles');
-                    const items = data.files || [];
-                    if (!items.length) {
-                        box.innerHTML = '<div style="color:#828ba0;">No sessions yet — start one from Recon &rarr; Wardriving.</div>';
-                        return;
-                    }
-                    let html = '<div style="color:#5ae6aa; margin-bottom:6px;">[ SESSIONS ]</div>';
-                    for (const f of items) {
-                        const safe = f.name.replace(/[<>&]/g, '');
-                        html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px dotted #282e3c;">'
-                              + '<span>' + safe + ' <span style="color:#828ba0;">(' + fmtSize(f.size) + ')</span></span>'
-                              + '<button onclick="wigleUpload(\'' + encodeURIComponent(f.name) + '\', this)"'
-                              + ' style="background:transparent; border:1px solid #5ae6aa; color:#5ae6aa; padding:4px 10px; cursor:pointer; font-family:monospace; font-size:11px;">UPLOAD</button>'
-                              + '</div>';
-                    }
-                    box.innerHTML = html;
-                })
-                .catch(() => {});
-        }
-
-        function wigleUpload(name, btn) {
-            btn.disabled = true;
-            btn.innerText = 'UPLOADING...';
-            fetch('/wardrive/upload/' + name, {method: 'POST'})
-                .then(r => r.json().then(j => ({ok: r.ok, body: j})))
-                .then(({ok, body}) => {
-                    if (ok) {
-                        btn.innerText = 'OK';
-                        btn.style.color = '#5ae6aa';
-                    } else {
-                        btn.innerText = 'FAIL';
-                        btn.style.color = '#eb5a5a';
-                        btn.title = body.detail || 'upload failed';
-                    }
-                    setTimeout(() => { btn.innerText = 'UPLOAD'; btn.disabled = false; btn.style.color = '#5ae6aa'; }, 4000);
-                })
-                .catch(e => {
-                    btn.innerText = 'ERR';
-                    btn.disabled = false;
-                });
-        }
-
-        refreshWigleStatus();
-        setInterval(refreshWardriveFiles, 30000);
-
-        // ---------------- Games / ROMs / RA --------------------------------
-        function selectedRomSystem() {
-            const r = document.querySelector('input[name="romSystem"]:checked');
-            return r ? r.value : 'gbc';
-        }
-
-        function refreshRomLibrary() {
-            fetch('/roms')
-                .then(r => r.json())
-                .then(data => {
-                    const lib = document.getElementById('romLibrary');
-                    let html = '';
-                    const labels = {gbc: 'GBC', gba: 'GBA', ps1: 'PS1', 'ps1-bios': 'PS1-BIOS'};
-                    for (const sys of ['gbc', 'gba', 'ps1', 'ps1-bios']) {
-                        const items = data[sys] || [];
-                        html += '<div style="margin-top:6px;">'
-                              + '<div style="color:#5ae6aa;">[ ' + labels[sys]
-                              + ' &mdash; ' + items.length + ' ]</div>';
-                        if (items.length) {
-                            html += '<ul style="margin:4px 0 0 14px; padding:0; color:#828ba0; list-style:none;">';
-                            for (const f of items) {
-                                const safe = f.replace(/[<>&"]/g, '');
-                                html += '<li style="display:flex; justify-content:space-between; padding:2px 0;">'
-                                     + '<span>' + safe + '</span>'
-                                     + '<a href="#" onclick="romDelete(\''
-                                     + sys + '\', \'' + encodeURIComponent(f) + '\'); return false;"'
-                                     + ' style="color:#eb5a5a;">[x]</a>'
-                                     + '</li>';
-                            }
-                            html += '</ul>';
-                        }
-                        html += '</div>';
-                    }
-                    lib.innerHTML = html;
-                })
-                .catch(() => {});
-        }
-
-        document.getElementById('romFileInput').onchange = function() {
-            const file = this.files[0];
-            if (!file) return;
-
-            const fd = new FormData();
-            fd.append('file', file);
-            fd.append('system', selectedRomSystem());
-
-            const status = document.getElementById('romStatus');
-            status.style.color = '#828ba0';
-            status.innerText = 'UPLOADING ' + file.name + ' -> ' + selectedRomSystem() + '...';
-
-            fetch('/roms/upload', {method: 'POST', body: fd})
-                .then(r => r.json().then(j => ({ok: r.ok, body: j})))
-                .then(({ok, body}) => {
-                    if (ok) {
-                        status.style.color = '#5ae6aa';
-                        status.innerText = 'UPLOADED: ' + body.filename + ' (' + body.system + ')';
-                        refreshRomLibrary();
-                    } else {
-                        status.style.color = '#eb5a5a';
-                        status.innerText = 'FAILED: ' + (body.detail || 'unknown error');
-                    }
-                    setTimeout(() => { status.innerText = ''; }, 4000);
-                })
-                .catch(e => {
-                    status.style.color = '#eb5a5a';
-                    status.innerText = 'UPLOAD ERROR';
-                });
-            this.value = '';
-        };
-
-        function romDelete(system, encodedName) {
-            if (!confirm('Delete this ROM?')) return;
-            fetch('/roms/' + system + '/' + encodedName, {method: 'DELETE'})
-                .then(() => refreshRomLibrary());
-        }
-
-        function refreshRaStatus() {
-            fetch('/retroachievements/status')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.logged_in) {
-                        document.getElementById('raSignedIn').style.display = 'block';
-                        document.getElementById('raSignedOut').style.display = 'none';
-                        document.getElementById('raUserShown').innerText = data.username;
-                    } else {
-                        document.getElementById('raSignedIn').style.display = 'none';
-                        document.getElementById('raSignedOut').style.display = 'block';
-                    }
-                })
-                .catch(() => {});
-        }
-
-        function raLogin() {
-            const u = document.getElementById('raUser').value.trim();
-            const p = document.getElementById('raPass').value;
-            const msg = document.getElementById('raMsg');
-            if (!u || !p) {
-                msg.style.color = '#eb5a5a';
-                msg.innerText = 'username and password required';
-                return;
-            }
-            const fd = new FormData();
-            fd.append('username', u);
-            fd.append('password', p);
-            msg.style.color = '#828ba0';
-            msg.innerText = 'verifying with retroachievements.org...';
-            fetch('/retroachievements/login', {method: 'POST', body: fd})
-                .then(r => r.json().then(j => ({ok: r.ok, body: j})))
-                .then(({ok, body}) => {
-                    if (ok) {
-                        msg.style.color = '#5ae6aa';
-                        msg.innerText = body.message || 'signed in';
-                        document.getElementById('raPass').value = '';
-                        refreshRaStatus();
-                    } else {
-                        msg.style.color = '#eb5a5a';
-                        msg.innerText = body.detail || 'login failed';
-                    }
-                })
-                .catch(e => {
-                    msg.style.color = '#eb5a5a';
-                    msg.innerText = 'request failed: ' + e;
-                });
-        }
-
-        function raLogout() {
-            fetch('/retroachievements/logout', {method: 'POST'})
-                .then(() => refreshRaStatus());
-        }
-
-        refreshRomLibrary();
-        refreshRaStatus();
-        
-        // Prevent zoom on double tap for iOS
-        document.addEventListener('touchstart', function (event) {
-            if (event.touches.length > 1) {
-                event.preventDefault();
-            }
-        }, { passive: false });
-    </script>
 </body>
 </html>

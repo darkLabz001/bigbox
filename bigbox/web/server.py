@@ -5,12 +5,17 @@ import io
 from typing import TYPE_CHECKING
 
 import pygame
-from fastapi import FastAPI, Request, Response, UploadFile, File, Form, HTTPException
+import os
+import shutil
+import pty
+import fcntl
+import termios
+import struct
+import subprocess
+from fastapi import FastAPI, Request, Response, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-import os
-import shutil
 
 from bigbox.events import Button, ButtonEvent
 from bigbox import wigle as wigle_mod
@@ -38,6 +43,61 @@ def set_app(bb_app: App):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
+
+@app.websocket("/ws/terminal")
+async def terminal_websocket(websocket: WebSocket):
+    await websocket.accept()
+    
+    # Spawn bash in a PTY
+    master_fd, slave_fd = pty.openpty()
+    proc = subprocess.Popen(
+        ["/bin/bash"],
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        preexec_fn=os.setsid,
+        env={**os.environ, "TERM": "xterm-256color", "HOME": "/root"}
+    )
+    os.close(slave_fd)
+
+    # Set non-blocking
+    fl = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+    fcntl.fcntl(master_fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+    async def pty_to_ws():
+        try:
+            while True:
+                await asyncio.sleep(0.01)
+                try:
+                    data = os.read(master_fd, 1024)
+                    if not data:
+                        break
+                    await websocket.send_bytes(data)
+                except BlockingIOError:
+                    continue
+                except Exception:
+                    break
+        except Exception:
+            pass
+
+    task = asyncio.create_task(pty_to_ws())
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data["type"] == "input":
+                os.write(master_fd, data["data"].encode())
+            elif data["type"] == "resize":
+                buf = struct.pack("HHHH", data["rows"], data["cols"], 0, 0)
+                fcntl.ioctl(master_fd, termios.TIOCSWINSZ, buf)
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        task.cancel()
+        if proc.poll() is None:
+            import signal
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        os.close(master_fd)
 
 @app.post("/upload")
 async def upload_file(
