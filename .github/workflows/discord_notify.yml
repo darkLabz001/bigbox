@@ -1,0 +1,44 @@
+name: Discord Notification
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Webhook
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          # Use curl to send a formatted embed to Discord
+          curl -H "Content-Type: application/json" \
+               -d '{
+                 "username": "DaRkb0x Updater",
+                 "avatar_url": "https://github.com/darkLabz001/bigbox/raw/main/assets/icons/settings.png",
+                 "embeds": [{
+                   "title": "📦 New System Update Available",
+                   "description": "**Repository:** darkLabz001/bigbox\n**Commit:** `${{ github.sha }}`",
+                   "color": 3447003,
+                   "fields": [
+                     {
+                       "name": "Change Log",
+                       "value": "```${{ github.event.head_commit.message }}```"
+                     },
+                     {
+                       "name": "Author",
+                       "value": "${{ github.actor }}",
+                       "inline": true
+                     },
+                     {
+                       "name": "Details",
+                       "value": "[View on GitHub](${{ github.event.head_commit.url }})",
+                       "inline": true
+                     }
+                   ],
+                   "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+                 }]
+               }' \
+               $DISCORD_WEBHOOK
