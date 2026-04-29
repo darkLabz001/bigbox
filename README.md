@@ -152,6 +152,15 @@ Anything else inside `/opt/bigbox` will be reset to the upstream tip on update.
 
 Early. UI engine, input router, install script, stubs and OTA mechanism are in. Real tools to follow.
 
+
+SCREENSHOTS
+
+<img width="605" height="354" alt="abot" src="https://github.com/user-attachments/assets/d94c161a-0141-4c97-8f2d-330e985a178c" />  <img width="600" height="357" alt="2" src="https://github.com/user-attachments/assets/dc62d6d7-599b-4e17-8d82-be5b071be5fc" />
+
+
+
+
+
 ## Legal
 
 For use only on systems and networks you own or have written permission to test.
