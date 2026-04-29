@@ -714,6 +714,22 @@ class App:
             self.scraper_view.handle(bev, self)
             return
 
+        if self.traffic_cam_view is not None:
+            self.traffic_cam_view.handle(bev, self)
+            return
+
+        if self.camera_view is not None:
+            self.camera_view.handle(bev, self)
+            return
+
+        if self.wifite_view is not None:
+            self.wifite_view.handle(bev, self)
+            return
+
+        if self.chat_view is not None:
+            self.chat_view.handle(bev, self)
+            return
+
         if self.sherlock_view is not None:
             self.sherlock_view.handle(bev, self)
             return
