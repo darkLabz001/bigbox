@@ -11,23 +11,33 @@ KEYMAP: dict[int, Button] = {
     pygame.K_LEFT: Button.LEFT,
     pygame.K_RIGHT: Button.RIGHT,
     
+    # WASD support
+    pygame.K_w: Button.UP,
+    pygame.K_s: Button.DOWN,
+    pygame.K_a: Button.LEFT,
+    pygame.K_d: Button.RIGHT,
+    
     # Primary mappings (matches README.md table)
     pygame.K_z: Button.A,
     pygame.K_x: Button.B,
-    pygame.K_a: Button.X,
-    pygame.K_s: Button.Y,
+    pygame.K_c: Button.X,
+    pygame.K_v: Button.Y,
     
-    # Secondary mappings / Fallbacks
-    pygame.K_b: Button.B,
-    pygame.K_c: Button.B,
-    pygame.K_y: Button.Y,
-    
-    pygame.K_q: Button.LL,
-    pygame.K_w: Button.RR,
-    pygame.K_h: Button.HK,
+    # Intuitive face button fallbacks
+    pygame.K_SPACE: Button.A,
+    pygame.K_ESCAPE: Button.B,
+    pygame.K_BACKSPACE: Button.SELECT,
     pygame.K_RETURN: Button.START,
-    pygame.K_RSHIFT: Button.SELECT,
-    pygame.K_SPACE: Button.START,
+    
+    # Shoulder buttons
+    pygame.K_q: Button.LL,
+    pygame.K_e: Button.RR,
+    pygame.K_l: Button.LL,
+    pygame.K_r: Button.RR,
+    
+    # System
+    pygame.K_h: Button.HK,
+    pygame.K_TAB: Button.SELECT,
 }
 
 

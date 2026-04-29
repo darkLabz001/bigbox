@@ -381,15 +381,15 @@ class App:
         clock = pygame.time.Clock()
 
         while self.running:
-            # 1. Pump pygame events. In dev mode, translate keys -> ButtonEvents.
+            # 1. Pump pygame events. Translate keys -> ButtonEvents for external keyboards.
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     self.running = False
                 elif ev.type in (pygame.KEYDOWN, pygame.KEYUP):
                     if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                         self.running = False
-                    if self.dev_mode or self._gpio is None:
-                        kbd_translate(ev, self.bus)
+                    # Always translate keyboard events (supports USB/BLE keyboards on device)
+                    kbd_translate(ev, self.bus)
 
             # 2. Drain logical button events; route to the foreground screen.
             for bev in self.bus.drain():
