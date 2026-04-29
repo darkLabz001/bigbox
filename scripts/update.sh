@@ -63,25 +63,31 @@ cd "$REPO_DIR" || fail "cannot cd to $REPO_DIR"
 # Ensure system time is roughly correct. Raspberry Pis without RTC often drift,
 # which breaks HTTPS and Git (SSL certificate validation fails).
 if command -v timedatectl >/dev/null 2>&1; then
-    # Try to wait for NTP sync if it's enabled but not synced.
     echo "STATUS: Syncing system time..."
-    if ! bounded 10 timedatectl wait-sync; then
-        echo "Warning: timedatectl wait-sync timed out, continuing anyway." >>"$LOG"
+    # Try to wait for NTP sync if it's enabled but not synced.
+    if ! bounded 15 timedatectl wait-sync; then
+        echo "Warning: timedatectl wait-sync timed out." >>"$LOG"
     fi
+fi
+
+# Sanity check: if the year is 1970, HTTPS fetch WILL fail.
+YEAR=$(date +%Y)
+if [ "$YEAR" -lt 2024 ]; then
+    echo "Warning: System clock is set to $YEAR. Attempting to force time via NTP..." >>"$LOG"
+    sudo timeout 10 sntp -sS pool.ntp.org >>"$LOG" 2>&1 || true
 fi
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>>"$LOG")
 [ -n "$BRANCH" ] || fail "not on a branch"
 
 echo "STATUS: Fetching from GitHub..."
-# 60s is plenty even on a hot-spotted Pi; better than blocking indefinitely
-# if the network drops mid-handshake. core.askpass=/credential.helper=
-# disable any chance of an interactive auth prompt.
-if ! bounded 60 git \
+# 120s is safer for slow cellular/hotspot connections.
+if ! bounded 120 git \
         -c credential.helper= \
         -c core.askpass=true \
         fetch origin "$BRANCH"; then
-    fail "git fetch failed or timed out (network?)"
+    LAST_ERR=$(tail -n 2 "$LOG" | tr '\n' ' ')
+    fail "fetch failed: $LAST_ERR"
 fi
 echo "PROGRESS: 15"
 
