@@ -48,6 +48,7 @@ class GamesView:
         self.proc: subprocess.Popen | None = None
         self.playing_rom: str | None = None
         self._launch_time: float = 0.0
+        self.injector = None
 
         # Result screen
         self.last_result: list[str] | None = None
@@ -107,6 +108,7 @@ class GamesView:
             self.phase = PHASE_RESULT
             return
         self.proc = proc
+        self.injector = _emu.InputInjector()
         self._launch_time = time.time()
         self.phase = PHASE_RUNNING
 
@@ -120,34 +122,40 @@ class GamesView:
                     self.proc.kill()
                 except Exception:
                     pass
+        if self.injector:
+            self.injector.close()
+            self.injector = None
         self.proc = None
         self.playing_rom = None
         # Bounce back to the rom list of the same system
         self.phase = PHASE_ROM if self.current_system else PHASE_SYSTEM
 
     # ---------- input ----------
-    def handle(self, ev: ButtonEvent, ctx: App) -> None:
+    def handle(self, ev: ButtonEvent, ctx: App) -> bool:
+        if self.phase == PHASE_RUNNING:
+            if ev.button is Button.HK:
+                if ev.pressed:
+                    self._stop()
+                return True
+            if self.injector:
+                self.injector.inject(ev.button, ev.pressed)
+            return True  # Consume all events during gameplay
+
         if not ev.pressed:
-            return
+            return False
 
         if self.phase == PHASE_RESULT:
             if ev.button in (Button.A, Button.B, Button.START, Button.SELECT):
                 self.last_result = None
                 self.last_result_rc = None
                 self.phase = PHASE_ROM if self.current_system else PHASE_SYSTEM
-            return
-
-        if self.phase == PHASE_RUNNING:
-            # Any of these kills the emulator; B is the canonical one.
-            if ev.button in (Button.B, Button.START, Button.SELECT):
-                self._stop()
-            return
+            return True
 
         if self.phase == PHASE_SYSTEM:
             if ev.button is Button.B:
                 self.dismissed = True
             elif not self.systems:
-                return
+                pass
             elif ev.button is Button.UP:
                 self.sys_cursor = (self.sys_cursor - 1) % len(self.systems)
             elif ev.button is Button.DOWN:
@@ -156,18 +164,20 @@ class GamesView:
                 self.current_system = self.systems[self.sys_cursor][0]
                 self.list = self._build_rom_list()
                 self.phase = PHASE_ROM
-            return
+            return True
 
         if self.phase == PHASE_ROM:
             if ev.button is Button.B:
                 self.current_system = None
                 self._refresh_systems()
                 self.phase = PHASE_SYSTEM
-                return
+                return True
             action = self.list.handle(ev)
             if action and action.handler:
                 action.handler(ctx)
-            return
+            return True
+            
+        return False
 
     # ---------- render ----------
     def render(self, surf: pygame.Surface) -> None:
@@ -275,7 +285,7 @@ class GamesView:
         surf.blit(warn, (center_x - warn.get_width() // 2, center_y + 30))
 
         hint = self.hint_font.render(
-            "B (or START / SELECT) to stop", True, theme.FG_DIM)
+            "HK to stop", True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
 
     def _render_result(self, surf: pygame.Surface, head_h: int) -> None:

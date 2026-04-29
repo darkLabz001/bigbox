@@ -19,11 +19,69 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
+
+try:
+    import evdev
+    from evdev import UInput, ecodes as e
+    HAS_EVDEV = True
+except ImportError:
+    HAS_EVDEV = False
 
 
 ROMS_ROOT = Path("roms")
 BIOS_ROOT = Path("bios")
 EMULATOR_LOG = Path("/tmp/bigbox-emu.log")
+
+class InputInjector:
+    """Creates a virtual keyboard via uinput to feed bigbox ButtonEvents into the emulator."""
+    
+    def __init__(self):
+        self.ui: Optional[UInput] = None
+        if not HAS_EVDEV:
+            return
+            
+        # Map bigbox buttons to standard emulator keys
+        # mGBA defaults: Z=A, X=B, A=L, S=R, Enter=Start, Backspace=Select, Arrows=D-Pad
+        from bigbox.events import Button
+        self.keymap = {
+            Button.UP: e.KEY_UP,
+            Button.DOWN: e.KEY_DOWN,
+            Button.LEFT: e.KEY_LEFT,
+            Button.RIGHT: e.KEY_RIGHT,
+            Button.A: e.KEY_Z,          # GBA A -> Z
+            Button.B: e.KEY_X,          # GBA B -> X
+            Button.X: e.KEY_A,          # GBA L
+            Button.Y: e.KEY_S,          # GBA R
+            Button.LL: e.KEY_A,
+            Button.RR: e.KEY_S,
+            Button.START: e.KEY_ENTER,
+            Button.SELECT: e.KEY_BACKSPACE,
+        }
+        
+        events = {e.EV_KEY: list(self.keymap.values())}
+        try:
+            self.ui = UInput(events, name="bigbox-virtual-gamepad")
+        except Exception as ex:
+            print(f"[emulator] Failed to create UInput: {ex}")
+
+    def inject(self, btn, pressed: bool):
+        if not self.ui or btn not in self.keymap:
+            return
+        
+        try:
+            self.ui.write(e.EV_KEY, self.keymap[btn], 1 if pressed else 0)
+            self.ui.syn()
+        except Exception:
+            pass
+
+    def close(self):
+        if self.ui:
+            try:
+                self.ui.close()
+            except Exception:
+                pass
+            self.ui = None
 
 
 @dataclass
@@ -248,6 +306,18 @@ def _write_mgba_display_config() -> None:
         cp.set(section, "volume", "0x100")
         cp.set(section, "fastForwardVolume", "0x100")
         cp.set(section, "mute", "0")
+
+        # Key mappings
+        cp.set(section, "keyB", "120")       # 'x' -> B
+        cp.set(section, "keyA", "122")       # 'z' -> A
+        cp.set(section, "keySelect", "8")    # backspace
+        cp.set(section, "keyStart", "13")    # enter
+        cp.set(section, "keyRight", "1073741903") # right arrow
+        cp.set(section, "keyLeft", "1073741904")  # left arrow
+        cp.set(section, "keyUp", "1073741906")    # up arrow
+        cp.set(section, "keyDown", "1073741905")  # down arrow
+        cp.set(section, "keyR", "115")       # 's' -> R
+        cp.set(section, "keyL", "97")        # 'a' -> L
 
     with cfg_path.open("w") as f:
         cp.write(f, space_around_delimiters=False)

@@ -622,6 +622,11 @@ class App:
         else:
             self.held_buttons.discard(bev.button)
 
+        # Allow GamesView to receive key releases for the emulator
+        if self.games_view is not None:
+            if self.games_view.handle(bev, self):
+                return
+        
         if not bev.pressed:
             return
 
@@ -768,10 +773,6 @@ class App:
 
         if self.eviltwin_view is not None:
             self.eviltwin_view.handle(bev, self)
-            return
-
-        if self.games_view is not None:
-            self.games_view.handle(bev, self)
             return
 
         if self.tracker_view is not None:

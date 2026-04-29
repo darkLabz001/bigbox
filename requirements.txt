@@ -31,3 +31,4 @@ pandas
 numpy
 psutil
 yt-dlp
+evdev
