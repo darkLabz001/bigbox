@@ -14,7 +14,7 @@ Environment=DISPLAY=:0
 WorkingDirectory=/opt/bigbox
 
 # Launch a single-purpose X server on vt1 and run bigbox as its only client.
-ExecStartPre=/usr/bin/amixer sset "PCM" 100%
+ExecStartPre=/usr/bin/amixer -c 1 sset "PCM" 100% unmute
 ExecStart=/usr/bin/xinit /opt/bigbox/.venv/bin/python -m bigbox -- :0 vt1 -nocursor -nolisten tcp
 
 TTYPath=/dev/tty1
