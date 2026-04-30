@@ -33,9 +33,15 @@ class GPIOInput:
         from gpiozero import Button as GZButton  # type: ignore[import-not-found]
 
         for btn, pin in self._cfg.pins.items():
+            # Pin 2 (I2C SDA) and 3 (I2C SCL) have hardware pull-ups on the Pi.
+            # gpiozero can fail or act weird if we try to set a software pull-up on them.
+            use_pull_up = True
+            if pin in (2, 3):
+                use_pull_up = False
+                
             gz = GZButton(
                 pin,
-                pull_up=True,
+                pull_up=use_pull_up,
                 bounce_time=self._cfg.debounce_ms / 1000.0,
             )
             # We use a default-arg lambda to capture 'btn' from the loop scope.

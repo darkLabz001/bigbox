@@ -670,10 +670,12 @@ class App:
 
     def _dispatch(self, bev: ButtonEvent, carousel: Carousel) -> None:
         if bev.pressed:
+            print(f"[app] Button press: {bev.button}")
             self.held_buttons.add(bev.button)
             if bev.button is Button.HK:
                 self.hk_used = False
         else:
+            print(f"[app] Button release: {bev.button}")
             self.held_buttons.discard(bev.button)
             if bev.button is Button.HK and not self.hk_used:
                 self._open_hk_menu()
