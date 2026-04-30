@@ -119,16 +119,38 @@ class TailscaleView:
 
     def _toggle(self):
         backend_state = self.info.get("BackendState", "NoState")
-        cmd = ["sudo", "tailscale", "down" if backend_state == "Running" else "up"]
+        
+        # If logged out, redirect A button to the login flow
+        if backend_state in ("NoState", "NeedsLogin"):
+            self._start_login()
+            return
+
+        # Simple Start/Stop for already-authenticated nodes
+        cmd = ["sudo", "tailscale", "down" if backend_state == "Running" else "up", "--timeout=5s"]
         
         def _worker():
+            self.is_loading = True
             try:
                 subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
                 time.sleep(1)
                 self._refresh_status()
             except Exception as e:
                 self.status_msg = f"TOGGLE_FAILED: {str(e)}"
+            self.is_loading = False
         
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _logout(self):
+        self.is_loading = True
+        self.status_msg = "LOGGING_OUT..."
+        def _worker():
+            try:
+                subprocess.run(["sudo", "tailscale", "logout"], check=True)
+                time.sleep(1)
+                self._refresh_status()
+            except Exception as e:
+                self.status_msg = f"LOGOUT_FAILED: {str(e)}"
+            self.is_loading = False
         threading.Thread(target=_worker, daemon=True).start()
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
@@ -148,7 +170,10 @@ class TailscaleView:
             elif ev.button is Button.X:
                 self._start_login()
             elif ev.button is Button.Y:
-                self._refresh_status()
+                if Button.HK in ctx.held_buttons:
+                    self._logout()
+                else:
+                    self._refresh_status()
 
     def render(self, surf: pygame.Surface) -> None:
         surf.fill(theme.BG)
@@ -159,6 +184,13 @@ class TailscaleView:
         
         if self.phase == PHASE_STATUS:
             self._render_status(surf, head_h)
+            if self.is_loading:
+                # Dim the screen slightly and show a loading msg
+                overlay = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H - head_h - 35), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 150))
+                surf.blit(overlay, (0, head_h))
+                msg = self.f_main.render("PROCESSING...", True, theme.ACCENT)
+                surf.blit(msg, (theme.SCREEN_W//2 - msg.get_width()//2, theme.SCREEN_H//2))
         elif self.phase == PHASE_LOGIN:
             self._render_login(surf, head_h)
 
@@ -166,7 +198,10 @@ class TailscaleView:
         pygame.draw.rect(surf, (10, 10, 15), (0, theme.SCREEN_H - 35, theme.SCREEN_W, 35))
         surf.blit(self.f_small.render(f"STATUS: {self.status_msg}", True, theme.ACCENT), (10, theme.SCREEN_H - 26))
         
-        hint = "A: START/STOP  X: LOGIN  Y: REFRESH  B: BACK" if self.phase == PHASE_STATUS else "B: BACK"
+        if self.phase == PHASE_STATUS:
+            hint = "A: TOGGLE  X: LOGIN  HK+Y: LOGOUT  B: BACK"
+        else:
+            hint = "B: BACK"
         h_surf = self.f_small.render(hint, True, theme.FG_DIM)
         surf.blit(h_surf, (theme.SCREEN_W - h_surf.get_width() - 10, theme.SCREEN_H - 26))
 
@@ -176,14 +211,20 @@ class TailscaleView:
         
         backend_state = self.info.get("BackendState", "OFFLINE")
         is_running = backend_state == "Running"
-        color = theme.ACCENT if is_running else theme.ERR
+        needs_login = backend_state in ("NoState", "NeedsLogin")
+        
+        color = theme.ACCENT if is_running else (theme.WARN if needs_login else theme.ERR)
         
         surf.blit(self.f_main.render("BACKEND_STATE:", True, theme.FG_DIM), (x, y))
-        surf.blit(self.f_main.render(backend_state.upper(), True, color), (x + 180, y))
+        display_state = "LOGGED_OUT" if needs_login else backend_state.upper()
+        surf.blit(self.f_main.render(display_state, True, color), (x + 180, y))
         
         # Explicit Start/Stop indicator
-        action_text = "STOP SERVICE" if is_running else "START SERVICE"
-        surf.blit(self.f_small.render(f"(A) TO {action_text}", True, theme.ACCENT_DIM), (x + 350, y))
+        if needs_login:
+            action_text = "LOGIN (A)"
+        else:
+            action_text = "STOP (A)" if is_running else "START (A)"
+        surf.blit(self.f_small.render(action_text, True, theme.ACCENT_DIM), (x + 350, y))
 
         y += 40
         if is_running:
