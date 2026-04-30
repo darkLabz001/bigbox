@@ -36,6 +36,7 @@ class BettercapView:
         self.f_title = pygame.font.Font(None, 32)
         self.f_main = pygame.font.Font(None, 22)
         self.f_log = pygame.font.Font(None, 18)
+        self.f_small = pygame.font.Font(None, 18)
         self.f_tiny = pygame.font.Font(None, 14)
         
         self.selected_host_idx = 0
