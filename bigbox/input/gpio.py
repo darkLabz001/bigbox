@@ -29,8 +29,14 @@ class GPIOInput:
         self._stop = threading.Event()
 
     def start(self) -> None:
+        # Force lgpio factory (modern, supports Pi 4/5 better on Kali/Debian)
+        import os
+        os.environ["GPIOZERO_PIN_FACTORY"] = "lgpio"
+        
         # Imported here so dev mode (no Pi) doesn't need gpiozero at import time.
         from gpiozero import Button as GZButton  # type: ignore[import-not-found]
+        from gpiozero import Device
+        print(f"[input] GPIO starting (factory: {Device.pin_factory.__class__.__name__})")
 
         for btn, pin in self._cfg.pins.items():
             # Pin 2 (I2C SDA) and 3 (I2C SCL) have hardware pull-ups on the Pi.
@@ -64,10 +70,12 @@ class GPIOInput:
         self._buttons.clear()
 
     def _on_press(self, b: Button) -> None:
+        print(f"[input] GPIO press: {b}")
         self._held_since[b] = time.monotonic()
         self._bus.put(ButtonEvent(b, pressed=True))
 
     def _on_release(self, b: Button) -> None:
+        print(f"[input] GPIO release: {b}")
         self._held_since.pop(b, None)
         self._bus.put(ButtonEvent(b, pressed=False))
 
