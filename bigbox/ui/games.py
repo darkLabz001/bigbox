@@ -29,12 +29,15 @@ PHASE_SYSTEM = "system"
 PHASE_ROM = "rom"
 PHASE_RUNNING = "running"
 PHASE_RESULT = "result"
+PHASE_PYTHON = "python"
 
 
 class GamesView:
     def __init__(self) -> None:
         self.dismissed = False
         self.phase = PHASE_SYSTEM
+        self.trigger_internal = False
+        self.current_game_module = None
 
         # System picker
         self.systems: list[tuple[str, str, int]] = []  # (key, label, rom_count)
@@ -73,6 +76,9 @@ class GamesView:
     # ---------- refresh ----------
     def _refresh_systems(self) -> None:
         out: list[tuple[str, str, int]] = []
+        # Add internal Classics
+        out.append(("classics", "CLASSIC TERMINAL PAYLOADS", 2))
+        
         for key, sd in _emu.SYSTEMS.items():
             if key == "gba":  # Only GBA as requested
                 out.append((key, sd.label, len(sd.list_roms())))
@@ -81,6 +87,13 @@ class GamesView:
             self.sys_cursor = max(0, len(out) - 1)
 
     def _build_rom_list(self) -> ScrollList:
+        if self.current_system == "classics":
+            actions = [
+                Action("Wargames", lambda ctx: self._launch_python("wargames")),
+                Action("Oregon Trail", lambda ctx: self._launch_python("oregon_trail")),
+            ]
+            return ScrollList(actions)
+            
         sd = _emu.SYSTEMS.get(self.current_system or "")
         if not sd:
             return ScrollList([Action("[ no system ]", None)])
@@ -118,6 +131,17 @@ class GamesView:
         self._launch_time = time.time()
         self.phase = PHASE_RUNNING
 
+    def _launch_python(self, game_name: str) -> None:
+        self.phase = PHASE_PYTHON
+        if game_name == "wargames":
+            from bigbox.games import wargames
+            self.current_game_module = wargames
+        elif game_name == "oregon_trail":
+            from bigbox.games import oregon_trail
+            self.current_game_module = oregon_trail
+        
+        self.trigger_internal = True
+
     def _stop(self) -> None:
         if self.proc and self.proc.poll() is None:
             try:
@@ -138,6 +162,9 @@ class GamesView:
 
     # ---------- input ----------
     def handle(self, ev: ButtonEvent, ctx: App) -> bool:
+        if self.phase == PHASE_PYTHON:
+            return True
+
         if self.phase == PHASE_RUNNING:
             # Hotkey combo to stop: START + SELECT (either order)
             if ev.pressed and ev.button in (Button.START, Button.SELECT):
@@ -189,6 +216,18 @@ class GamesView:
 
     # ---------- render ----------
     def render(self, surf: pygame.Surface) -> None:
+        if self.phase == PHASE_PYTHON:
+            if getattr(self, "trigger_internal", False):
+                self.trigger_internal = False
+                from bigbox.app import App
+                import gc
+                apps = [obj for obj in gc.get_objects() if isinstance(obj, App)]
+                if apps:
+                    app = apps[0]
+                    self.current_game_module.run(surf, app.bus)
+                    self.phase = PHASE_ROM
+                return
+
         # Detect emulator exit
         if self.phase == PHASE_RUNNING and self.proc:
             rc = self.proc.poll()
