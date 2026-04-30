@@ -296,6 +296,7 @@
         <button class="tab-btn" onclick="showTab('library')">Library</button>
         <button class="tab-btn" onclick="showTab('wardrive')">Wardrive</button>
         <button class="tab-btn" onclick="showTab('terminal')">Terminal</button>
+        <button class="tab-btn" onclick="showTab('settings')">Settings</button>
     </nav>
 </header>
 
@@ -408,6 +409,22 @@
     <!-- TERMINAL PANEL -->
     <div id="terminal" class="tab-panel" style="padding: 0;">
         <div id="terminal-container"></div>
+    </div>
+
+    <!-- SETTINGS PANEL -->
+    <div id="settings" class="tab-panel">
+        <div class="card">
+            <h2>SYSTEM :: WEBHOOK</h2>
+            <div class="form-group">
+                <label>Discord / Slack / Generic Webhook URL</label>
+                <input type="text" id="webhookUrl" placeholder="https://discord.com/api/webhooks/...">
+            </div>
+            <button class="action-btn" onclick="saveWebhook()">Save Webhook</button>
+            <span id="webhookStatus" style="font-size: 12px; margin-left: 15px; color: var(--fg-dim);"></span>
+            <p style="font-size: 11px; color: var(--fg-dim); margin-top: 15px;">
+                Captures can be shared via this webhook from the "View Captures" menu on the device.
+            </p>
+        </div>
     </div>
 </main>
 
@@ -609,10 +626,35 @@
     }
     function raLogout() { fetch('/retroachievements/logout', { method: 'POST' }).then(() => checkAuth()); }
 
+    // --- Webhook ---
+    function refreshWebhook() {
+        fetch('/webhook/status').then(r => r.json()).then(data => {
+            document.getElementById('webhookUrl').value = data.url;
+        });
+    }
+
+    function saveWebhook() {
+        const url = document.getElementById('webhookUrl').value;
+        const status = document.getElementById('webhookStatus');
+        status.innerText = 'SAVING...';
+        
+        const fd = new FormData();
+        fd.append('url', url);
+        
+        fetch('/webhook/save', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                status.innerText = 'SAVED';
+                setTimeout(() => status.innerText = '', 2000);
+            })
+            .catch(() => { status.innerText = 'ERROR'; });
+    }
+
     // --- Init ---
     refreshLibrary();
     refreshWardrive();
     checkAuth();
+    refreshWebhook();
 </script>
 
 </body>

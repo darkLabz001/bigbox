@@ -356,8 +356,10 @@ async def ra_login(username: str = Form(...), password: str = Form(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"persist failed: {e}")
     return {"logged_in": True, "username": creds.username, "message": msg}
+from bigbox import webhooks as webhook_mod
 
-
+if TYPE_CHECKING:
+...
 @app.post("/retroachievements/logout")
 async def ra_logout():
     ra_mod.clear_creds()
@@ -366,3 +368,22 @@ async def ra_logout():
     except Exception:
         pass
     return {"logged_in": False}
+
+
+# ---------------- Webhook --------------------------------------------------
+
+@app.get("/webhook/status")
+async def webhook_status():
+    url = webhook_mod.load_webhook_url()
+    return {"url": url or ""}
+
+
+@app.post("/webhook/save")
+async def webhook_save(url: str = Form(...)):
+    url = url.strip()
+    try:
+        webhook_mod.save_webhook_url(url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"could not save webhook: {e}")
+    return {"status": "ok", "url": url}
+
