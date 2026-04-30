@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 from bigbox import theme
+from bigbox import eviltwin as et
 from bigbox.events import Button, ButtonEvent
 from bigbox.ui.section import SectionContext
 from bigbox.ui.wifi_attack import AP, Client, _list_wlan_ifaces, _read_airodump_csv
@@ -70,6 +71,7 @@ class WifiMultiToolView:
         self._dnsmasq: subprocess.Popen | None = None
         self._hostapd: subprocess.Popen | None = None
         
+        self.et_session: et.EvilTwinSession | None = None
         self._stop = False
         self._threads: list[threading.Thread] = []
 
@@ -192,10 +194,26 @@ class WifiMultiToolView:
             self.status_msg = "hcxdumptool not found"
 
     def _start_evil_twin(self) -> None:
-        self.status_msg = "Evil Twin (dnsmasq+hostapd) starting..."
-        # This requires more complex setup (config files, etc.)
-        # For now, we'll placeholder the status
-        self.status_msg = "Evil Twin active on wlan1 (Placeholder)"
+        self.status_msg = "Evil Twin: Restoring managed mode..."
+        # Evil Twin needs the interface in managed mode (et.py handles nmcli)
+        if self.mon_iface:
+            subprocess.run(["airmon-ng", "stop", self.mon_iface], stdout=subprocess.DEVNULL)
+        
+        ap = self.targeted_ap
+        self.et_session = et.EvilTwinSession(
+            iface=self.original_iface,
+            ssid=ap.essid or "Free WiFi",
+            channel=int(ap.channel) if ap.channel.isdigit() else 6
+        )
+        
+        def _worker():
+            ok, msg = self.et_session.start()
+            if ok:
+                self.status_msg = "Evil Twin AP Active"
+            else:
+                self.status_msg = f"ET Error: {msg}"
+        
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _do_deauth(self) -> None:
         if not self.mon_iface or not self.targeted_ap: return
@@ -242,6 +260,10 @@ class WifiMultiToolView:
 
     def _stop_procs(self) -> None:
         self._stop = True
+        if self.et_session:
+            self.et_session.stop()
+            self.et_session = None
+            
         for p in [self._airodump, self._hcxdumptool, self._dnsmasq, self._hostapd]:
             if p and p.poll() is None:
                 try: os.killpg(os.getpgid(p.pid), signal.SIGINT)
@@ -249,12 +271,17 @@ class WifiMultiToolView:
         self._airodump = self._hcxdumptool = self._dnsmasq = self._hostapd = None
 
     def _cleanup_and_exit(self) -> None:
+        self.status_msg = "Cleaning up..."
         self._stop_procs()
         if self.mon_iface: 
             subprocess.run(["airmon-ng", "stop", self.mon_iface], stdout=subprocess.DEVNULL)
-            # Restore managed mode services killed by airmon-ng check kill
+        
+        # Ensure managed mode is restored for the original interface
+        if self.original_iface:
+            subprocess.run(["nmcli", "device", "set", self.original_iface, "managed", "yes"], stdout=subprocess.DEVNULL)
             subprocess.run(["nmcli", "networking", "on"], stdout=subprocess.DEVNULL)
             subprocess.run(["systemctl", "restart", "NetworkManager"], stdout=subprocess.DEVNULL)
+            
         self.dismissed = True
 
     def _start_poll_thread(self) -> None:
@@ -296,6 +323,49 @@ class WifiMultiToolView:
             self._render_handshake(surf, head_h)
         elif self.phase == PHASE_ATTACK_PMKID:
             self._render_pmkid(surf, head_h)
+        elif self.phase == PHASE_ATTACK_EVIL_TWIN:
+            self._render_evil_twin(surf, head_h)
+
+    def _render_evil_twin(self, surf: pygame.Surface, head_h: int) -> None:
+        sess = self.et_session
+        if not sess:
+            return
+            
+        f_huge = pygame.font.Font(None, 80)
+        f_med = pygame.font.Font(None, 26)
+        f_small = pygame.font.Font(None, 20)
+        
+        # SSID banner
+        banner = f_med.render(f"ROGUE AP: {sess.ssid} (ch{sess.channel})", True, theme.ACCENT)
+        surf.blit(banner, (20, head_h + 20))
+        
+        # Stats
+        col_w = theme.SCREEN_W // 2
+        cy = head_h + 80
+        
+        # Clients
+        n_clients = sess.clients_connected()
+        c_surf = f_huge.render(str(n_clients), True, theme.FG)
+        surf.blit(c_surf, (col_w // 2 - c_surf.get_width() // 2, cy))
+        cl_surf = f_med.render("CLIENTS", True, theme.FG_DIM)
+        surf.blit(cl_surf, (col_w // 2 - cl_surf.get_width() // 2, cy + 70))
+        
+        # Creds
+        n_creds = sess.creds_captured()
+        cr_surf = f_huge.render(str(n_creds), True, theme.WARN)
+        surf.blit(cr_surf, (col_w + col_w // 2 - cr_surf.get_width() // 2, cy))
+        crl_surf = f_med.render("CREDS", True, theme.FG_DIM)
+        surf.blit(crl_surf, (col_w + col_w // 2 - crl_surf.get_width() // 2, cy + 70))
+        
+        # Info
+        y = head_h + 180
+        surf.blit(f_small.render(f"Interface: {sess.iface}", True, theme.FG_DIM), (40, y))
+        surf.blit(f_small.render(f"Gateway:   192.168.45.1", True, theme.FG_DIM), (40, y + 22))
+        surf.blit(f_small.render(f"Loot:      loot/captive/", True, theme.FG_DIM), (40, y + 44))
+        
+        if not sess.is_running():
+            err = f_med.render("AP ENGINE HALTED", True, theme.ERR)
+            surf.blit(err, (theme.SCREEN_W // 2 - err.get_width() // 2, theme.SCREEN_H - 80))
 
     def _render_list(self, surf: pygame.Surface, title: str, items: list[str], cursor: int, head_h: int) -> None:
         f = pygame.font.Font(None, 28)

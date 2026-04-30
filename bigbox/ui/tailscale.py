@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 PHASE_STATUS = "status"
 PHASE_LOGIN = "login"
+PHASE_ADVANCED = "advanced"
 
 class TailscaleView:
     def __init__(self) -> None:
@@ -26,6 +27,7 @@ class TailscaleView:
         self.status_msg = "RETRIEVING_DATA"
         
         self.info: Dict[str, Any] = {}
+        self.settings = {"accept_dns": True, "exit_node": False}
         self.is_loading = False
         self._stop_thread = False
         
@@ -33,19 +35,33 @@ class TailscaleView:
         self.f_main = pygame.font.Font(None, 24)
         self.f_small = pygame.font.Font(None, 20)
         self.f_tiny = pygame.font.Font(None, 16)
+        # Use DejaVuSansMono if available for QR codes, otherwise fallback to system mono
+        mono_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+        if os.path.exists(mono_path):
+            self.f_mono = pygame.font.Font(mono_path, 12)
+        else:
+            self.f_mono = pygame.font.Font(None, 12)
         
         self.qr_url: Optional[str] = None
         self.qr_lines: List[str] = []
+        self.adv_list: Optional[ScrollList] = None
         
         self._refresh_status()
 
     def _refresh_status(self):
         def _worker():
             try:
+                # 1. Get main status
                 cmd = ["sudo", "tailscale", "status", "--json"]
                 out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
                 self.info = json.loads(out)
                 self.status_msg = "UPLINK_STABLE"
+                
+                # 2. Get active settings (prefs)
+                pref_out = subprocess.check_output(["sudo", "tailscale", "debug", "prefs"], text=True, stderr=subprocess.DEVNULL)
+                # Crude parse since it's not JSON
+                self.settings["accept_dns"] = "CorpDNS: true" in pref_out
+                self.settings["exit_node"] = "AdvertiseExitNode: true" in pref_out
             except subprocess.CalledProcessError:
                 self.info = {}
                 self.status_msg = "TAILSCALE_OFFLINE"
@@ -153,11 +169,46 @@ class TailscaleView:
             self.is_loading = False
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _update_tailscale_settings(self, ctx=None):
+        self.is_loading = True
+        self.status_msg = "APPLYING_PREFS..."
+        def _worker():
+            try:
+                dns = "true" if self.settings["accept_dns"] else "false"
+                exit_node = "--advertise-exit-node" if self.settings["exit_node"] else ""
+                cmd = ["sudo", "tailscale", "up", f"--accept-dns={dns}"]
+                if exit_node: cmd.append(exit_node)
+                subprocess.run(cmd, check=True)
+                time.sleep(1)
+                self._refresh_status()
+            except Exception as e:
+                self.status_msg = f"PREFS_FAILED: {str(e)}"
+            self.is_loading = False
+            self.phase = PHASE_STATUS
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _open_advanced_menu(self):
+        def toggle_dns(ctx):
+            self.settings["accept_dns"] = not self.settings["accept_dns"]
+            self._open_advanced_menu() # Refresh list
+
+        def toggle_exit(ctx):
+            self.settings["exit_node"] = not self.settings["exit_node"]
+            self._open_advanced_menu()
+
+        actions = [
+            Action(f"ACCEPT DNS: {'[ON]' if self.settings['accept_dns'] else '[OFF]'}", toggle_dns),
+            Action(f"EXIT NODE: {'[ON]' if self.settings['exit_node'] else '[OFF]'}", toggle_exit),
+            Action("APPLY CHANGES", self._update_tailscale_settings),
+        ]
+        self.adv_list = ScrollList(actions)
+        self.phase = PHASE_ADVANCED
+
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
         if not ev.pressed: return
 
         if ev.button is Button.B:
-            if self.phase == PHASE_LOGIN:
+            if self.phase in (PHASE_LOGIN, PHASE_ADVANCED):
                 self.phase = PHASE_STATUS
                 self._refresh_status()
             else:
@@ -173,7 +224,10 @@ class TailscaleView:
                 if Button.HK in ctx.held_buttons:
                     self._logout()
                 else:
-                    self._refresh_status()
+                    self._open_advanced_menu()
+        
+        elif self.phase == PHASE_ADVANCED and self.adv_list:
+            self.adv_list.handle(ev, ctx)
 
     def render(self, surf: pygame.Surface) -> None:
         surf.fill(theme.BG)
@@ -193,13 +247,30 @@ class TailscaleView:
                 surf.blit(msg, (theme.SCREEN_W//2 - msg.get_width()//2, theme.SCREEN_H//2))
         elif self.phase == PHASE_LOGIN:
             self._render_login(surf, head_h)
+        elif self.phase == PHASE_ADVANCED and self.adv_list:
+            # Render a modal-style list
+            overlay = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            surf.blit(overlay, (0, 0))
+            
+            menu_rect = pygame.Rect(theme.SCREEN_W//4, theme.SCREEN_H//4, theme.SCREEN_W//2, theme.SCREEN_H//2)
+            pygame.draw.rect(surf, theme.BG_ALT, menu_rect, border_radius=8)
+            pygame.draw.rect(surf, theme.ACCENT, menu_rect, 2, border_radius=8)
+            
+            header = self.f_main.render("ADVANCED SETTINGS", True, theme.ACCENT)
+            surf.blit(header, (menu_rect.centerx - header.get_width()//2, menu_rect.y + 10))
+            
+            list_rect = pygame.Rect(menu_rect.x + 10, menu_rect.y + 40, menu_rect.width - 20, menu_rect.height - 60)
+            self.adv_list.render(surf, list_rect, self.f_main)
 
         # Footer
         pygame.draw.rect(surf, (10, 10, 15), (0, theme.SCREEN_H - 35, theme.SCREEN_W, 35))
         surf.blit(self.f_small.render(f"STATUS: {self.status_msg}", True, theme.ACCENT), (10, theme.SCREEN_H - 26))
         
         if self.phase == PHASE_STATUS:
-            hint = "A: TOGGLE  X: LOGIN  HK+Y: LOGOUT  B: BACK"
+            hint = "A: TOGGLE  X: LOGIN  Y: ADVANCED  HK+Y: LOGOUT  B: BACK"
+        elif self.phase == PHASE_ADVANCED:
+            hint = "UP/DOWN: SELECT  A: TOGGLE/APPLY  B: BACK"
         else:
             hint = "B: BACK"
         h_surf = self.f_small.render(hint, True, theme.FG_DIM)
@@ -260,7 +331,6 @@ class TailscaleView:
 
     def _render_login(self, surf: pygame.Surface, head_h: int):
         y = head_h + 10
-        x_start = 20
         
         if self.is_loading:
             msg = self.f_main.render("NEGOTIATING HANDSHAKE...", True, theme.ACCENT)
@@ -268,23 +338,21 @@ class TailscaleView:
             return
 
         if self.qr_lines:
-            # Render the ASCII QR code
-            # We want to center it horizontally
-            # Find the widest line to determine center
+            # Render the ASCII QR code with monospaced font
             max_w = 0
             for line in self.qr_lines:
-                lw, _ = self.f_tiny.size(line)
+                lw, _ = self.f_mono.size(line)
                 max_w = max(max_w, lw)
             
             x_qr = (theme.SCREEN_W - max_w) // 2
-            qr_y = y
+            qr_y = head_h + 5
             for line in self.qr_lines:
-                q_surf = self.f_tiny.render(line, True, theme.FG)
+                q_surf = self.f_mono.render(line, True, theme.FG)
                 surf.blit(q_surf, (x_qr, qr_y))
-                qr_y += 10 # Adjust line height for the tiny font
+                qr_y += 11 # Monospaced line height
             
             if self.qr_url:
-                y_text = theme.SCREEN_H - 80
+                y_text = theme.SCREEN_H - 85
                 u_surf = self.f_small.render("SCAN QR OR VISIT LINK:", True, theme.FG_DIM)
                 surf.blit(u_surf, (theme.SCREEN_W//2 - u_surf.get_width()//2, y_text))
                 

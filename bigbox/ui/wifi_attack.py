@@ -50,6 +50,10 @@ class AP:
     privacy: str = ""
 
     @property
+    def ssid(self) -> str:
+        return self.essid
+
+    @property
     def display(self) -> str:
         return self.essid or "<hidden>"
 
