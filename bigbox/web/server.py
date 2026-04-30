@@ -21,6 +21,7 @@ from bigbox.events import Button, ButtonEvent
 from bigbox import wigle as wigle_mod
 from bigbox import emulator as emu_mod
 from bigbox import retroachievements as ra_mod
+from bigbox import webhooks as webhook_mod
 
 if TYPE_CHECKING:
     from bigbox.app import App
@@ -356,10 +357,8 @@ async def ra_login(username: str = Form(...), password: str = Form(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"persist failed: {e}")
     return {"logged_in": True, "username": creds.username, "message": msg}
-from bigbox import webhooks as webhook_mod
 
-if TYPE_CHECKING:
-...
+
 @app.post("/retroachievements/logout")
 async def ra_logout():
     ra_mod.clear_creds()
