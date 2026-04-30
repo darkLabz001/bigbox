@@ -69,6 +69,27 @@ def _update(ctx: SectionContext) -> None:
     ctx.show_update("OTA update", [str(script)])
 
 
+def _toolbox_menu(ctx: SectionContext) -> None:
+    from pathlib import Path
+    script_dir = Path(__file__).resolve().parents[2] / "scripts"
+
+    def fix_deps():
+        ctx.show_update("Fixing Dependencies", [str(script_dir / "fix-deps.sh")])
+
+    def install_osint():
+        ctx.show_update("Installing OSINT Suite", [str(script_dir / "install-osint.sh")])
+
+    def install_ragnar():
+        ctx.show_update("Installing Ragnar", [str(script_dir / "install_ragnar.sh")])
+
+    actions = [
+        ("Verify Core Tools", fix_deps),
+        ("Install OSINT Suite", install_osint),
+        ("Install Ragnar", install_ragnar),
+    ]
+    ctx.show_menu("Toolbox", actions)
+
+
 def build() -> Section:
     return Section(
         title="Settings",
@@ -80,6 +101,7 @@ def build() -> Section:
             Action("Tailscale VPN", _tailscale, "secure access to your private network"),
             Action("Theme Manager", _theme_manager, "install and manage themes"),
             Action("Bash Terminal", _terminal, "full root shell with OSK"),
+            Action("Toolbox", _toolbox_menu, "System maintenance and tool installation"),
             Action("Check for updates (OTA)", _update),
             Action("View Flock Loot", _view_loot, "intel gathered from FlockSeeker"),
             Action("Volume up", _vol_up),

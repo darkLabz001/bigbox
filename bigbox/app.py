@@ -305,6 +305,9 @@ class App:
         self.update_view = view
         run_streaming(argv, view.append)
 
+    def show_menu(self, title: str, actions: list[tuple[str, Callable[[], None]]]) -> None:
+        self.menu_view = MenuView(title, actions)
+
     def get_input(self, title: str, callback: Callable[[str | None], None], initial: str = "") -> None:
         self.kb_view = KeyboardView(title, callback, initial)
 
