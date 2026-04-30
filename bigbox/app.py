@@ -266,7 +266,7 @@ class App:
         self.eviltwin_view = EvilTwinView()
 
     def show_captures(self) -> None:
-        from bigbox.ui.media_player import CapturesView
+        from bigbox.ui.captures import CapturesView
         self.captures_view = CapturesView()
 
     def show_games(self) -> None:
