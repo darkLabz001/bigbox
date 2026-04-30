@@ -17,6 +17,10 @@ def _open_youtube(ctx: SectionContext) -> None:
     ctx.show_youtube()
 
 
+def _view_captures(ctx: SectionContext) -> None:
+    ctx.show_captures()
+
+
 def build() -> Section:
     return Section(
         title="Media",
@@ -27,5 +31,6 @@ def build() -> Section:
             Action("Open Media Player", _open_player, "Browse and play movies"),
             Action("Free Internet TV", _open_tv, "Watch live world news & TV"),
             Action("YouTube", _open_youtube, "High-fidelity tactical YouTube browser"),
+            Action("View Captures", _view_captures, "View screenshots and recordings"),
         ],
     )

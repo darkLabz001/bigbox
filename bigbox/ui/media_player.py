@@ -31,6 +31,7 @@ PHASE_CATEGORY = "category"
 PHASE_FILES = "files"
 PHASE_PLAYING = "playing"
 PHASE_RESULT = "result"
+PHASE_VIEW_IMAGE = "view_image"
 
 
 class MediaPlayerView:
@@ -475,3 +476,117 @@ class MediaPlayerView:
             "B: dismiss   /tmp/bigbox-mpv.log has full output",
             True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
+
+
+class CapturesView:
+    def __init__(self) -> None:
+        self.dismissed = False
+        self.phase = PHASE_FILES
+        
+        self.dirs = ["screenshots", "recordings"]
+        self.list = ScrollList([])
+        self.current_img: pygame.Surface | None = None
+        self.current_fname: str | None = None
+        
+        # Cache fonts
+        self.title_font = pygame.font.Font(None, theme.FS_TITLE)
+        self.body_font = pygame.font.Font(None, theme.FS_BODY)
+        self.hint_font = pygame.font.Font(None, theme.FS_SMALL)
+        
+        self._refresh_list()
+
+    def _refresh_list(self) -> None:
+        actions = []
+        import os
+        for dname in self.dirs:
+            if os.path.exists(dname):
+                # Get files and sort by modification time (newest first)
+                try:
+                    files = [f for f in os.listdir(dname) if os.path.isfile(os.path.join(dname, f))]
+                    files.sort(key=lambda f: os.path.getmtime(os.path.join(dname, f)), reverse=True)
+                    
+                    for f in files:
+                        full = os.path.join(dname, f)
+                        def make_handler(path):
+                            return lambda ctx: self._open_file(path)
+                        size = os.path.getsize(full) / 1024
+                        actions.append(Action(f, make_handler(full), f"{dname.upper()} :: {size:.1f}KB"))
+                except Exception:
+                    pass
+        
+        if not actions:
+            actions.append(Action("[ No captures found ]", None))
+        self.list = ScrollList(actions)
+
+    def _open_file(self, path: str) -> None:
+        if path.lower().endswith(".mp4"):
+            self._play_video(path)
+        elif path.lower().endswith((".png", ".jpg", ".jpeg")):
+            try:
+                self.current_img = pygame.image.load(path)
+                self.current_fname = os.path.basename(path)
+                self.phase = PHASE_VIEW_IMAGE
+            except Exception as e:
+                print(f"[captures] Error loading image: {e}")
+
+    def _play_video(self, path: str) -> None:
+        env = os.environ.copy()
+        env.setdefault("DISPLAY", ":0")
+        env.setdefault("XAUTHORITY", "/root/.Xauthority")
+        # Use simple mpv for video playback
+        cmd = ["mpv", "--vo=x11", "--fs", "--no-osc", path]
+        try:
+            subprocess.Popen(cmd, env=env)
+        except Exception as e:
+            print(f"[captures] mpv launch failed: {e}")
+
+    def handle(self, ev: ButtonEvent, ctx: App) -> None:
+        if not ev.pressed: return
+        
+        if self.phase == PHASE_VIEW_IMAGE:
+            if ev.button in (Button.B, Button.A):
+                self.phase = PHASE_FILES
+                self.current_img = None
+            return
+
+        if ev.button is Button.B:
+            self.dismissed = True
+            return
+            
+        action = self.list.handle(ev)
+        if action and action.handler:
+            action.handler(ctx)
+
+    def render(self, surf: pygame.Surface) -> None:
+        surf.fill(theme.BG)
+        
+        head_h = 60
+        pygame.draw.rect(surf, theme.BG_ALT, (0, 0, theme.SCREEN_W, head_h))
+        pygame.draw.line(surf, theme.ACCENT, (0, head_h - 1), (theme.SCREEN_W, head_h - 1), 2)
+        
+        if self.phase == PHASE_VIEW_IMAGE:
+            title_text = f"VIEW :: {self.current_fname}"
+        else:
+            title_text = "SYSTEM CAPTURES"
+            
+        title = self.title_font.render(title_text, True, theme.ACCENT)
+        surf.blit(title, (theme.PADDING, (head_h - title.get_height()) // 2))
+
+        if self.phase == PHASE_VIEW_IMAGE and self.current_img:
+            iw, ih = self.current_img.get_size()
+            sw, sh = theme.SCREEN_W, theme.SCREEN_H - head_h - 40
+            scale = min(sw/iw, sh/ih)
+            nw, nh = int(iw*scale), int(ih*scale)
+            scaled = pygame.transform.smoothscale(self.current_img, (nw, nh))
+            surf.blit(scaled, (sw//2 - nw//2, head_h + (theme.SCREEN_H - head_h - 40)//2 - nh//2))
+            
+            hint = self.hint_font.render("B: Back", True, theme.FG_DIM)
+            surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
+        else:
+            list_rect = pygame.Rect(theme.PADDING, head_h + theme.PADDING, 
+                                   theme.SCREEN_W - 2*theme.PADDING, 
+                                   theme.SCREEN_H - head_h - 2*theme.PADDING - 40)
+            self.list.render(surf, list_rect, self.body_font)
+            
+            hint = self.hint_font.render("UP/DOWN: Navigate  A: View/Play  B: Back", True, theme.FG_DIM)
+            surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))

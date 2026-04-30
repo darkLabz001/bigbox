@@ -77,6 +77,7 @@ class App:
         self.wardrive_view: WardriveView | None = None
         self.eviltwin_view: EvilTwinView | None = None
         self.games_view: GamesView | None = None
+        self.captures_view: CapturesView | None = None
         self.tracker_view: TrackerView | None = None
         self.probe_view: ProbeSnifferView | None = None
         self.beacon_view: BeaconFloodView | None = None
@@ -262,6 +263,10 @@ class App:
     def show_eviltwin(self) -> None:
         self.eviltwin_view = EvilTwinView()
 
+    def show_captures(self) -> None:
+        from bigbox.ui.media_player import CapturesView
+        self.captures_view = CapturesView()
+
     def show_games(self) -> None:
         self.games_view = GamesView()
 
@@ -354,6 +359,7 @@ class App:
         self.wardrive_view = None
         self.eviltwin_view = None
         self.games_view = None
+        self.captures_view = None
         self.tracker_view = None
         self.probe_view = None
         self.beacon_view = None
@@ -587,6 +593,10 @@ class App:
                 self.eviltwin_view.render(screen)
                 if self.eviltwin_view.dismissed:
                     self.eviltwin_view = None
+            elif self.captures_view is not None:
+                self.captures_view.render(screen)
+                if self.captures_view.dismissed:
+                    self.captures_view = None
             elif self.games_view is not None:
                 self.games_view.render(screen)
                 if self.games_view.dismissed:
