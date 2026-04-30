@@ -479,11 +479,17 @@ class MediaPlayerView:
 
 
 class CapturesView:
+    # Unified capture directory. app.py's _take_screenshot and
+    # _toggle_screen_record both write here. Old screenshots/ +
+    # recordings/ paths are still scanned so files from before the
+    # change still show up in the list.
+    CAPTURES_DIR = "media/captures"
+
     def __init__(self) -> None:
         self.dismissed = False
         self.phase = PHASE_FILES
-        
-        self.dirs = ["screenshots", "recordings"]
+
+        self.dirs = [self.CAPTURES_DIR, "screenshots", "recordings"]
         self.list = ScrollList([])
         self.current_img: pygame.Surface | None = None
         self.current_fname: str | None = None

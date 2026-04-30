@@ -12,6 +12,7 @@ import os
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Callable
 
 import pygame
@@ -926,64 +927,123 @@ class App:
         ]
         self.menu_view = MenuView("HOTKEYS", actions)
 
+    # ---------- captures ---------------------------------------------------
+    # Both screenshots and recordings land here so the View Captures screen
+    # has a single directory to scan.
+    CAPTURES_DIR = Path("media/captures")
+
+    def _has_v4l2m2m_encoder(self) -> bool:
+        """Pi 4 has hardware h264 encode via /dev/video11. Detect once and
+        cache. Falls back to mjpeg if v4l2m2m isn't there."""
+        if hasattr(self, "_v4l2m2m_cache"):
+            return self._v4l2m2m_cache
+        ok = os.path.exists("/dev/video11")
+        if ok:
+            # Also confirm ffmpeg has the encoder compiled in
+            try:
+                out = subprocess.run(
+                    ["ffmpeg", "-hide_banner", "-encoders"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                ok = "h264_v4l2m2m" in out.stdout
+            except Exception:
+                ok = False
+        self._v4l2m2m_cache = ok
+        return ok
+
     def _toggle_screen_record(self) -> None:
         if self.recording_proc:
-            # Stop recording
+            # Stop recording — ffmpeg -f mpegts wants 'q' on stdin for a
+            # clean trailer, but SIGTERM on most modern ffmpeg is fine.
             try:
-                # ffmpeg expects 'q' on stdin to stop cleanly, but terminate often works
+                if self.recording_proc.stdin:
+                    try:
+                        self.recording_proc.stdin.write(b"q\n")
+                        self.recording_proc.stdin.flush()
+                    except Exception:
+                        pass
                 self.recording_proc.terminate()
                 self.recording_proc.wait(timeout=3)
-            except:
-                self.recording_proc.kill()
+            except Exception:
+                try:
+                    self.recording_proc.kill()
+                except Exception:
+                    pass
             self.recording_proc = None
-            self.toast("Recording saved to recordings/")
+            self.toast("Recording saved to media/captures/")
+            return
+
+        # Start recording.
+        from datetime import datetime
+        self.CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+        fname = self.CAPTURES_DIR / (
+            f"rec_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        )
+
+        if not self.dev_mode:
+            # fbdev source — direct framebuffer read, no X handshake.
+            in_args = ["-f", "fbdev", "-i", "/dev/fb0"]
         else:
-            # Start recording
-            import os
-            from datetime import datetime
-            rec_dir = Path("recordings")
-            if not rec_dir.exists():
-                rec_dir.mkdir(parents=True)
-            fname = rec_dir / f"rec_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-            
-            # Use ffmpeg with x11grab or fbdev depending on environment
-            if not self.dev_mode:
-                # fbdev is faster for captures directly from /dev/fb0
-                cmd = [
-                    "ffmpeg", "-y",
-                    "-f", "fbdev", "-i", "/dev/fb0",
-                    "-r", "15",
-                    "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
-                    str(fname)
-                ]
-            else:
-                # In dev mode (X11), use x11grab
-                display = os.environ.get("DISPLAY", ":0")
-                cmd = [
-                    "ffmpeg", "-y",
-                    "-f", "x11grab", "-s", "800x480", "-i", display,
-                    "-r", "15",
-                    "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
-                    str(fname)
-                ]
-            
-            try:
-                self.recording_proc = subprocess.Popen(
-                    cmd, 
-                    stdout=subprocess.DEVNULL, 
-                    stderr=subprocess.DEVNULL,
-                    stdin=subprocess.PIPE
-                )
-                self.recording_start_time = time.time()
-                self.toast("Recording started...")
-            except Exception as e:
-                self.toast(f"Record failed: {e}")
+            display = os.environ.get("DISPLAY", ":0")
+            in_args = ["-f", "x11grab", "-s", "800x480", "-i", display]
+
+        # Encoder choice: hardware first, MJPEG fallback. Both run at
+        # ~10% CPU on a Pi 4 instead of the ~120% libx264 was costing,
+        # which is why bigbox was freezing during record.
+        if self._has_v4l2m2m_encoder():
+            enc_args = [
+                "-c:v", "h264_v4l2m2m",
+                "-b:v", "1500k",
+                "-pix_fmt", "yuv420p",
+            ]
+        else:
+            enc_args = [
+                "-c:v", "mjpeg",
+                "-q:v", "5",        # 1=best, 31=worst
+                "-pix_fmt", "yuvj420p",
+            ]
+
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            *in_args,
+            "-r", "12",             # 12 fps captures bigbox's adaptive 30fps fine
+            *enc_args,
+            str(fname),
+        ]
+        try:
+            self.recording_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.PIPE,
+            )
+            self.recording_start_time = time.time()
+            self.toast(f"Recording -> {fname.name}")
+        except FileNotFoundError:
+            self.toast("ffmpeg not installed")
+        except Exception as e:
+            self.toast(f"Record failed: {e}")
 
     def _take_screenshot(self) -> None:
-        import os
         from datetime import datetime
-        if not os.path.exists("screenshots"):
-            os.makedirs("screenshots")
-        fname = f"screenshots/shot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        pygame.image.save(pygame.display.get_surface(), fname)
-        self.toast(f"Saved {fname}")
+        self.CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+        fname = self.CAPTURES_DIR / (
+            f"shot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        )
+        # Snapshot the surface synchronously (cheap), then encode + write
+        # to disk in a background thread. PNG encode of 800x480 takes
+        # ~100ms on a Pi 4 — synchronous it visibly stutters the UI.
+        try:
+            surf = pygame.display.get_surface().copy()
+        except Exception as e:
+            self.toast(f"Screenshot grab failed: {e}")
+            return
+
+        def _save():
+            try:
+                pygame.image.save(surf, str(fname))
+            except Exception as e:
+                print(f"[screenshot] save failed: {e}")
+
+        threading.Thread(target=_save, daemon=True).start()
+        self.toast(f"Saved {fname.name}")
