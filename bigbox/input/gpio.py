@@ -31,11 +31,14 @@ class GPIOInput:
     def start(self) -> None:
         # Force lgpio factory (modern, supports Pi 4/5 better on Kali/Debian)
         import os
-        os.environ["GPIOZERO_PIN_FACTORY"] = "lgpio"
+        from gpiozero import Device
+        from gpiozero.pins.lgpio import LGPIOFactory
+        
+        if not isinstance(Device.pin_factory, LGPIOFactory):
+            Device.pin_factory = LGPIOFactory()
         
         # Imported here so dev mode (no Pi) doesn't need gpiozero at import time.
         from gpiozero import Button as GZButton  # type: ignore[import-not-found]
-        from gpiozero import Device
         print(f"[input] GPIO starting (factory: {Device.pin_factory.__class__.__name__})")
 
         for btn, pin in self._cfg.pins.items():
