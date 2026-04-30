@@ -525,24 +525,54 @@ class CapturesView:
         self.list = ScrollList(actions)
 
     def _open_file(self, path: str) -> None:
-        if path.lower().endswith(".mp4"):
+        if path.lower().endswith((".mp4", ".avi", ".mkv", ".mjpg")):
             self._play_video(path)
         elif path.lower().endswith((".png", ".jpg", ".jpeg")):
             try:
-                self.current_img = pygame.image.load(path)
+                raw = pygame.image.load(path)
+                # Pre-scale to fit the viewport ONCE on load. The previous
+                # code re-ran pygame.transform.smoothscale every render
+                # frame at 30fps, which was the freeze the user saw — a
+                # full 800x480 bilinear rescale per frame pegs a Pi core.
+                head_h = 60
+                sw, sh = theme.SCREEN_W, theme.SCREEN_H - head_h - 40
+                iw, ih = raw.get_size()
+                scale = min(sw / iw, sh / ih)
+                nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
+                self.current_img = pygame.transform.smoothscale(raw, (nw, nh))
                 self.current_fname = os.path.basename(path)
                 self.phase = PHASE_VIEW_IMAGE
             except Exception as e:
                 print(f"[captures] Error loading image: {e}")
 
     def _play_video(self, path: str) -> None:
+        # Same flag set MediaPlayerView uses — stdin=DEVNULL avoids the
+        # SIGTTIN freeze; --vo=x11 is required because the GamePi43 image
+        # is fbdev (no DRM/Xv); --ao fallback chain handles ALSA being
+        # the wrong default. --no-input-default-bindings keeps mpv from
+        # grabbing keys bigbox is also reading.
         env = os.environ.copy()
         env.setdefault("DISPLAY", ":0")
         env.setdefault("XAUTHORITY", "/root/.Xauthority")
-        # Use simple mpv for video playback
-        cmd = ["mpv", "--vo=x11", "--fs", "--no-osc", path]
+        cmd = [
+            "mpv",
+            "--vo=x11",
+            "--fs",
+            "--no-osc",
+            "--ao=alsa,pulse,null",
+            "--no-input-default-bindings",
+            "--audio-display=no",
+            "--really-quiet",
+            path,
+        ]
         try:
-            subprocess.Popen(cmd, env=env)
+            subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env,
+            )
         except Exception as e:
             print(f"[captures] mpv launch failed: {e}")
 
@@ -579,13 +609,13 @@ class CapturesView:
         surf.blit(title, (theme.PADDING, (head_h - title.get_height()) // 2))
 
         if self.phase == PHASE_VIEW_IMAGE and self.current_img:
-            iw, ih = self.current_img.get_size()
-            sw, sh = theme.SCREEN_W, theme.SCREEN_H - head_h - 40
-            scale = min(sw/iw, sh/ih)
-            nw, nh = int(iw*scale), int(ih*scale)
-            scaled = pygame.transform.smoothscale(self.current_img, (nw, nh))
-            surf.blit(scaled, (sw//2 - nw//2, head_h + (theme.SCREEN_H - head_h - 40)//2 - nh//2))
-            
+            # current_img is already pre-scaled in _open_file. Just blit it.
+            nw, nh = self.current_img.get_size()
+            sh = theme.SCREEN_H - head_h - 40
+            x = (theme.SCREEN_W - nw) // 2
+            y = head_h + (sh - nh) // 2
+            surf.blit(self.current_img, (x, y))
+
             hint = self.hint_font.render("B: Back", True, theme.FG_DIM)
             surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
         else:
