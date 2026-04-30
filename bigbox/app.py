@@ -702,6 +702,11 @@ class App:
                 self._open_hk_menu()
                 return
 
+        # Fallback for HK menu: SELECT + START (if not already handled)
+        if not bev.repeat and Button.SELECT in self.held_buttons and Button.START in self.held_buttons:
+            self._open_hk_menu()
+            return
+
         # Specialized View Handling (Modal views)
         if self.menu_view is not None:
             self.menu_view.handle(bev)

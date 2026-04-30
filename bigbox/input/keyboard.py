@@ -37,6 +37,7 @@ KEYMAP: dict[int, Button] = {
     
     # System
     pygame.K_h: Button.HK,
+    pygame.K_HOME: Button.HK,
     pygame.K_TAB: Button.SELECT,
 }
 
