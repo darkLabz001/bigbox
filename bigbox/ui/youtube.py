@@ -115,7 +115,7 @@ class YouTubeView:
         try:
             # Re-enforce volume
             if shutil.which("amixer"):
-                subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
+                subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"], capture_output=True)
             self.playing_proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.DEVNULL,

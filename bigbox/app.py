@@ -424,7 +424,8 @@ class App:
             if now - self._last_vol_enforce > 10:
                 self._last_vol_enforce = now
                 try:
-                    subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
+                    # Force Card 1 (Headphones) to 100% and unmute
+                    subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"], capture_output=True)
                 except:
                     pass
 

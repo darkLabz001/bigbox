@@ -233,11 +233,12 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     env.setdefault("XAUTHORITY", "/root/.Xauthority")
     # Force the emulator's ALSA usage onto the Headphones card (Card 1).
     env.setdefault("SDL_AUDIODRIVER", "alsa")
-    env.setdefault("AUDIODEV", "hw:1,0")
+    env.setdefault("AUDIODEV", "plughw:1,0")
+    env.setdefault("ALSA_PCM_DEVICE", "plughw:1,0")
+    env.setdefault("ALSA_CARD", "Headphones")
     try:
-        # Pre-bump system volume for card 1 (Headphones)
-        subprocess.run(["amixer", "-c", "1", "sset", "Headphones", "100%"], capture_output=True)
-        subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%"], capture_output=True)
+        # Pre-bump system volume for card 1 (Headphones) and ensure it's unmuted
+        subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"], capture_output=True)
     except:
         pass
 

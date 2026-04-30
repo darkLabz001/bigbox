@@ -7,17 +7,17 @@ from bigbox.ui import Action, Section, SectionContext
 
 
 def _vol_up(ctx: SectionContext) -> None:
-    out = run_capture(["amixer", "set", "Master", "5%+"])
+    out = run_capture(["amixer", "-c", "1", "set", "PCM", "5%+"])
     ctx.show_result("volume +", out)
 
 
 def _vol_down(ctx: SectionContext) -> None:
-    out = run_capture(["amixer", "set", "Master", "5%-"])
+    out = run_capture(["amixer", "-c", "1", "set", "PCM", "5%-"])
     ctx.show_result("volume -", out)
 
 
 def _vol_mute(ctx: SectionContext) -> None:
-    out = run_capture(["amixer", "set", "Master", "toggle"])
+    out = run_capture(["amixer", "-c", "1", "set", "PCM", "toggle"])
     ctx.show_result("mute toggle", out)
 
 

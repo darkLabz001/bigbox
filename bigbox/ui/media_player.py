@@ -189,7 +189,7 @@ class MediaPlayerView:
         # pixels on this screen; tested live on the device.
         # Boost volume to max at system level before starting mpv
         try:
-            subprocess.run(["amixer", "sset", "PCM", "100%"], capture_output=True)
+            subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"], capture_output=True)
         except:
             pass
 
