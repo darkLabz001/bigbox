@@ -20,6 +20,8 @@ from bigbox.ui.tv import InternetTVView
 from bigbox.ui.youtube import YouTubeView
 from bigbox.ui.tailscale import TailscaleView
 from bigbox.ui.anonsurf import AnonSurfView
+from bigbox.ui.vault import VaultView
+from bigbox.ui.bettercap import BettercapView
 from bigbox.ui.mail import MailView
 from bigbox.ui.messenger import MessengerView
 from bigbox.ui.ragnar import RagnarView
@@ -69,6 +71,8 @@ __all__ = [
     "YouTubeView",
     "TailscaleView",
     "AnonSurfView",
+    "VaultView",
+    "BettercapView",
     "MailView",
     "MessengerView",
     "RagnarView",

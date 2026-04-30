@@ -33,6 +33,7 @@ apt-get install -y --no-install-recommends \
     aircrack-ng iw wireless-tools \
     tcpdump mdk4 wifite reaver bully pixiewps tshark \
     hashcat macchanger \
+    cryptsetup bettercap \
     bluez \
     alsa-utils \
     mpv \

@@ -32,6 +32,10 @@ def _anonsurf(ctx: SectionContext) -> None:
     ctx.show_anonsurf()
 
 
+def _bettercap(ctx: SectionContext) -> None:
+    ctx.show_bettercap()
+
+
 def build() -> Section:
     return Section(
         title="Network",
@@ -45,5 +49,6 @@ def build() -> Section:
             Action("DNS config", _resolv),
             Action("Public IP", _public_ip),
             Action("Anon Surf (Stealth)", _anonsurf, "Route all traffic via Tor"),
+            Action("Bettercap Dashboard", _bettercap, "Real-time network monitoring"),
         ],
     )
