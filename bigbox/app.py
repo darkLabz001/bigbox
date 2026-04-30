@@ -858,6 +858,10 @@ class App:
             self.eviltwin_view.handle(bev, self)
             return
 
+        if self.captures_view is not None:
+            self.captures_view.handle(bev, self)
+            return
+
         if self.tracker_view is not None:
             self.tracker_view.handle(bev, self)
             return
