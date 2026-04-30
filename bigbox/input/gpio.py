@@ -42,15 +42,10 @@ class GPIOInput:
         print(f"[input] GPIO starting (factory: {Device.pin_factory.__class__.__name__})")
 
         for btn, pin in self._cfg.pins.items():
-            # Pin 2 (I2C SDA) and 3 (I2C SCL) have hardware pull-ups on the Pi.
-            # gpiozero can fail or act weird if we try to set a software pull-up on them.
-            use_pull_up = True
-            if pin in (2, 3):
-                use_pull_up = False
-                
+            print(f"[input] init button {btn} on pin {pin}")
             gz = GZButton(
                 pin,
-                pull_up=use_pull_up,
+                pull_up=True,
                 bounce_time=self._cfg.debounce_ms / 1000.0,
             )
             # We use a default-arg lambda to capture 'btn' from the loop scope.
