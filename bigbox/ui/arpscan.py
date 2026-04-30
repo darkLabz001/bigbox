@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import pygame
 
-from bigbox import theme
+from bigbox import oui, theme
 from bigbox.events import Button, ButtonEvent
 from bigbox.ui.section import SectionContext
 
@@ -19,6 +19,25 @@ class ArpDevice:
     ip: str
     mac: str
     vendor: str = "Unknown"
+    device_class: str = ""
+
+
+def _make_device(ip: str, mac: str, raw_vendor: str) -> "ArpDevice":
+    # arp-scan emits "(Unknown)" when its bundled OUI db doesn't have the
+    # prefix — fall through to our lookup. Keep arp-scan's value when it
+    # has one so output stays consistent with what users see in arp-scan
+    # itself. Class always comes from our heuristic.
+    raw = raw_vendor.strip()
+    looked_vendor, klass = oui.lookup(mac)
+    if not raw or raw.lower().startswith("(unknown"):
+        vendor = looked_vendor or "Unknown"
+    else:
+        vendor = raw
+        if not klass:
+            # Vendor came from arp-scan but our DB didn't recognise the
+            # OUI — try classifying by arp-scan's vendor string anyway.
+            klass = oui.classify(vendor)
+    return ArpDevice(ip=ip, mac=mac, vendor=vendor, device_class=klass)
 
 
 class ARPScanView:
@@ -81,9 +100,8 @@ class ARPScanView:
                     match = re.search(r'(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F:]{17})\s+(.*)', line)
                     if match:
                         ip, mac, vendor = match.groups()
-                        dev = ArpDevice(ip=ip, mac=mac, vendor=vendor.strip())
-                        self.devices.append(dev)
-                        
+                        self.devices.append(_make_device(ip, mac, vendor))
+
                         # Auto-scroll
                         max_scroll = max(0, len(self.devices) * 45 - 300)
                         if self._scroll_y >= max_scroll - 90:
@@ -158,7 +176,7 @@ class ARPScanView:
                         match = re.search(r'(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F:]{17})\s+(.*)', line)
                         if match:
                             ip, mac, vendor = match.groups()
-                            self.devices.append(ArpDevice(ip=ip, mac=mac, vendor=vendor.strip()))
+                            self.devices.append(_make_device(ip, mac, vendor))
                 self._proc.wait(timeout=1.0)
                 self.status_msg = "SCAN COMPLETE"
             except Exception: pass
@@ -233,11 +251,15 @@ class ARPScanView:
             ip_txt = f_body.render(dev.ip, True, theme.FG)
             mac_txt = f_body.render(dev.mac, True, theme.FG_DIM)
             vendor_txt = f_vendor.render(dev.vendor[:40], True, theme.ACCENT)
-            
+
             surf.blit(ip_txt, (list_rect.x + 5, y))
             surf.blit(mac_txt, (list_rect.x + 180, y))
             surf.blit(vendor_txt, (list_rect.x + 5, y + 20))
-            
+
+            if dev.device_class:
+                klass_txt = f_vendor.render(f"[{dev.device_class}]", True, theme.WARN)
+                surf.blit(klass_txt, (list_rect.x + 12 + vendor_txt.get_width(), y + 20))
+
             pygame.draw.circle(surf, (0, 255, 100), (list_rect.right - 20, y + 10), 6)
 
         if self.scanning:

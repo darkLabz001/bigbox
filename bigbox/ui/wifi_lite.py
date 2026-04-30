@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pygame
 
-from bigbox import hardware, theme
+from bigbox import hardware, oui, theme
 from bigbox.events import Button, ButtonEvent
 from bigbox.ui.section import SectionContext
 
@@ -283,6 +283,8 @@ class _Probe:
     ssid: str
     last_ts: float = field(default_factory=time.time)
     count: int = 1
+    vendor: str = ""
+    device_class: str = ""
 
 
 class ProbeSnifferView(_MonitorModeView):
@@ -364,7 +366,9 @@ class ProbeSnifferView(_MonitorModeView):
                 existing.count += 1
                 existing.last_ts = now
             else:
-                self.probes[key] = _Probe(mac=mac, ssid=ssid, last_ts=now)
+                vendor, klass = oui.lookup(mac)
+                self.probes[key] = _Probe(mac=mac, ssid=ssid, last_ts=now,
+                                          vendor=vendor, device_class=klass)
 
     def _render_run(self, surf: pygame.Surface, body: pygame.Rect) -> None:
         f_big = pygame.font.Font(None, 48)
@@ -402,9 +406,28 @@ class ProbeSnifferView(_MonitorModeView):
         row_h = 22
         for i, p in enumerate(recent[: max(1, list_h // row_h)]):
             ago = max(0, int(time.time() - p.last_ts))
-            line = f"{p.mac}  {p.ssid[:42]:42}  ×{p.count:<4}  {ago}s ago"
-            ls = f_small.render(line, True, theme.FG_DIM)
-            surf.blit(ls, (body.x + 8, list_y + 6 + i * row_h))
+            y = list_y + 6 + i * row_h
+            # MAC
+            surf.blit(f_small.render(p.mac, True, theme.FG_DIM),
+                      (body.x + 8, y))
+            # Vendor — randomized phones highlighted in WARN; resolved
+            # vendors in ACCENT; empty/Unknown stays dim.
+            vendor_label = (p.vendor[:14] if p.vendor else "—")
+            if p.vendor == "Randomized":
+                vcolor = theme.WARN
+            elif p.vendor and p.vendor != "Unknown":
+                vcolor = theme.ACCENT
+            else:
+                vcolor = theme.FG_DIM
+            surf.blit(f_small.render(vendor_label, True, vcolor),
+                      (body.x + 175, y))
+            # SSID
+            surf.blit(f_small.render(p.ssid[:36], True, theme.FG_DIM),
+                      (body.x + 310, y))
+            # Count + age (right-aligned column)
+            tail = f"×{p.count}  {ago}s"
+            surf.blit(f_small.render(tail, True, theme.FG_DIM),
+                      (body.x + 660, y))
 
 
 # --------------------------------------------------------------------------
