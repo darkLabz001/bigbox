@@ -87,6 +87,7 @@ class Wargames:
 def run(screen: pygame.Surface, bus):
     game = Wargames(screen)
     clock = pygame.time.Clock()
+    held = set()
     
     while game.running:
         for ev in pygame.event.get():
@@ -94,9 +95,21 @@ def run(screen: pygame.Surface, bus):
                 return
         
         for bev in bus.drain():
-            if bev.pressed and bev.button is Button.B and game.phase == "OVER":
-                return
-            game.handle(bev)
+            if bev.pressed:
+                held.add(bev.button)
+            else:
+                held.discard(bev.button)
+
+            # Exit logic: HK+B or SELECT+START or B when game is over
+            if bev.pressed:
+                if (Button.HK in held and bev.button is Button.B) or \
+                   (Button.SELECT in held and Button.START in held):
+                    return
+                
+                if bev.button is Button.B and game.phase == "OVER":
+                    return
+                
+                game.handle(bev)
             
         game.update()
         game.render()
