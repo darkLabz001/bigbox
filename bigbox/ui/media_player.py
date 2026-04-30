@@ -32,6 +32,7 @@ PHASE_FILES = "files"
 PHASE_PLAYING = "playing"
 PHASE_RESULT = "result"
 PHASE_VIEW_IMAGE = "view_image"
+PHASE_ACTION_MENU = "action_menu"
 
 
 class MediaPlayerView:
@@ -489,8 +490,11 @@ class CapturesView:
         self.dismissed = False
         self.phase = PHASE_FILES
 
-        self.dirs = [self.CAPTURES_DIR, "screenshots", "recordings"]
+        self.dirs = ["screenshots", "recordings"]
         self.list = ScrollList([])
+        self.action_list: ScrollList | None = None
+        self.target_path: str | None = None
+
         self.current_img: pygame.Surface | None = None
         self.current_fname: str | None = None
         
@@ -514,7 +518,7 @@ class CapturesView:
                     for f in files:
                         full = os.path.join(dname, f)
                         def make_handler(path):
-                            return lambda ctx: self._open_file(path)
+                            return lambda ctx: self._open_action_menu(path)
                         size = os.path.getsize(full) / 1024
                         actions.append(Action(f, make_handler(full), f"{dname.upper()} :: {size:.1f}KB"))
                 except Exception:
@@ -523,6 +527,40 @@ class CapturesView:
         if not actions:
             actions.append(Action("[ No captures found ]", None))
         self.list = ScrollList(actions)
+
+    def _open_action_menu(self, path: str) -> None:
+        self.target_path = path
+        fname = os.path.basename(path)
+        
+        actions = [
+            Action("View / Play", lambda ctx: self._open_file(path)),
+            Action("Delete", lambda ctx: self._delete_file(path)),
+            Action("Share via Webhook", lambda ctx: self._send_webhook(path)),
+        ]
+        self.action_list = ScrollList(actions)
+        self.phase = PHASE_ACTION_MENU
+
+    def _delete_file(self, path: str) -> None:
+        try:
+            os.remove(path)
+            self._refresh_list()
+            self.phase = PHASE_FILES
+        except Exception as e:
+            print(f"[captures] Delete failed: {e}")
+
+    def _send_webhook(self, path: str) -> None:
+        from bigbox import webhooks
+        import threading
+        
+        def _worker():
+            ok, msg = webhooks.send_file(path)
+            # We could toast here if we had a reference to app/context
+            print(f"[captures] Webhook: {msg}")
+            # For now just return to list
+            self.phase = PHASE_FILES
+            
+        threading.Thread(target=_worker, daemon=True).start()
+        self.phase = PHASE_FILES # Return immediately for UX
 
     def _open_file(self, path: str) -> None:
         if path.lower().endswith((".mp4", ".avi", ".mkv", ".mjpg")):
@@ -585,6 +623,15 @@ class CapturesView:
                 self.current_img = None
             return
 
+        if self.phase == PHASE_ACTION_MENU and self.action_list:
+            if ev.button is Button.B:
+                self.phase = PHASE_FILES
+                return
+            action = self.action_list.handle(ev)
+            if action and action.handler:
+                action.handler(ctx)
+            return
+
         if ev.button is Button.B:
             self.dismissed = True
             return
@@ -602,6 +649,8 @@ class CapturesView:
         
         if self.phase == PHASE_VIEW_IMAGE:
             title_text = f"VIEW :: {self.current_fname}"
+        elif self.phase == PHASE_ACTION_MENU:
+            title_text = f"ACTIONS :: {os.path.basename(self.target_path or '')}"
         else:
             title_text = "SYSTEM CAPTURES"
             
@@ -618,11 +667,35 @@ class CapturesView:
 
             hint = self.hint_font.render("B: Back", True, theme.FG_DIM)
             surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
+        elif self.phase == PHASE_ACTION_MENU and self.action_list:
+            # Render file list in background
+            list_rect = pygame.Rect(theme.PADDING, head_h + theme.PADDING, 
+                                   theme.SCREEN_W - 2*theme.PADDING, 
+                                   theme.SCREEN_H - head_h - 2*theme.PADDING - 40)
+            self.list.render(surf, list_rect, self.body_font)
+            
+            # Modal action menu
+            overlay = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            surf.blit(overlay, (0, 0))
+            
+            menu_rect = pygame.Rect(theme.SCREEN_W//4, theme.SCREEN_H//4, theme.SCREEN_W//2, theme.SCREEN_H//2)
+            pygame.draw.rect(surf, theme.BG_ALT, menu_rect, border_radius=8)
+            pygame.draw.rect(surf, theme.ACCENT, menu_rect, 2, border_radius=8)
+            
+            header = self.body_font.render("CHOOSE ACTION", True, theme.ACCENT)
+            surf.blit(header, (menu_rect.centerx - header.get_width()//2, menu_rect.y + 10))
+            
+            act_rect = pygame.Rect(menu_rect.x + 10, menu_rect.y + 40, menu_rect.width - 20, menu_rect.height - 60)
+            self.action_list.render(surf, act_rect, self.body_font)
+
+            hint = self.hint_font.render("UP/DOWN: Select  A: Execute  B: Cancel", True, theme.FG_DIM)
+            surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
         else:
             list_rect = pygame.Rect(theme.PADDING, head_h + theme.PADDING, 
                                    theme.SCREEN_W - 2*theme.PADDING, 
                                    theme.SCREEN_H - head_h - 2*theme.PADDING - 40)
             self.list.render(surf, list_rect, self.body_font)
             
-            hint = self.hint_font.render("UP/DOWN: Navigate  A: View/Play  B: Back", True, theme.FG_DIM)
+            hint = self.hint_font.render("UP/DOWN: Navigate  A: Actions  B: Back", True, theme.FG_DIM)
             surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))

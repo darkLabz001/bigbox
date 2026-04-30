@@ -82,10 +82,21 @@ def _toolbox_menu(ctx: SectionContext) -> None:
     def install_ragnar():
         ctx.show_update("Installing Ragnar", [str(script_dir / "install_ragnar.sh")])
 
+    def setup_webhook():
+        from bigbox import webhooks
+        current = webhooks.load_webhook_url() or ""
+        def save_cb(val):
+            if val is not None:
+                webhooks.save_webhook_url(val)
+                ctx.toast("Webhook URL saved")
+            ctx.go_back()
+        ctx.get_input("Webhook URL", save_cb, current)
+
     actions = [
         ("Verify Core Tools", fix_deps),
         ("Install OSINT Suite", install_osint),
         ("Install Ragnar", install_ragnar),
+        ("Webhook Setup", setup_webhook),
     ]
     ctx.show_menu("Toolbox", actions)
 
