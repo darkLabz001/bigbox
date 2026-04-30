@@ -11,7 +11,7 @@ LL     = 14
 RR     = 23
 SELECT = 6
 START  = 12
-HK     = 16
+HK     = 13
 
 [behavior]
 debounce_ms = 30
