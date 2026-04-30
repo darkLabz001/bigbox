@@ -58,10 +58,12 @@ class GPIOInput:
         self._buttons.clear()
 
     def _on_press(self, b: Button) -> None:
+        print(f"[input] GPIO press: {b}")
         self._held_since[b] = time.monotonic()
         self._bus.put(ButtonEvent(b, pressed=True))
 
     def _on_release(self, b: Button) -> None:
+        print(f"[input] GPIO release: {b}")
         self._held_since.pop(b, None)
         self._bus.put(ButtonEvent(b, pressed=False))
 
