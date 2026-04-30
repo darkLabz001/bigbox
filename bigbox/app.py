@@ -84,6 +84,7 @@ class App:
         self.karma_view: KarmaLiteView | None = None
         self.show_status = True
         self.held_buttons: set[Button] = set()
+        self.hk_used = False
         self._last_vol_enforce = 0
         
         # Screen recording state
@@ -670,8 +671,13 @@ class App:
     def _dispatch(self, bev: ButtonEvent, carousel: Carousel) -> None:
         if bev.pressed:
             self.held_buttons.add(bev.button)
+            if bev.button is Button.HK:
+                self.hk_used = False
         else:
             self.held_buttons.discard(bev.button)
+            if bev.button is Button.HK and not self.hk_used:
+                self._open_hk_menu()
+                return
 
         # Allow GamesView to receive key releases for the emulator
         if self.games_view is not None:
@@ -683,6 +689,9 @@ class App:
 
         # Hotkey combos (checked before single-button actions)
         if Button.HK in self.held_buttons and not bev.repeat:
+            if bev.button is not Button.HK:
+                self.hk_used = True
+            
             if bev.button is Button.START:
                 self.running = False  # Emergency exit
                 return
