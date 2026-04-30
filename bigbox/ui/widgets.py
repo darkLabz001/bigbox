@@ -66,6 +66,15 @@ class StatusBar:
             notif.set_alpha(pulse)
             surf.blit(notif, (theme.SCREEN_W // 2 - notif.get_width() // 2, (bar.height - notif.get_height()) // 2))
 
+        # Recording Indicator
+        if app and getattr(app, "recording_proc", None):
+            import math
+            pulse = int(127 + 128 * math.sin(time.time() * 8))
+            rec_surf = font.render("• REC", True, theme.ERR)
+            rec_surf.set_alpha(pulse)
+            # Place it to the right of the hostname
+            surf.blit(rec_surf, (theme.PADDING + left.get_width() + 20, (bar.height - rec_surf.get_height()) // 2))
+
         # Display IPs: Local and optionally Tailscale
         ip_str = self._ip
         if self._ts_ip:

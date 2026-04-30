@@ -84,6 +84,10 @@ class App:
         self.show_status = True
         self.held_buttons: set[Button] = set()
         self._last_vol_enforce = 0
+        
+        # Screen recording state
+        self.recording_proc: subprocess.Popen | None = None
+        self.recording_start_time: float = 0.0
 
         # Messaging background sync
         from bigbox.ui.messenger import MessengerSync
@@ -644,6 +648,12 @@ class App:
             pygame.display.flip()
             clock.tick(self._target_fps())
 
+        if self.recording_proc:
+            try:
+                self.recording_proc.terminate()
+            except:
+                pass
+
         pygame.quit()
         return 0
 
@@ -668,6 +678,9 @@ class App:
                 return
             if bev.button is Button.B:
                 self.go_back()
+                return
+            if bev.button is Button.A:
+                self._open_hk_menu()
                 return
 
         # Specialized View Handling (Modal views)
@@ -873,6 +886,72 @@ class App:
         if self.dev_mode:
             actions.append(("Exit bigbox", lambda: setattr(self, "running", False)))
         self.menu_view = MenuView("System", actions)
+
+    def _open_hk_menu(self) -> None:
+        # Resolve update script path
+        from pathlib import Path
+        update_script = Path(__file__).resolve().parents[1] / "scripts" / "update.sh"
+        
+        actions = [
+            ("Screenshot (Y)", self._take_screenshot),
+            ("Record Screen (Toggle)", self._toggle_screen_record),
+            ("OTA Update", lambda: self.show_update("OTA update", [str(update_script)])),
+            ("Reboot System", lambda: subprocess.run(["sudo", "reboot"])),
+        ]
+        self.menu_view = MenuView("HOTKEYS", actions)
+
+    def _toggle_screen_record(self) -> None:
+        if self.recording_proc:
+            # Stop recording
+            try:
+                # ffmpeg expects 'q' on stdin to stop cleanly, but terminate often works
+                self.recording_proc.terminate()
+                self.recording_proc.wait(timeout=3)
+            except:
+                self.recording_proc.kill()
+            self.recording_proc = None
+            self.toast("Recording saved to recordings/")
+        else:
+            # Start recording
+            import os
+            from datetime import datetime
+            rec_dir = Path("recordings")
+            if not rec_dir.exists():
+                rec_dir.mkdir(parents=True)
+            fname = rec_dir / f"rec_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+            
+            # Use ffmpeg with x11grab or fbdev depending on environment
+            if not self.dev_mode:
+                # fbdev is faster for captures directly from /dev/fb0
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-f", "fbdev", "-i", "/dev/fb0",
+                    "-r", "15",
+                    "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                    str(fname)
+                ]
+            else:
+                # In dev mode (X11), use x11grab
+                display = os.environ.get("DISPLAY", ":0")
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-f", "x11grab", "-s", "800x480", "-i", display,
+                    "-r", "15",
+                    "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                    str(fname)
+                ]
+            
+            try:
+                self.recording_proc = subprocess.Popen(
+                    cmd, 
+                    stdout=subprocess.DEVNULL, 
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.PIPE
+                )
+                self.recording_start_time = time.time()
+                self.toast("Recording started...")
+            except Exception as e:
+                self.toast(f"Record failed: {e}")
 
     def _take_screenshot(self) -> None:
         import os
