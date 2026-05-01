@@ -31,9 +31,6 @@ class WebAccessView:
         self.small_font = pygame.font.Font(None, theme.FS_SMALL)
         self.tiny_font = pygame.font.Font(None, 16)
 
-        from bigbox.web import auth as web_auth
-        self.token = web_auth.get_token()
-
         # Resolve once. The handheld doesn't churn IPs while this view
         # is open; cheap, but no need to hit `ip`/`tailscale` every frame.
         self.ts_ip = qr.tailscale_ipv4()
@@ -42,7 +39,7 @@ class WebAccessView:
         self._qr_cache: dict[str, pygame.Surface] = {}
 
     def _url(self, ip: str) -> str:
-        return f"http://{ip}:{self.PORT}/?token={self.token}"
+        return f"http://{ip}:{self.PORT}/"
 
     def _render_qr_surface(self, text: str, size_px: int) -> pygame.Surface | None:
         cache_key = f"{text}|{size_px}"
