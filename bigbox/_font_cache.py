@@ -25,6 +25,12 @@ def _install() -> None:
     _cache: dict[tuple[object, int], pygame.font.Font] = {}
 
     def _cached_font(name=None, size=12, *args, **kwargs):
+        # Ensure pygame.font is initialized before attempting to create a Font.
+        # This prevents "pygame.error: font not initialized" if a Font is 
+        # instantiated before App._init_display() is called.
+        if not pygame.font.get_init():
+            pygame.font.init()
+
         # Only cache the common simple form. Anything fancier (custom
         # bold/italic args from a future pygame, BytesIO sources, etc.)
         # falls through to the real constructor.

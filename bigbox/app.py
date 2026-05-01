@@ -111,13 +111,6 @@ class App:
         self.last_web_view_request: float = 0.0
         self._frame_counter = 0
 
-        # Pre-load shared fonts used by views that take a SectionContext
-        self.fonts = {
-            "base": pygame.font.Font(None, theme.FS_BODY),
-            "bold": pygame.font.Font(None, theme.FS_BODY + 4),
-            "small": pygame.font.Font(None, theme.FS_BODY - 4),
-        }
-
     # ---------- lifecycle ----------
     def _init_display(self) -> pygame.Surface:
         # Pick a video driver. Prefer KMS DRM if /dev/dri exists; fall back to
@@ -436,6 +429,15 @@ class App:
     # ---------- main loop ----------
     def run(self) -> int:
         screen = self._init_display()
+        
+        # Pre-load shared fonts used by views that take a SectionContext.
+        # Must happen AFTER pygame.font.init() inside _init_display().
+        self.fonts = {
+            "base": pygame.font.Font(None, theme.FS_BODY),
+            "bold": pygame.font.Font(None, theme.FS_BODY + 4),
+            "small": pygame.font.Font(None, theme.FS_BODY - 4),
+        }
+
         pygame.display.set_caption("bigbox")
         # Play the Arasaka boot splash (red diamond + "WELCOME TO DaRkb0x" +
         # psx.mp3 chime) before anything else hits the screen. Skipped in
