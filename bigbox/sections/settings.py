@@ -62,16 +62,8 @@ def _tailscale(ctx: SectionContext) -> None:
     ctx.show_tailscale()
 
 
-def _show_web_token(ctx: SectionContext) -> None:
-    from bigbox.web import auth as web_auth
-    token = web_auth.get_token()
-    body = (
-        "Web UI access token (paste at /login on :8080).\n\n"
-        f"  {token}\n\n"
-        "Stored at /etc/bigbox/web_token.txt — survives OTA updates.\n"
-        "Use Toolbox → Regenerate Web Token to invalidate it."
-    )
-    ctx.show_result("Web Token", body)
+def _web_access(ctx: SectionContext) -> None:
+    ctx.show_web_access()
 
 
 def _regen_web_token(ctx: SectionContext) -> None:
@@ -132,12 +124,12 @@ def build() -> Section:
         icon_img=load_icon("settings"),
         background_img=load_background("settings"),
         actions=[
+            Action("Web UI Access", _web_access, "Scan a QR with your phone — auto login"),
             Action("Connect to Wi-Fi", _wifi_connect, "scan, select, save a network"),
             Action("Tailscale VPN", _tailscale, "secure access to your private network"),
             Action("Theme Manager", _theme_manager, "install and manage themes"),
             Action("Bash Terminal", _terminal, "full root shell with OSK"),
             Action("Toolbox", _toolbox_menu, "System maintenance and tool installation"),
-            Action("Show Web Token", _show_web_token, "Token for the :8080 web UI login"),
             Action("Check for updates (OTA)", _update),
             Action("View Flock Loot", _view_loot, "intel gathered from FlockSeeker"),
             Action("Volume up", _vol_up),

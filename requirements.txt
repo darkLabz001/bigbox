@@ -32,3 +32,4 @@ numpy
 psutil
 yt-dlp
 evdev
+segno
