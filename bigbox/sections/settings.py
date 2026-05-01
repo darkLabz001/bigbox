@@ -113,6 +113,41 @@ def _toolbox_menu(ctx: SectionContext) -> None:
     ctx.show_menu("Toolbox", actions)
 
 
+def _network_menu(ctx: SectionContext) -> None:
+    ctx.show_menu("Network", [
+        ("Web UI Access (QR)", lambda: ctx.show_web_access()),
+        ("Connect to Wi-Fi",   lambda: ctx.show_wifi()),
+        ("Tailscale VPN",      lambda: ctx.show_tailscale()),
+    ])
+
+
+def _diagnostics_menu(ctx: SectionContext) -> None:
+    ctx.show_menu("Diagnostics", [
+        ("Running Tasks",   lambda: ctx.show_background_tasks()),
+        ("Recent Crashes",  lambda: ctx.show_diagnostics()),
+        ("View Flock Loot", lambda: _view_loot(ctx)),
+    ])
+
+
+def _power_menu(ctx: SectionContext) -> None:
+    ctx.show_menu("Power & Audio", [
+        ("Volume up",   lambda: _vol_up(ctx)),
+        ("Volume down", lambda: _vol_down(ctx)),
+        ("Mute toggle", lambda: _vol_mute(ctx)),
+        ("Reboot",      lambda: _reboot(ctx)),
+        ("Power off",   lambda: _poweroff(ctx)),
+    ])
+
+
+def _system_menu(ctx: SectionContext) -> None:
+    ctx.show_menu("System", [
+        ("Bash Terminal",          lambda: ctx.show_terminal()),
+        ("Theme Manager",          lambda: ctx.show_theme_manager()),
+        ("Toolbox",                lambda: _toolbox_menu(ctx)),
+        ("Check for updates (OTA)", lambda: _update(ctx)),
+    ])
+
+
 def build() -> Section:
     return Section(
         title="Settings",
@@ -120,20 +155,11 @@ def build() -> Section:
         icon_img=load_icon("settings"),
         background_img=load_background("settings"),
         actions=[
+            # Top-level: most-used at the top, submenus for the rest.
             Action("Web UI Access", _web_access, "Scan a QR with your phone — auto login"),
-            Action("Running Tasks", _background_tasks, "What's running in the background — stop any of them"),
-            Action("Diagnostics", _diagnostics, "Recent crash tracebacks from the journal"),
-            Action("Connect to Wi-Fi", _wifi_connect, "scan, select, save a network"),
-            Action("Tailscale VPN", _tailscale, "secure access to your private network"),
-            Action("Theme Manager", _theme_manager, "install and manage themes"),
-            Action("Bash Terminal", _terminal, "full root shell with OSK"),
-            Action("Toolbox", _toolbox_menu, "System maintenance and tool installation"),
-            Action("Check for updates (OTA)", _update),
-            Action("View Flock Loot", _view_loot, "intel gathered from FlockSeeker"),
-            Action("Volume up", _vol_up),
-            Action("Volume down", _vol_down),
-            Action("Mute toggle", _vol_mute),
-            Action("Reboot", _reboot),
-            Action("Power off", _poweroff),
+            Action("Network",       _network_menu, "Wi-Fi, Tailscale, Web UI access"),
+            Action("Diagnostics",   _diagnostics_menu, "Running tasks, crash log, loot"),
+            Action("System",        _system_menu, "Terminal, themes, toolbox, OTA"),
+            Action("Power & Audio", _power_menu, "Volume, reboot, power off"),
         ],
     )
