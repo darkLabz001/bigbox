@@ -111,6 +111,13 @@ class App:
         self.last_web_view_request: float = 0.0
         self._frame_counter = 0
 
+        # Pre-load shared fonts used by views that take a SectionContext
+        self.fonts = {
+            "base": pygame.font.Font(None, theme.FS_BODY),
+            "bold": pygame.font.Font(None, theme.FS_BODY + 4),
+            "small": pygame.font.Font(None, theme.FS_BODY - 4),
+        }
+
     # ---------- lifecycle ----------
     def _init_display(self) -> pygame.Surface:
         # Pick a video driver. Prefer KMS DRM if /dev/dri exists; fall back to
@@ -516,7 +523,8 @@ class App:
                 if self.cracker_view.dismissed:
                     self.cracker_view = None
             elif self.pmkid_sniper_view is not None:
-                self.pmkid_sniper_view.draw(screen, self)
+                from typing import Any
+                self.pmkid_sniper_view.draw(screen, self) # type: ignore
                 if self.pmkid_sniper_view.dismissed:
                     self.pmkid_sniper_view = None
             elif self.media_view is not None:
