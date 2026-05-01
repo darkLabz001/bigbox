@@ -521,7 +521,7 @@ class App:
                 if self.wifi_multi_view.dismissed:
                     self.wifi_multi_view = None
             elif self.cracker_view is not None:
-                self.cracker_view.draw(screen, self)
+                self.cracker_view.render(screen)
                 if self.cracker_view.dismissed:
                     self.cracker_view = None
             elif self.pmkid_sniper_view is not None:
