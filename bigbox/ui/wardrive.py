@@ -160,16 +160,33 @@ class WardriveView:
         hardware.ensure_wifi_managed()
         hardware.ensure_bluetooth_on()
 
-        # Pick a scan interface — first managed wlan client.
-        clients = hardware.list_wifi_clients()
-        self.iface = clients[0] if clients else "wlan0"
-
+        # Split interfaces: one for scanning, one for capture (if available)
+        all_ifaces = hardware.list_wifi_clients()
+        if not all_ifaces:
+            all_ifaces = ["wlan0"]
+        
+        self.ifaces = all_ifaces[:1]  # Default to one for scanning
+        self.cap_iface_raw: str | None = None
+        self.mon_iface: str | None = None
+        
+        if len(all_ifaces) > 1:
+            # We have at least two. Use the rest for scanning?
+            # Or use one for scanning and one for capture.
+            # Usually wlan1 (USB) is better for capture.
+            if len(all_ifaces) >= 2:
+                self.cap_iface_raw = all_ifaces[1]
+                self.ifaces = [all_ifaces[0]]
+            
         # GPS
         self.gps = GPSReader()
         self.gps.start()
 
         # Capture state
         self.observed: dict[str, _Observation] = {}  # mac -> obs
+        self._lock = threading.Lock()
+        self.last_found: _Observation | None = None
+        self.handshake_count = 0
+        
         self._csv_path: Path | None = None
         self._csv_handle = None
         self._capture_started: float = 0.0
@@ -178,9 +195,10 @@ class WardriveView:
 
         # Scan threads
         self._stop = False
-        self._wifi_thread: threading.Thread | None = None
+        self._wifi_threads: list[threading.Thread] = []
         self._bt_thread: threading.Thread | None = None
         self._bt_proc: subprocess.Popen | None = None  # the persistent `scan le on`
+        self._hcxdumptool: subprocess.Popen | None = None
 
         # Result
         self.result_msg = ""
@@ -193,20 +211,85 @@ class WardriveView:
         self._csv_handle = self._csv_path.open("w", buffering=1)  # line-buffered
         self._csv_handle.write(wigle.wigle_csv_header())
         self._capture_started = time.time()
-        self.observed.clear()
+        with self._lock:
+            self.observed.clear()
+            self.last_found = None
+            self.handshake_count = 0
         self._wifi_scan_count = 0
         self._bt_scan_count = 0
         self._stop = False
         self.phase = PHASE_CAPTURING
 
-        self._wifi_thread = threading.Thread(target=self._wifi_loop, daemon=True)
-        self._wifi_thread.start()
+        # Start one thread per interface
+        self._wifi_threads = []
+        for iface in self.ifaces:
+            t = threading.Thread(target=self._wifi_loop, args=(iface,), daemon=True)
+            t.start()
+            self._wifi_threads.append(t)
+
         self._bt_thread = threading.Thread(target=self._bt_loop, daemon=True)
         self._bt_thread.start()
+
+        # Optional: Handshake capture if we have a spare iface
+        if self.cap_iface_raw:
+            self.status_msg = f"Enabling monitor on {self.cap_iface_raw}..."
+            # This is blocking, but it's okay for a moment
+            self.mon_iface = hardware.enable_monitor(self.cap_iface_raw)
+            if self.mon_iface:
+                self._start_hcxdumptool(ts)
+            else:
+                self.status_msg = "Monitor mode failed, scanning only."
+
         self.status_msg = "Capturing..."
+
+    def _start_hcxdumptool(self, ts: str) -> None:
+        if not self.mon_iface:
+            return
+        
+        pcap_path = LOOT_DIR / f"wardrive_{ts}.pcapng"
+        # hcxdumptool -i <iface> -o <out> --enable_status=1
+        # Status 1 gives us periodic updates on stdout
+        cmd = ["hcxdumptool", "-i", self.mon_iface, "-o", str(pcap_path), "--enable_status=1"]
+        try:
+            self._hcxdumptool = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            # Thread to watch for handshakes in output
+            def _watcher():
+                if not self._hcxdumptool or not self._hcxdumptool.stdout: return
+                for line in self._hcxdumptool.stdout:
+                    if self._stop: break
+                    # [PMKID] or [EAPOL] typically indicates a capture
+                    if "[PMKID]" in line or "[EAPOL]" in line:
+                        with self._lock:
+                            self.handshake_count += 1
+                        self._play_beep() # Triple beep for handshake?
+            
+            threading.Thread(target=_watcher, daemon=True).start()
+        except Exception as e:
+            self.status_msg = f"hcxdumptool failed: {e}"
 
     def _stop_capture(self) -> None:
         self._stop = True
+        # Kill hcxdumptool
+        if self._hcxdumptool:
+            try:
+                self._hcxdumptool.terminate()
+                self._hcxdumptool.wait(timeout=2)
+            except Exception:
+                try: self._hcxdumptool.kill()
+                except Exception: pass
+        self._hcxdumptool = None
+        
+        # Restore capture interface if needed
+        if self.mon_iface:
+            hardware.ensure_wifi_managed(self.cap_iface_raw)
+            self.mon_iface = None
+
         # Bring BT down first so we don't leave bluetoothctl scanning.
         if self._bt_proc and self._bt_proc.poll() is None:
             try:
@@ -227,8 +310,9 @@ class WardriveView:
             except Exception:
                 pass
         self._csv_handle = None
-        wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
-        bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
+        with self._lock:
+            wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
+            bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
         elapsed = max(0, time.time() - self._capture_started)
         self.result_msg = (
             f"{wifi_count} Wi-Fi APs, {bt_count} BT devices "
@@ -249,19 +333,50 @@ class WardriveView:
         self.dismissed = True
 
     # ---------- record an observation ----------
+    def _play_beep(self) -> None:
+        """Short discovery blip."""
+        try:
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+            import array
+            sample_rate = 44100
+            freq = 1200
+            duration = 0.05
+            n_samples = int(sample_rate * duration)
+            buf = array.array('h', [0] * n_samples)
+            for i in range(n_samples):
+                t = i / sample_rate
+                # Square wave
+                buf[i] = 8000 if (int(t * freq * 2) % 2) else -8000
+            sound = pygame.mixer.Sound(buffer=buf)
+            sound.set_volume(0.2)
+            sound.play()
+        except Exception:
+            pass
+
     def _record(self, obs: _Observation) -> None:
-        if obs.mac in self.observed:
-            return
-        fix = self.gps.latest()
-        if not fix.has_fix:
-            # WiGLE will reject rows with no GPS — skip.
-            return
-        obs.first_lat = fix.lat
-        obs.first_lon = fix.lon
-        obs.first_alt = fix.alt_m
-        obs.first_acc = fix.accuracy_m
-        obs.first_seen_iso = fix.timestamp_iso or _now_iso()
-        self.observed[obs.mac] = obs
+        with self._lock:
+            if obs.mac in self.observed:
+                # Update RSSI for last_found display even if already known
+                if self.last_found and self.last_found.mac == obs.mac:
+                    self.last_found.rssi = obs.rssi
+                return
+            
+            fix = self.gps.latest()
+            if not fix.has_fix:
+                # WiGLE will reject rows with no GPS — skip.
+                return
+            
+            obs.first_lat = fix.lat
+            obs.first_lon = fix.lon
+            obs.first_alt = fix.alt_m
+            obs.first_acc = fix.accuracy_m
+            obs.first_seen_iso = fix.timestamp_iso or _now_iso()
+            self.observed[obs.mac] = obs
+            self.last_found = obs
+
+        self._play_beep()
+
         if self._csv_handle:
             self._csv_handle.write(wigle.wigle_csv_row(
                 mac=obs.mac,
@@ -278,11 +393,11 @@ class WardriveView:
             ))
 
     # ---------- scan loops ----------
-    def _wifi_loop(self) -> None:
+    def _wifi_loop(self, iface: str) -> None:
         while not self._stop:
             try:
                 proc = subprocess.run(
-                    ["iw", "dev", self.iface, "scan"],
+                    ["iw", "dev", iface, "scan"],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                     stdin=subprocess.DEVNULL,
                     text=True, timeout=15,
@@ -290,7 +405,8 @@ class WardriveView:
                 if proc.returncode == 0:
                     for o in _parse_iw_scan(proc.stdout):
                         self._record(o)
-                    self._wifi_scan_count += 1
+                    with self._lock:
+                        self._wifi_scan_count += 1
             except Exception:
                 pass
             # Sleep but stay responsive to stop
@@ -325,7 +441,8 @@ class WardriveView:
                 if proc.returncode == 0:
                     for o in _parse_bluetoothctl_devices(proc.stdout):
                         self._record(o)
-                    self._bt_scan_count += 1
+                    with self._lock:
+                        self._bt_scan_count += 1
             except Exception:
                 pass
             t = time.time()
@@ -355,7 +472,27 @@ class WardriveView:
             if ev.button in (Button.A, Button.START):
                 # Start another session
                 self._start_capture()
+            elif ev.button is Button.X:
+                self._trigger_upload()
             return
+
+    def _trigger_upload(self) -> None:
+        if not self._csv_path or not self._csv_path.exists():
+            self.status_msg = "No file to upload"
+            return
+        
+        creds = wigle.load_creds()
+        if not creds:
+            self.status_msg = "Not signed in to WiGLE (use Web UI)"
+            return
+        
+        self.status_msg = "Uploading to WiGLE..."
+        
+        def _worker():
+            ok, msg = wigle.upload(self._csv_path, creds)
+            self.status_msg = f"Upload: {msg}"
+        
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ---------- render ----------
     def render(self, surf: pygame.Surface) -> None:
@@ -399,7 +536,7 @@ class WardriveView:
         if self.phase == PHASE_CAPTURING:
             return "A: Stop  B: Back"
         if self.phase == PHASE_RESULT:
-            return "A: New session  B: Back"
+            return "A: New session  X: Upload  B: Back"
         return "B: Back"
 
     def _render_gps_strip(self, surf: pygame.Surface, head_h: int) -> None:
@@ -431,8 +568,10 @@ class WardriveView:
             True, theme.FG_DIM)
         surf.blit(sub, (theme.SCREEN_W // 2 - sub.get_width() // 2,
                         head_h + 140))
+        
+        ifaces_str = ", ".join(self.ifaces)
         sub2 = f_med.render(
-            f"Scan iface: {self.iface}   Output: loot/wardrive/",
+            f"Scan ifaces: {ifaces_str}   Output: loot/wardrive/",
             True, theme.FG_DIM)
         surf.blit(sub2, (theme.SCREEN_W // 2 - sub2.get_width() // 2,
                          head_h + 180))
@@ -444,8 +583,12 @@ class WardriveView:
 
     def _render_capturing(self, surf: pygame.Surface,
                           head_h: int, foot_h: int) -> None:
-        wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
-        bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
+        with self._lock:
+            wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
+            bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
+            hand_count = self.handshake_count
+            last = self.last_found
+
         elapsed = int(time.time() - self._capture_started)
 
         f_huge = pygame.font.Font(None, 80)
@@ -454,11 +597,11 @@ class WardriveView:
 
         # Big counter row
         cy = head_h + 80
-        col_w = theme.SCREEN_W // 2
+        col_w = theme.SCREEN_W // 3
 
         wifi_n = f_huge.render(str(wifi_count), True, theme.ACCENT)
         surf.blit(wifi_n, (col_w // 2 - wifi_n.get_width() // 2, cy))
-        wifi_l = f_med.render("WI-FI APs", True, theme.FG_DIM)
+        wifi_l = f_med.render("WI-FI", True, theme.FG_DIM)
         surf.blit(wifi_l, (col_w // 2 - wifi_l.get_width() // 2,
                            cy + wifi_n.get_height() + 4))
 
@@ -467,11 +610,35 @@ class WardriveView:
         bt_l = f_med.render("BLUETOOTH", True, theme.FG_DIM)
         surf.blit(bt_l, (col_w + col_w // 2 - bt_l.get_width() // 2,
                          cy + bt_n.get_height() + 4))
+        
+        # Handshake counter (only show if we have a capture iface)
+        hand_n = f_huge.render(str(hand_count), True, theme.ACCENT if hand_count > 0 else theme.FG_DIM)
+        surf.blit(hand_n, (2 * col_w + col_w // 2 - hand_n.get_width() // 2, cy))
+        hand_l = f_med.render("HANDSHAKES", True, theme.FG_DIM)
+        surf.blit(hand_l, (2 * col_w + col_w // 2 - hand_l.get_width() // 2,
+                           cy + hand_n.get_height() + 4))
+
+        # Last found box
+        if last:
+            ly = cy + 130
+            pygame.draw.rect(surf, theme.BG_ALT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), border_radius=5)
+            pygame.draw.rect(surf, theme.ACCENT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), 1, border_radius=5)
+            
+            l_title = f_small.render("LAST DISCOVERY", True, theme.ACCENT)
+            surf.blit(l_title, (theme.PADDING + 10, ly + 8))
+            
+            ssid = last.ssid or "<hidden>"
+            if len(ssid) > 30: ssid = ssid[:27] + "..."
+            info = f"{ssid} [{last.mac}]  {last.rssi}dBm  {last.authmode}"
+            l_info = f_med.render(info, True, theme.FG)
+            surf.blit(l_info, (theme.PADDING + 10, ly + 30))
 
         # Bottom strip: elapsed, file, scan counts
         sy = theme.SCREEN_H - foot_h - 60
         info = (f"elapsed: {elapsed}s   wifi scans: {self._wifi_scan_count}  "
                 f"bt polls: {self._bt_scan_count}")
+        if self.mon_iface:
+            info += f"   cap: {self.mon_iface}"
         info_s = f_small.render(info, True, theme.FG_DIM)
         surf.blit(info_s, (theme.PADDING, sy))
         if self._csv_path:
@@ -487,17 +654,22 @@ class WardriveView:
         surf.blit(title, (theme.SCREEN_W // 2 - title.get_width() // 2,
                           head_h + 50))
 
-        wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
-        bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
+        with self._lock:
+            wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
+            bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
+            hand_count = self.handshake_count
+        
         lines = [
             f"Wi-Fi APs:  {wifi_count}",
             f"Bluetooth:  {bt_count}",
+            f"Handshakes: {hand_count}",
         ]
         if self._csv_path:
-            lines.append(f"File:       {self._csv_path.name}")
-        lines.append("Upload to WiGLE via the web UI (port 8080).")
+            lines.append(f"CSV File:   {self._csv_path.name}")
+        lines.append("Press X to upload to WiGLE now.")
 
         for i, ln in enumerate(lines):
             ls = f_med.render(ln, True, theme.FG)
             surf.blit(ls, (theme.SCREEN_W // 2 - ls.get_width() // 2,
                            head_h + 110 + i * 30))
+

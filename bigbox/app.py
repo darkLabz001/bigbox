@@ -81,6 +81,7 @@ class App:
         self.captures_view: CapturesView | None = None
         self.scan_history_view = None  # type: ignore[var-annotated]
         self.web_access_view = None  # type: ignore[var-annotated]
+        self.phone_camera_view = None  # type: ignore[var-annotated]
         self.tracker_view: TrackerView | None = None
         self.probe_view: ProbeSnifferView | None = None
         self.beacon_view: BeaconFloodView | None = None
@@ -278,6 +279,10 @@ class App:
     def show_web_access(self) -> None:
         from bigbox.ui.web_access import WebAccessView
         self.web_access_view = WebAccessView()
+
+    def show_phone_camera(self) -> None:
+        from bigbox.ui.phone_camera import PhoneCameraView
+        self.phone_camera_view = PhoneCameraView()
 
     def show_games(self) -> None:
         self.games_view = GamesView()
@@ -617,6 +622,10 @@ class App:
                 self.web_access_view.render(screen)
                 if self.web_access_view.dismissed:
                     self.web_access_view = None
+            elif self.phone_camera_view is not None:
+                self.phone_camera_view.render(screen)
+                if self.phone_camera_view.dismissed:
+                    self.phone_camera_view = None
             elif self.games_view is not None:
                 self.games_view.render(screen)
                 if self.games_view.dismissed:
@@ -886,6 +895,10 @@ class App:
 
         if self.web_access_view is not None:
             self.web_access_view.handle(bev, self)
+            return
+
+        if self.phone_camera_view is not None:
+            self.phone_camera_view.handle(bev, self)
             return
 
         if self.tracker_view is not None:
