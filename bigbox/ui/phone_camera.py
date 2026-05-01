@@ -107,9 +107,14 @@ class PhoneCameraView:
         self.error_msg = ""
         self.fps = 0
         self._stop_thread = False
+        # Cap ffmpeg at 1 decode thread + nice it down so a busy Pi 4
+        # (handshake capture in the background, etc.) doesn't dip into
+        # undervoltage when this view also fires up.
         cmd = [
+            "nice", "-n", "10",
             "ffmpeg",
             "-loglevel", "error",
+            "-threads", "1",
             "-rtsp_transport", "tcp",   # silently ignored for non-rtsp inputs
             "-i", self.url,
             "-vf", (f"scale={self.VIEW_W}:{self.VIEW_H}"

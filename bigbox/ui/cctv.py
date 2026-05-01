@@ -150,10 +150,16 @@ class CCTVView:
             time.sleep(2)
             return
 
+        # Cap ffmpeg at 1 decode thread + nice it down: same reasoning as
+        # the cracker brown-out fix — the Pi 4 with USB wifi can dip
+        # into undervoltage when all cores spike, and the UI render
+        # thread needs headroom to stay smooth at 30 fps.
         cmd = [
+            "nice", "-n", "10",
             "ffmpeg",
             "-loglevel", "error",
             "-hide_banner",
+            "-threads", "1",
             "-fflags", "nobuffer",
             "-flags", "low_delay",
             "-probesize", "32",
