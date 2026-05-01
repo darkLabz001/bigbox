@@ -26,7 +26,8 @@ if TYPE_CHECKING:
     from bigbox.app import App
 
 RAGNAR_DIR = "/opt/ragnar"
-RAGNAR_EXEC = "/opt/ragnar/venv/bin/python3"
+RAGNAR_VENV_EXEC = "/opt/ragnar/venv/bin/python3"
+RAGNAR_SYS_EXEC = "/usr/bin/python3"
 GAMIFICATION_PATH = "/opt/ragnar/data/gamification.json"
 NETKB_PATH = "/opt/ragnar/data/netkb.csv"
 ENV_PATH = "/opt/ragnar/.env"
@@ -185,15 +186,24 @@ class RagnarView:
             })
 
     def _start_ragnar(self):
-        if not os.path.exists(os.path.join(RAGNAR_DIR, "Ragnar.py")):
-            self.status_msg = "ERR: BINARY_NOT_FOUND"
+        core_script = os.path.join(RAGNAR_DIR, "Ragnar.py")
+        if not os.path.exists(core_script):
+            self.status_msg = "ERR: CORE_MISSING_RUN_INSTALL"
             return
+
+        # Selection logic for python binary
+        if os.path.exists(RAGNAR_VENV_EXEC):
+            python_bin = RAGNAR_VENV_EXEC
+        else:
+            python_bin = RAGNAR_SYS_EXEC
+            self.status_msg = "WARN: USING_SYS_PYTHON"
 
         self.phase = PHASE_HUD
         self.history.clear()
         self.history.append(f"[INIT] {time.strftime('%H:%M:%S')} :: ESTABLISHING AUDIT KERNEL...")
+        self.history.append(f"[INFO] BINARY: {python_bin}")
         
-        cmd = ["sudo", RAGNAR_EXEC, "Ragnar.py"]
+        cmd = ["sudo", python_bin, "Ragnar.py"]
         
         self.master_fd, self.slave_fd = pty.openpty()
         try:
@@ -381,6 +391,9 @@ class RagnarView:
         pygame.draw.rect(surf, theme.BG_ALT, (bx, by, bw, bh), border_radius=4)
         pygame.draw.rect(surf, theme.DIVIDER, (bx, by, bw, bh), 1, border_radius=4)
         
+        core_script = os.path.join(RAGNAR_DIR, "Ragnar.py")
+        installed = os.path.exists(core_script)
+        
         lines = [
             "RAGNAR // AUTONOMOUS NETWORK AUDITOR",
             "ARCHITECTURE: MULTI-AGENT REASONING",
@@ -388,7 +401,8 @@ class RagnarView:
             f"VULNS_ARCHIVED:  {self.stats['vulns']:03d}",
             f"IDENT_ENTITIES:  {len(self.targets):03d}",
             "-------------------------------------",
-            ">> PRESS A TO ESTABLISH NEURAL_LINK <<",
+            "STATUS: AUDIT_KERNEL_READY" if installed else "STATUS: AUDIT_KERNEL_MISSING",
+            ">> PRESS A TO ESTABLISH NEURAL_LINK <<" if installed else ">> RUN 'INSTALL RAGNAR' IN SETTINGS <<",
             ">> PRESS X FOR WEB_BRIDGE ACCESS   <<"
         ]
         for i, ln in enumerate(lines):
