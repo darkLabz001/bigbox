@@ -10,6 +10,10 @@ def _vault(ctx: SectionContext) -> None:
     ctx.show_vault()
 
 
+def _scan_history(ctx: SectionContext) -> None:
+    ctx.show_scan_history()
+
+
 def _raw_loot(ctx: SectionContext) -> None:
     # Use the existing ResultView-based loot viewer from settings.py
     fname = "loot/flock_intel.txt"
@@ -64,6 +68,7 @@ def build() -> Section:
         background_img=load_background("recon"),
         actions=[
             Action("Secure Vault", _vault, "Password-protected encrypted storage"),
+            Action("Scan History", _scan_history, "Saved ARP and probe-request scans"),
             Action("Raw Intel", _raw_loot, "View unencrypted session logs"),
             Action("WiFi Captures", _view_wifi_loot, "Handshakes, PMKIDs, and Captive logs"),
         ],

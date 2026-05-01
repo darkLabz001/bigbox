@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DaRkb0x :: AUTH</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --bg: #000;
+      --bg-alt: #0a0a0a;
+      --fg: #fff;
+      --fg-dim: #888;
+      --accent: #fff;
+      --border: #222;
+      --err: #ff4444;
+    }
+    body {
+      background: var(--bg); color: var(--fg);
+      font-family: 'Segoe UI', Tahoma, sans-serif, monospace;
+      margin: 0; display: flex; align-items: center; justify-content: center;
+      height: 100vh;
+    }
+    .card {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      padding: 32px 36px;
+      width: 360px;
+      max-width: 90%;
+    }
+    h1 {
+      margin: 0 0 4px; font-size: 20px; letter-spacing: 2px;
+      color: var(--accent);
+    }
+    .sub { color: var(--fg-dim); font-size: 12px; margin-bottom: 24px; }
+    label { display: block; font-size: 12px; color: var(--fg-dim); margin-bottom: 6px; letter-spacing: 1px; }
+    input[type=password], input[type=text] {
+      width: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+      outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      margin-top: 16px;
+      width: 100%;
+      background: var(--accent);
+      color: var(--bg);
+      border: 0;
+      padding: 10px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      cursor: pointer;
+    }
+    .err {
+      color: var(--err); font-size: 12px; margin-top: 12px;
+      min-height: 1em;
+    }
+    .hint {
+      color: var(--fg-dim); font-size: 11px; margin-top: 18px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <form class="card" method="post" action="/login">
+    <h1>DaRkb0x :: AUTH</h1>
+    <div class="sub">Web UI is gated. Enter your access token.</div>
+    <label for="t">TOKEN</label>
+    <input id="t" name="token" type="password" autocomplete="current-password" autofocus required>
+    <button type="submit">UNLOCK</button>
+    <div class="err">{% if error %}Invalid token.{% endif %}</div>
+    <div class="hint">
+      Find your token on the device under <b>Settings → Show Web Token</b>.
+      Token is stored at <code>/etc/bigbox/web_token.txt</code>.
+    </div>
+  </form>
+</body>
+</html>

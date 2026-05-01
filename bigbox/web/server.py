@@ -13,7 +13,7 @@ import termios
 import struct
 import subprocess
 from fastapi import FastAPI, Request, Response, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
@@ -22,12 +22,37 @@ from bigbox import wigle as wigle_mod
 from bigbox import emulator as emu_mod
 from bigbox import retroachievements as ra_mod
 from bigbox import webhooks as webhook_mod
+from bigbox.web import auth as web_auth
 
 if TYPE_CHECKING:
     from bigbox.app import App
 
 app = FastAPI()
+app.add_middleware(web_auth.AuthMiddleware)
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_get(request: Request, error: int = 0):
+    # Pre-warm the token file. If it doesn't exist yet we want it on
+    # disk so a user navigating to Settings → Show Web Token can read
+    # it without having loaded the web UI first.
+    web_auth.get_token()
+    return templates.TemplateResponse(request, "login.html",
+                                      {"error": bool(error)})
+
+
+@app.post("/login")
+async def login_post(token: str = Form(...)):
+    expected = web_auth.get_token()
+    if not token.strip() or token.strip() != expected:
+        return RedirectResponse("/login?error=1", status_code=302)
+    resp = RedirectResponse("/", status_code=302)
+    resp.set_cookie(
+        web_auth.COOKIE_NAME, token.strip(),
+        httponly=True, samesite="lax", max_age=web_auth.COOKIE_MAX_AGE,
+    )
+    return resp
 MEDIA_DIR = Path("media")
 ALLOWED_FOLDERS = ("movies", "tv")
 MEDIA_DIR.mkdir(exist_ok=True)
@@ -47,8 +72,12 @@ async def index(request: Request):
 
 @app.websocket("/ws/terminal")
 async def terminal_websocket(websocket: WebSocket):
+    if not web_auth.ws_authed(websocket):
+        # 4401 = application-level "unauthorized" close code
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
-    
+
     # Spawn bash in a PTY
     master_fd, slave_fd = pty.openpty()
     proc = subprocess.Popen(

@@ -79,6 +79,7 @@ class App:
         self.eviltwin_view: EvilTwinView | None = None
         self.games_view: GamesView | None = None
         self.captures_view: CapturesView | None = None
+        self.scan_history_view = None  # type: ignore[var-annotated]
         self.tracker_view: TrackerView | None = None
         self.probe_view: ProbeSnifferView | None = None
         self.beacon_view: BeaconFloodView | None = None
@@ -268,6 +269,10 @@ class App:
     def show_captures(self) -> None:
         from bigbox.ui.captures import CapturesView
         self.captures_view = CapturesView()
+
+    def show_scan_history(self) -> None:
+        from bigbox.ui.scan_history import ScanHistoryView
+        self.scan_history_view = ScanHistoryView()
 
     def show_games(self) -> None:
         self.games_view = GamesView()
@@ -599,6 +604,10 @@ class App:
                 self.captures_view.render(screen)
                 if self.captures_view.dismissed:
                     self.captures_view = None
+            elif self.scan_history_view is not None:
+                self.scan_history_view.render(screen)
+                if self.scan_history_view.dismissed:
+                    self.scan_history_view = None
             elif self.games_view is not None:
                 self.games_view.render(screen)
                 if self.games_view.dismissed:
@@ -860,6 +869,10 @@ class App:
 
         if self.captures_view is not None:
             self.captures_view.handle(bev, self)
+            return
+
+        if self.scan_history_view is not None:
+            self.scan_history_view.handle(bev, self)
             return
 
         if self.tracker_view is not None:

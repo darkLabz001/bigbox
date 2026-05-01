@@ -62,6 +62,26 @@ def _tailscale(ctx: SectionContext) -> None:
     ctx.show_tailscale()
 
 
+def _show_web_token(ctx: SectionContext) -> None:
+    from bigbox.web import auth as web_auth
+    token = web_auth.get_token()
+    body = (
+        "Web UI access token (paste at /login on :8080).\n\n"
+        f"  {token}\n\n"
+        "Stored at /etc/bigbox/web_token.txt — survives OTA updates.\n"
+        "Use Toolbox → Regenerate Web Token to invalidate it."
+    )
+    ctx.show_result("Web Token", body)
+
+
+def _regen_web_token(ctx: SectionContext) -> None:
+    from bigbox.web import auth as web_auth
+    new = web_auth.regenerate_token()
+    ctx.show_result("Web Token Regenerated",
+                    f"New token:\n\n  {new}\n\n"
+                    "All existing browser sessions are now invalid.")
+
+
 def _update(ctx: SectionContext) -> None:
     # Always resolve the script via the package layout, never via cwd.
     from pathlib import Path
@@ -92,11 +112,15 @@ def _toolbox_menu(ctx: SectionContext) -> None:
             ctx.go_back()
         ctx.get_input("Webhook URL", save_cb, current)
 
+    def regen_token():
+        _regen_web_token(ctx)
+
     actions = [
         ("Verify Core Tools", fix_deps),
         ("Install OSINT Suite", install_osint),
         ("Install Ragnar", install_ragnar),
         ("Webhook Setup", setup_webhook),
+        ("Regenerate Web Token", regen_token),
     ]
     ctx.show_menu("Toolbox", actions)
 
@@ -113,6 +137,7 @@ def build() -> Section:
             Action("Theme Manager", _theme_manager, "install and manage themes"),
             Action("Bash Terminal", _terminal, "full root shell with OSK"),
             Action("Toolbox", _toolbox_menu, "System maintenance and tool installation"),
+            Action("Show Web Token", _show_web_token, "Token for the :8080 web UI login"),
             Action("Check for updates (OTA)", _update),
             Action("View Flock Loot", _view_loot, "intel gathered from FlockSeeker"),
             Action("Volume up", _vol_up),

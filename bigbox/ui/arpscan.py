@@ -5,11 +5,12 @@ import re
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import datetime
 
 import pygame
 
-from bigbox import oui, theme
+from bigbox import oui, scans, theme
 from bigbox.events import Button, ButtonEvent
 from bigbox.ui.section import SectionContext
 
@@ -57,6 +58,9 @@ class ARPScanView:
         self._scan_thread: threading.Thread | None = None
         self._scroll_y = 0
         self._cursor = 0 # for interface selection
+        self._scan_start_iso: str = ""
+        self._scan_target: str = ""
+        self._saved_path = None
 
     def _get_interfaces(self) -> list[str]:
         """Get list of network interfaces using ip link."""
@@ -80,6 +84,9 @@ class ARPScanView:
         self.input_mode = False
         self._stop_scan = False
         self._scroll_y = 0
+        self._scan_start_iso = datetime.utcnow().isoformat(timespec="seconds")
+        self._scan_target = ""
+        self._saved_path = None
         self.status_msg = f"SCANNING {self.selected_iface}..."
         self._scan_thread = threading.Thread(target=self._scan_worker, daemon=True)
         self._scan_thread.start()
@@ -111,6 +118,7 @@ class ARPScanView:
                 self._proc.wait(timeout=1.0)
                 if not self._stop_scan:
                     self.status_msg = "SCAN COMPLETE"
+                    self._persist_scan()
         except Exception as e:
             if not self._stop_scan:
                 self.status_msg = f"ERROR: {str(e)[:20]}"
@@ -159,11 +167,27 @@ class ARPScanView:
                 max_scroll = max(0, len(self.devices) * 45 - 300)
                 self._scroll_y = min(max_scroll, self._scroll_y + 40)
 
+    def _persist_scan(self) -> None:
+        if not self.devices or self._saved_path is not None:
+            return
+        rec = scans.ScanRecord(
+            type="arp",
+            started_iso=self._scan_start_iso,
+            ended_iso=datetime.utcnow().isoformat(timespec="seconds"),
+            iface=self.selected_iface,
+            target=self._scan_target,
+            devices=[asdict(d) for d in self.devices],
+        )
+        self._saved_path = scans.save(rec)
+
     def _start_custom_scan(self, target: str):
         self.devices.clear()
         self.scanning = True
         self.input_mode = False
         self._stop_scan = False
+        self._scan_start_iso = datetime.utcnow().isoformat(timespec="seconds")
+        self._scan_target = target
+        self._saved_path = None
         self.status_msg = f"SCANNING {target}..."
         
         def _custom_worker():
@@ -179,6 +203,7 @@ class ARPScanView:
                             self.devices.append(_make_device(ip, mac, vendor))
                 self._proc.wait(timeout=1.0)
                 self.status_msg = "SCAN COMPLETE"
+                self._persist_scan()
             except Exception: pass
             finally: self.scanning = False
             

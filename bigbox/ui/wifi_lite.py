@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pygame
 
-from bigbox import hardware, oui, theme
+from bigbox import hardware, oui, scans, theme
 from bigbox.events import Button, ButtonEvent
 from bigbox.ui.section import SectionContext
 
@@ -298,8 +298,12 @@ class ProbeSnifferView(_MonitorModeView):
         # gets one row per SSID
         self.probes: dict[tuple[str, str], _Probe] = {}
         self.total_frames = 0
+        self._run_started_iso: str = ""
+        self._saved_path = None
 
     def _start_run(self) -> None:
+        self._run_started_iso = datetime.utcnow().isoformat(timespec="seconds")
+        self._saved_path = None
         self.status_msg = f"Sniffing probes on {self.mon_iface}"
         if not shutil.which("tcpdump"):
             self.error_msg = "tcpdump not installed"
@@ -339,6 +343,27 @@ class ProbeSnifferView(_MonitorModeView):
                 except Exception:
                     pass
         self._proc = None
+        self._persist_scan()
+
+    def _persist_scan(self) -> None:
+        if not self.probes or self._saved_path is not None:
+            return
+        probes_out = []
+        for p in sorted(self.probes.values(), key=lambda x: x.last_ts, reverse=True):
+            probes_out.append({
+                "mac": p.mac, "ssid": p.ssid, "count": p.count,
+                "last_ts": p.last_ts,
+                "vendor": p.vendor, "device_class": p.device_class,
+            })
+        rec = scans.ScanRecord(
+            type="probe",
+            started_iso=self._run_started_iso,
+            ended_iso=datetime.utcnow().isoformat(timespec="seconds"),
+            iface=self.mon_iface or "",
+            probes=probes_out,
+            total_frames=self.total_frames,
+        )
+        self._saved_path = scans.save(rec)
 
     # tcpdump probe-req line shape:
     # "12:34:56.789012 12345us tsft  1.0 Mb/s 2412 MHz 11g -73dBm signal -99dBm noise antenna 1
