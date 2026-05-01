@@ -7,11 +7,14 @@ for WiFi pentesting.
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import threading
+import pty
+import select
 import time
-from dataclasses import dataclass
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -36,11 +39,15 @@ class PMKIDSniperView:
         self.iface_idx = 0
         self.mon_iface: str | None = None
         
-        self._proc: subprocess.Popen | None = None
-        self._stop = False
+        self.process = None
+        self.master_fd = None
+        self.slave_fd = None
+        self._stop_event = threading.Event()
+        self.history = deque(maxlen=200)
         
         self.pcapng_path: Path | None = None
-        self.captured_count = 0
+        self.pmkid_count = 0
+        self.eapol_count = 0
         self.start_time = 0.0
         
         self.LOOT_DIR = Path("loot/handshakes")
@@ -66,8 +73,8 @@ class PMKIDSniperView:
             elif ev.button is Button.X: # Upload to Hashopolis
                 if self.pcapng_path and self.pcapng_path.exists():
                     self.status_msg = "UPLOADING TO HASHOPOLIS..."
-                    success = hashopolis.upload_hash(self.pcapng_path)
-                    self.status_msg = "UPLOAD SUCCESS" if success else "UPLOAD FAILED"
+                    # Run in thread to not block UI
+                    threading.Thread(target=self._do_upload, daemon=True).start()
             elif ev.button is Button.B:
                 self._stop_snipe()
                 self.dismissed = True
@@ -75,6 +82,10 @@ class PMKIDSniperView:
         elif self.phase == PHASE_RESULT:
             if ev.button in (Button.A, Button.B):
                 self.phase = PHASE_PICK_IFACE
+
+    def _do_upload(self):
+        success = hashopolis.upload_hash(self.pcapng_path)
+        self.status_msg = "UPLOAD SUCCESS" if success else "UPLOAD FAILED"
 
     def _start_snipe(self) -> None:
         self.LOOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -84,26 +95,26 @@ class PMKIDSniperView:
         # hcxdumptool command
         # -i interface, -o output pcapng, --enable_status=1 for console output
         cmd = [
-            "hcxdumptool",
+            "sudo", "hcxdumptool",
             "-i", self.mon_iface,
             "-o", str(self.pcapng_path),
             "--enable_status=1"
         ]
         
         self.phase = PHASE_SNIPING
-        self.status_msg = "SNIPING PMKIDs..."
+        self.status_msg = "SNIPING ACTIVE"
         self.start_time = time.time()
-        self.captured_count = 0
-        self._stop = False
-        
+        self.pmkid_count = 0
+        self.eapol_count = 0
+        self.history.clear()
+        self._stop_event.clear()
+
+        self.master_fd, self.slave_fd = pty.openpty()
         try:
-            self._proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                preexec_fn=os.setsid
+            self.process = subprocess.Popen(
+                cmd, preexec_fn=os.setsid,
+                stdin=self.slave_fd, stdout=self.slave_fd, stderr=self.slave_fd,
+                env=os.environ
             )
             threading.Thread(target=self._read_output, daemon=True).start()
         except Exception as e:
@@ -111,24 +122,44 @@ class PMKIDSniperView:
             self.phase = PHASE_RESULT
 
     def _read_output(self) -> None:
-        if not self._proc or not self._proc.stdout: return
-        for line in self._proc.stdout:
-            if self._stop: break
-            # Parse hcxdumptool output for status
-            # It usually reports counts of PMKIDs/EAPOLs
-            if "PMKID" in line or "EAPOL" in line:
-                # Basic heuristic to show activity
-                self.captured_count += 1
-        
+        while not self._stop_event.is_set() and self.master_fd:
+            r, _, _ = select.select([self.master_fd], [], [], 0.1)
+            if self.master_fd in r:
+                try:
+                    data = os.read(self.master_fd, 4096).decode("utf-8", "replace")
+                    if data:
+                        # Strip ANSI escape codes
+                        clean_data = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', data)
+                        for line in clean_data.splitlines():
+                            line = line.strip()
+                            if not line: continue
+                            self.history.append(line)
+                            
+                            # Parse status from hcxdumptool
+                            # Example lines often contain [PMKID: 5] or [EAPOL: 2]
+                            m_pmkid = re.search(r'PMKID:?\s*(\d+)', line)
+                            if m_pmkid: self.pmkid_count = int(m_pmkid.group(1))
+                            
+                            m_eapol = re.search(r'EAPOL:?\s*(\d+)', line)
+                            if m_eapol: self.eapol_count = int(m_eapol.group(1))
+                except OSError: break
+
     def _stop_snipe(self) -> None:
-        self._stop = True
-        if self._proc:
+        self._stop_event.set()
+        if self.process:
             try:
-                os.killpg(os.getpgid(self._proc.pid), signal.SIGINT)
-                self._proc.wait(timeout=2)
-            except:
-                if self._proc: self._proc.kill()
-        self._proc = None
+                os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
+                time.sleep(1)
+                if self.process.poll() is None:
+                    os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+            except: pass
+        if self.master_fd:
+            try: os.close(self.master_fd)
+            except: pass
+        if self.slave_fd:
+            try: os.close(self.slave_fd)
+            except: pass
+        self.master_fd = self.slave_fd = self.process = None
         self.phase = PHASE_RESULT
 
     def update(self) -> None:
@@ -138,9 +169,10 @@ class PMKIDSniperView:
         f = ctx.fonts["base"]
         f_bold = ctx.fonts["bold"]
         f_small = ctx.fonts["small"]
+        f_tiny = ctx.fonts["small"] # Use small as tiny for now
         
-        head_h, foot_h = 40, 30
-        body_h = surf.get_height() - head_h - foot_h
+        head_h, foot_h = 40, 32
+        surf.fill(theme.BG)
         
         # Header
         pygame.draw.rect(surf, theme.FG, (0, 0, surf.get_width(), head_h))
@@ -152,21 +184,37 @@ class PMKIDSniperView:
         surf.blit(stat_surf, (surf.get_width() - stat_surf.get_width() - 10, (head_h - stat_surf.get_height()) // 2))
 
         if self.phase == PHASE_PICK_IFACE:
+            y = head_h + 20
+            surf.blit(f.render("SELECT INTERFACE:", True, theme.ACCENT), (20, y))
+            y += 30
             for i, iface in enumerate(self.ifaces):
                 color = theme.FG if i == self.iface_idx else theme.FG_DIM
                 txt = f"{'> ' if i == self.iface_idx else '  '}{iface.name} {'(mon)' if iface.is_monitor else ''}"
-                surf.blit(f.render(txt, True, color), (20, head_h + 20 + i*30))
+                surf.blit(f.render(txt, True, color), (20, y + i*30))
         
         elif self.phase == PHASE_SNIPING:
+            # Stats Bar
+            stats_y = head_h + 5
             elapsed = int(time.time() - self.start_time)
-            surf.blit(f.render(f"Interface: {self.mon_iface}", True, theme.FG), (20, head_h + 20))
-            surf.blit(f.render(f"Time: {elapsed}s", True, theme.FG), (20, head_h + 50))
-            surf.blit(f_bold.render(f"Captured: {self.captured_count} events", True, theme.ERR if self.captured_count > 0 else theme.FG), (20, head_h + 80))
+            stats_txt = f"T: {elapsed}s | PMKIDs: {self.pmkid_count} | EAPOLs: {self.eapol_count}"
+            surf.blit(f.render(stats_txt, True, theme.ACCENT), (20, stats_y))
             
-            surf.blit(f_small.render("A: Stop  X: Hashopolis Upload", True, theme.FG_DIM), (20, surf.get_height() - foot_h - 20))
+            # Terminal Area
+            term_rect = pygame.Rect(10, head_h + 30, surf.get_width() - 20, surf.get_height() - head_h - foot_h - 40)
+            pygame.draw.rect(surf, (5, 5, 5), term_rect)
+            pygame.draw.rect(surf, theme.DIVIDER, term_rect, 1)
+            
+            visible_lines = list(self.history)[-(term_rect.height // 16):]
+            for i, line in enumerate(visible_lines):
+                surf.blit(f_tiny.render(line[:80], True, theme.FG), (term_rect.x + 5, term_rect.y + 5 + i * 16))
+            
+            # Hints
+            hint_txt = "A: Stop  X: Hashopolis Upload  B: Back"
+            surf.blit(f_small.render(hint_txt, True, theme.FG_DIM), (20, surf.get_height() - 25))
 
         elif self.phase == PHASE_RESULT:
             surf.blit(f.render("SNIPING COMPLETE", True, theme.FG), (20, head_h + 20))
             if self.pcapng_path:
                 surf.blit(f_small.render(f"Saved: {self.pcapng_path.name}", True, theme.FG_DIM), (20, head_h + 50))
-            surf.blit(f.render("A: Back", True, theme.FG), (20, head_h + 100))
+                surf.blit(f.render(f"Total PMKIDs: {self.pmkid_count}", True, theme.ACCENT), (20, head_h + 80))
+            surf.blit(f.render("A: Back", True, theme.FG), (20, head_h + 120))
