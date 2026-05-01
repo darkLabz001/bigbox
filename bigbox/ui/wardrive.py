@@ -241,6 +241,13 @@ class WardriveView:
                 self.status_msg = "Monitor mode failed, scanning only."
 
         self.status_msg = "Capturing..."
+        from bigbox import background as _bg
+        _bg.register(
+            "wardrive",
+            f"Wardrive ({len(self.ifaces)} iface)",
+            "Recon",
+            stop=self._stop_capture,
+        )
 
     def _start_hcxdumptool(self, ts: str) -> None:
         if not self.mon_iface:
@@ -320,6 +327,8 @@ class WardriveView:
             f"{self._csv_path.name if self._csv_path else '<no file>'}"
         )
         self.status_msg = self.result_msg
+        from bigbox import background as _bg
+        _bg.unregister("wardrive")
         self.phase = PHASE_RESULT
 
     def _shutdown(self) -> None:

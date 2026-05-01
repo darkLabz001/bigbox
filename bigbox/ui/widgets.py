@@ -8,7 +8,7 @@ from typing import Callable
 
 import pygame
 
-from bigbox import theme
+from bigbox import background, disk, theme
 from bigbox.events import Button, ButtonEvent
 
 
@@ -75,20 +75,45 @@ class StatusBar:
             # Place it to the right of the hostname
             surf.blit(rec_surf, (theme.PADDING + left.get_width() + 20, (bar.height - rec_surf.get_height()) // 2))
 
+        # Background-task count + free disk indicators sit between
+        # the hostname and the right-side IP/clock block.
+        task_count = background.count()
+        if task_count > 0:
+            tc = font.render(f"○ {task_count} live", True, theme.WARN)
+            tc_x = theme.PADDING + left.get_width() + 80
+            surf.blit(tc, (tc_x, (bar.height - tc.get_height()) // 2))
+
         # Display IPs: Local and optionally Tailscale
         ip_str = self._ip
         if self._ts_ip:
             ip_str = f"TS: {self._ts_ip}   {ip_str}"
+
+        # Free space — color escalates as we approach the auto-rotate
+        # thresholds so the user sees the SD filling before writes fail.
+        free = disk.free_mb()
+        if free < disk.HARD_MB:
+            disk_color = theme.ERR
+        elif free < disk.SOFT_MB:
+            disk_color = theme.WARN
+        else:
+            disk_color = theme.FG_DIM
+        if free >= 1024:
+            disk_str = f"{free / 1024:.1f}G"
+        else:
+            disk_str = f"{free}M"
 
         right = font.render(
             f"{ip_str}   {datetime.now().strftime('%H:%M')}",
             True,
             theme.FG_DIM,
         )
-        surf.blit(
-            right,
-            (bar.right - right.get_width() - theme.PADDING, (bar.height - right.get_height()) // 2),
-        )
+        right_x = bar.right - right.get_width() - theme.PADDING
+        surf.blit(right, (right_x, (bar.height - right.get_height()) // 2))
+
+        disk_surf = font.render(disk_str, True, disk_color)
+        surf.blit(disk_surf,
+                  (right_x - disk_surf.get_width() - 16,
+                   (bar.height - disk_surf.get_height()) // 2))
 
 
 class ResultView:

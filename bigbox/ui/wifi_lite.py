@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pygame
 
-from bigbox import hardware, oui, scans, theme
+from bigbox import background, hardware, oui, scans, theme
 from bigbox.events import Button, ButtonEvent
 from bigbox.ui.section import SectionContext
 
@@ -331,6 +331,12 @@ class ProbeSnifferView(_MonitorModeView):
         self._reader_thread = threading.Thread(
             target=self._reader_loop, daemon=True)
         self._reader_thread.start()
+        background.register(
+            "probe_sniffer",
+            f"Probe sniffer ({self.mon_iface})",
+            "Wireless",
+            stop=self._stop_run,
+        )
 
     def _stop_run(self) -> None:
         if self._proc and self._proc.poll() is None:
@@ -343,6 +349,7 @@ class ProbeSnifferView(_MonitorModeView):
                 except Exception:
                     pass
         self._proc = None
+        background.unregister("probe_sniffer")
         self._persist_scan()
 
     def _persist_scan(self) -> None:
@@ -495,6 +502,12 @@ class BeaconFloodView(_MonitorModeView):
             self.start_time = time.time()
             self.status_msg = (f"Beacon flood: {len(DEFAULT_FLOOD_SSIDS)} "
                                f"SSIDs @ 200 fps each")
+            background.register(
+                "beacon_flood",
+                f"Beacon flood ({self.mon_iface})",
+                "Wireless",
+                stop=self._stop_run,
+            )
         except Exception as e:
             self.error_msg = f"mdk4: {e}"
             self.status_msg = self.error_msg
@@ -511,6 +524,7 @@ class BeaconFloodView(_MonitorModeView):
                 except Exception:
                     pass
         self._proc = None
+        background.unregister("beacon_flood")
 
     def _render_run(self, surf: pygame.Surface, body: pygame.Rect) -> None:
         f_huge = pygame.font.Font(None, 80)
@@ -655,11 +669,18 @@ class KarmaLiteView(_MonitorModeView):
         self._cycle_thread.start()
 
         self.status_msg = "Karma-lite: probing for nearby phones..."
+        background.register(
+            "karma_lite",
+            f"Karma-lite ({self.mon_iface})",
+            "Wireless",
+            stop=self._stop_run,
+        )
 
     def _stop_run(self) -> None:
         self.stop_flag = True
         self._kill("_mdk4")
         self._kill("_tcpdump")
+        background.unregister("karma_lite")
 
     # ---------- worker loops ----------
     _RE_SA = re.compile(r"SA:([0-9A-Fa-f:]{17})")

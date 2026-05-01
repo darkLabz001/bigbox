@@ -83,6 +83,8 @@ class App:
         self.scan_history_view = None  # type: ignore[var-annotated]
         self.web_access_view = None  # type: ignore[var-annotated]
         self.phone_camera_view = None  # type: ignore[var-annotated]
+        self.diagnostics_view = None  # type: ignore[var-annotated]
+        self.bg_tasks_view = None  # type: ignore[var-annotated]
         self.tracker_view: TrackerView | None = None
         self.probe_view: ProbeSnifferView | None = None
         self.beacon_view: BeaconFloodView | None = None
@@ -100,6 +102,13 @@ class App:
         from bigbox.ui.messenger import MessengerSync
         self.msg_sync = MessengerSync(self)
         self.msg_sync.start()
+
+        # SD card silently fills over time (captures + recordings +
+        # handshakes + scans + wardrive); start a slow sweep that
+        # auto-rotates the oldest files when free space dips below
+        # the soft threshold. See bigbox/disk.py.
+        from bigbox import disk as _disk
+        _disk.start_sweeper()
 
         # Web UI state.
         # last_frame: most recent JPEG of the screen for /video_feed.
@@ -288,6 +297,14 @@ class App:
     def show_phone_camera(self) -> None:
         from bigbox.ui.phone_camera import PhoneCameraView
         self.phone_camera_view = PhoneCameraView()
+
+    def show_diagnostics(self) -> None:
+        from bigbox.ui.diagnostics import DiagnosticsView
+        self.diagnostics_view = DiagnosticsView()
+
+    def show_background_tasks(self) -> None:
+        from bigbox.ui.background_tasks import BackgroundTasksView
+        self.bg_tasks_view = BackgroundTasksView()
 
     def show_games(self) -> None:
         self.games_view = GamesView()
@@ -659,6 +676,14 @@ class App:
                 self.phone_camera_view.render(screen)
                 if self.phone_camera_view.dismissed:
                     self.phone_camera_view = None
+            elif self.diagnostics_view is not None:
+                self.diagnostics_view.render(screen)
+                if self.diagnostics_view.dismissed:
+                    self.diagnostics_view = None
+            elif self.bg_tasks_view is not None:
+                self.bg_tasks_view.render(screen)
+                if self.bg_tasks_view.dismissed:
+                    self.bg_tasks_view = None
             elif self.games_view is not None:
                 self.games_view.render(screen)
                 if self.games_view.dismissed:
@@ -938,6 +963,14 @@ class App:
             self.phone_camera_view.handle(bev, self)
             return
 
+        if self.diagnostics_view is not None:
+            self.diagnostics_view.handle(bev, self)
+            return
+
+        if self.bg_tasks_view is not None:
+            self.bg_tasks_view.handle(bev, self)
+            return
+
         if self.tracker_view is not None:
             self.tracker_view.handle(bev, self)
             return
@@ -1050,6 +1083,8 @@ class App:
                 except Exception:
                     pass
             self.recording_proc = None
+            from bigbox import background as _bg
+            _bg.unregister("screen_record")
             self.toast("Recording saved to media/captures/")
             return
 
@@ -1098,6 +1133,13 @@ class App:
                 stdin=subprocess.PIPE,
             )
             self.recording_start_time = time.time()
+            from bigbox import background as _bg
+            _bg.register(
+                "screen_record",
+                f"Screen recording → {fname.name}",
+                "Capture",
+                stop=self._toggle_screen_record,
+            )
             self.toast(f"Recording -> {fname.name}")
         except FileNotFoundError:
             self.toast("ffmpeg not installed")

@@ -66,6 +66,14 @@ def _web_access(ctx: SectionContext) -> None:
     ctx.show_web_access()
 
 
+def _diagnostics(ctx: SectionContext) -> None:
+    ctx.show_diagnostics()
+
+
+def _background_tasks(ctx: SectionContext) -> None:
+    ctx.show_background_tasks()
+
+
 def _update(ctx: SectionContext) -> None:
     # Always resolve the script via the package layout, never via cwd.
     from pathlib import Path
@@ -113,6 +121,8 @@ def build() -> Section:
         background_img=load_background("settings"),
         actions=[
             Action("Web UI Access", _web_access, "Scan a QR with your phone — auto login"),
+            Action("Running Tasks", _background_tasks, "What's running in the background — stop any of them"),
+            Action("Diagnostics", _diagnostics, "Recent crash tracebacks from the journal"),
             Action("Connect to Wi-Fi", _wifi_connect, "scan, select, save a network"),
             Action("Tailscale VPN", _tailscale, "secure access to your private network"),
             Action("Theme Manager", _theme_manager, "install and manage themes"),

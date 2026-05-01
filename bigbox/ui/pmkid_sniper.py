@@ -117,6 +117,13 @@ class PMKIDSniperView:
                 env=os.environ
             )
             threading.Thread(target=self._read_output, daemon=True).start()
+            from bigbox import background as _bg
+            _bg.register(
+                "pmkid_sniper",
+                f"PMKID sniper ({self.mon_iface})",
+                "Wireless",
+                stop=self._stop_snipe,
+            )
         except Exception as e:
             self.status_msg = f"ERR: {str(e)}"
             self.phase = PHASE_RESULT
@@ -160,6 +167,8 @@ class PMKIDSniperView:
             try: os.close(self.slave_fd)
             except: pass
         self.master_fd = self.slave_fd = self.process = None
+        from bigbox import background as _bg
+        _bg.unregister("pmkid_sniper")
         self.phase = PHASE_RESULT
 
     def update(self) -> None:
