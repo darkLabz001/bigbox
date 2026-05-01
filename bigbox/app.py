@@ -52,6 +52,7 @@ class App:
         self.wifi_attack_view: WifiAttackView | None = None
         self.wifi_multi_view: WifiMultiToolView | None = None
         self.cracker_view: OfflineCrackerView | None = None
+        self.pmkid_sniper_view: PMKIDSniperView | None = None
         self.media_view: MediaPlayerView | None = None
         self.tv_view: InternetTVView | None = None
         self.youtube_view: YouTubeView | None = None
@@ -219,6 +220,10 @@ class App:
 
     def show_cracker(self) -> None:
         self.cracker_view = OfflineCrackerView()
+
+    def show_pmkid_sniper(self) -> None:
+        from bigbox.ui.pmkid_sniper import PMKIDSniperView
+        self.pmkid_sniper_view = PMKIDSniperView()
 
     def show_media_player(self) -> None:
         self.media_view = MediaPlayerView()
@@ -507,9 +512,13 @@ class App:
                 if self.wifi_multi_view.dismissed:
                     self.wifi_multi_view = None
             elif self.cracker_view is not None:
-                self.cracker_view.render(screen)
+                self.cracker_view.draw(screen, self)
                 if self.cracker_view.dismissed:
                     self.cracker_view = None
+            elif self.pmkid_sniper_view is not None:
+                self.pmkid_sniper_view.draw(screen, self)
+                if self.pmkid_sniper_view.dismissed:
+                    self.pmkid_sniper_view = None
             elif self.media_view is not None:
                 self.media_view.render(screen)
                 if self.media_view.dismissed:
@@ -780,6 +789,10 @@ class App:
 
         if self.cracker_view is not None:
             self.cracker_view.handle(bev, self)
+            return
+
+        if self.pmkid_sniper_view is not None:
+            self.pmkid_sniper_view.handle(bev, self)
             return
 
         if self.media_view is not None:

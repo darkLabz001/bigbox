@@ -36,6 +36,10 @@ def _crack_handshake(ctx: SectionContext) -> None:
     ctx.show_cracker()
 
 
+def _pmkid_sniper(ctx: SectionContext) -> None:
+    ctx.show_pmkid_sniper()
+
+
 def _evil_twin(ctx: SectionContext) -> None:
     ctx.show_eviltwin()
 
@@ -71,6 +75,7 @@ def build() -> Section:
         background_img=load_background("wireless"),
         actions=[
             Action("Wifite 2", _wifite, "automated auditor — interactive terminal"),
+            Action("PMKID Sniper", _pmkid_sniper, "silent capture — no clients needed"),
             Action("WiFi Multi-Tool", _wifi_multi_tool, "integrated scanner & attacks"),
             Action("Handshake / Deauth", _handshake_deauth, "capture WPA handshakes"),
             Action("Crack Handshake (offline)", _crack_handshake, "aircrack-ng + wordlist"),
