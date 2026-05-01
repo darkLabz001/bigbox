@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from bigbox.app import App
 
 RAGNAR_DIR = "/opt/ragnar"
-RAGNAR_EXEC = "/opt/bigbox/.venv/bin/python3"
+RAGNAR_EXEC = "/opt/ragnar/venv/bin/python3"
 GAMIFICATION_PATH = "/opt/ragnar/data/gamification.json"
 NETKB_PATH = "/opt/ragnar/data/netkb.csv"
 ENV_PATH = "/opt/ragnar/.env"
@@ -547,5 +547,6 @@ class RagnarView:
                     if val:
                         pygame.draw.rect(surf, (0, 255, 100), (qx + c*cell, qy + r*cell, cell, cell))
         
-        surf.blit(self.f_small.render(url, True, theme.FG), (bx + (box_w - self.f_small.size(url)[0]) // 2, by + box_h - 50))
-        surf.blit(self.f_tiny.render("SCAN TO OPEN HUD IN BROWSER", True, theme.FG_DIM), (bx + 90, by + box_h - 30))
+        surf.blit(self.f_small.render(url, True, theme.FG), (bx + (box_w - self.f_small.size(url)[0]) // 2, by + box_h - 60))
+        surf.blit(self.f_tiny.render("SCAN TO OPEN HUD IN BROWSER", True, theme.FG_DIM), (bx + 90, by + box_h - 40))
+        surf.blit(self.f_tiny.render("(ENSURE NEURAL LINK IS ACTIVE)", True, theme.WARN), (bx + 90, by + box_h - 25))
