@@ -247,8 +247,8 @@ class App:
     def show_messenger(self) -> None:
         self.messenger_view = MessengerView()
 
-    def show_ragnar(self) -> None:
-        self.ragnar_view = RagnarView()
+    def show_ragnar(self, phase: str = "landing") -> None:
+        self.ragnar_view = RagnarView(phase)
 
     def show_signal_scraper(self) -> None:
         self.scraper_view = SignalScraperView()

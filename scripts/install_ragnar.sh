@@ -6,7 +6,7 @@ echo "=== Ragnar Headless Kali Raspberry Pi Installer ==="
 
 ORIGINAL_REPO="https://github.com/PierreGode/Ragnar.git"
 HEADLESS_REPO="https://github.com/DezusAZ/hbp0_ragnar.git"
-INSTALL_DIR="/root/Ragnar"
+INSTALL_DIR="/opt/ragnar"
 
 export DEBIAN_FRONTEND=noninteractive
 

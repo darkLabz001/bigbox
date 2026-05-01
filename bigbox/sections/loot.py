@@ -14,6 +14,10 @@ def _scan_history(ctx: SectionContext) -> None:
     ctx.show_scan_history()
 
 
+def _ragnar_db(ctx: SectionContext) -> None:
+    ctx.show_ragnar(phase="targets")
+
+
 def _raw_loot(ctx: SectionContext) -> None:
     # Use the existing ResultView-based loot viewer from settings.py
     fname = "loot/flock_intel.txt"
@@ -69,6 +73,7 @@ def build() -> Section:
         actions=[
             Action("Secure Vault", _vault, "Password-protected encrypted storage"),
             Action("Scan History", _scan_history, "Saved ARP and probe-request scans"),
+            Action("Ragnar Database", _ragnar_db, "View discovered network entities"),
             Action("Raw Intel", _raw_loot, "View unencrypted session logs"),
             Action("WiFi Captures", _view_wifi_loot, "Handshakes, PMKIDs, and Captive logs"),
         ],
