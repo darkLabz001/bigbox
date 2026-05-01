@@ -21,6 +21,10 @@ def _view_captures(ctx: SectionContext) -> None:
     ctx.show_captures()
 
 
+def _phone_camera(ctx: SectionContext) -> None:
+    ctx.show_phone_camera()
+
+
 def build() -> Section:
     return Section(
         title="Media",
@@ -31,6 +35,7 @@ def build() -> Section:
             Action("Open Media Player", _open_player, "Browse and play movies"),
             Action("Free Internet TV", _open_tv, "Watch live world news & TV"),
             Action("YouTube", _open_youtube, "High-fidelity tactical YouTube browser"),
+            Action("Phone Camera", _phone_camera, "Stream your phone's camera over Wi-Fi"),
             Action("View Captures", _view_captures, "View screenshots and recordings"),
         ],
     )
