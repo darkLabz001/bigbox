@@ -179,15 +179,23 @@ class OfflineCrackerView:
         self.status_msg = f"Cracking {self.selected_cap.display}"
         self._stop = False
 
+        # Pi 4 has 4 cores. Letting aircrack default to all of them pegs
+        # the system and either freezes the UI thread or trips an
+        # undervoltage brown-out (USB wifi + 4 hot cores draws enough
+        # current to dip below 4.85 V on marginal supplies, which the
+        # Pi treats as a soft reset — looks exactly like bigbox crashed).
+        # `-p 2` caps aircrack at 2 threads; `nice -n 19` lowers
+        # scheduler priority so the UI render thread always wins.
+        AIRCRACK = ["nice", "-n", "19", "aircrack-ng", "-p", "2"]
         try:
             if wl.is_gz:
                 self._zcat = subprocess.Popen(
-                    ["zcat", str(wl.path)],
+                    ["nice", "-n", "19", "zcat", str(wl.path)],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                 )
                 self._proc = subprocess.Popen(
-                    ["aircrack-ng", "-a", "2", "-w", "-", cap],
+                    AIRCRACK + ["-a", "2", "-w", "-", cap],
                     stdin=self._zcat.stdout,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -199,7 +207,7 @@ class OfflineCrackerView:
                     self._zcat.stdout.close()
             else:
                 self._proc = subprocess.Popen(
-                    ["aircrack-ng", "-a", "2", "-w", str(wl.path), cap],
+                    AIRCRACK + ["-a", "2", "-w", str(wl.path), cap],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -562,9 +570,10 @@ class OfflineCrackerView:
         pygame.draw.rect(surf, theme.DIVIDER, (bar_x, bar_y, bar_w, bar_h), 1)
         if self.keys_total > 0:
             ratio = max(0.0, min(1.0, self.keys_tested / self.keys_total))
-            fill = int(bar_w * ratio)
-            pygame.draw.rect(surf, theme.ACCENT_DIM,
-                             (bar_x + 1, bar_y + 1, fill - 2, bar_h - 2))
+            fill = max(0, int(bar_w * ratio) - 2)
+            if fill > 0:
+                pygame.draw.rect(surf, theme.ACCENT_DIM,
+                                 (bar_x + 1, bar_y + 1, fill, bar_h - 2))
             pct = f"{ratio * 100:.2f}%"
         else:
             # marquee while we wait

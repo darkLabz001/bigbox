@@ -521,8 +521,22 @@ class App:
                 if self.wifi_multi_view.dismissed:
                     self.wifi_multi_view = None
             elif self.cracker_view is not None:
-                self.cracker_view.render(screen)
-                if self.cracker_view.dismissed:
+                # Defensive: a render-time exception inside the cracker
+                # view used to propagate out of the main loop and kill
+                # bigbox. Catch + log + drop the view so B isn't even
+                # required to recover.
+                try:
+                    self.cracker_view.render(screen)
+                    if self.cracker_view.dismissed:
+                        self.cracker_view = None
+                except Exception as _e:
+                    import traceback
+                    print(f"[cracker] render crashed: {_e}")
+                    traceback.print_exc()
+                    try:
+                        self.cracker_view._stop_crack()
+                    except Exception:
+                        pass
                     self.cracker_view = None
             elif self.pmkid_sniper_view is not None:
                 from typing import Any
