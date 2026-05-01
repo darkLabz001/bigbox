@@ -1,4 +1,4 @@
-"""Ragnar — Automated AI-driven pentesting auditor with high-fidelity HUD."""
+"""Ragnar — Professional Network Audit & Exploitation Framework."""
 from __future__ import annotations
 
 import os
@@ -54,7 +54,7 @@ class RagnarView:
         self.dismissed = False
         self.phase = initial_phase
         self.history = deque(maxlen=400)
-        self.status_msg = "CORE_IDLE" if initial_phase == PHASE_LANDING else "LOG_VIEW_MODE"
+        self.status_msg = "CORE_IDLE" if initial_phase == PHASE_LANDING else "RECOVERY_MODE"
         
         # Gamification
         self.points = 0
@@ -66,21 +66,21 @@ class RagnarView:
         self.target_cursor = 0
         
         # UI dimensions
-        self.font = pygame.font.Font(None, 16)
-        self.f_title = pygame.font.Font(None, 36)
-        self.f_med = pygame.font.Font(None, 24)
+        self.f_main = pygame.font.Font(None, 22)
+        self.f_title = pygame.font.Font(None, 34)
+        self.f_bold = pygame.font.Font(None, 26)
         self.f_small = pygame.font.Font(None, 18)
         self.f_tiny = pygame.font.Font(None, 14)
         
         # Config & Env
         self.openai_key = ""
         self.attacks = {
-            "AI_REASONING": True,
-            "SSH_BRUTE": True,
-            "SMB_STEAL": True,
-            "SQL_INJECT": True,
-            "WIFI_SNITCH": True,
-            "BLE_PROBE": True
+            "AUTONOMOUS_MODE": True,
+            "AI_ORCHESTRATION": True,
+            "SVC_EXPLOITATION": True,
+            "CRED_HARVESTING": True,
+            "PASSIVE_SNIFFING": True,
+            "BLE_DISCOVERY": True
         }
         self.config_cursor = 0
         self.config_options = ["EDIT_OPENAI_KEY"] + list(self.attacks.keys())
@@ -93,9 +93,10 @@ class RagnarView:
         self._poll_thread = None
         
         # Aesthetics
-        self._grid_surf = self._create_grid_bg()
-        self._nodes = self._generate_neural_nodes()
-        self._radar_angle = 0
+        self._frame_count = 0
+        self._nodes = self._generate_topology_nodes()
+        self._wave_offset = 0
+        self._cpu_history = deque([random.uniform(5, 15) for _ in range(50)], maxlen=50)
         
         self._load_env()
         self._load_gamification()
@@ -130,23 +131,14 @@ class RagnarView:
             
             with open(ENV_PATH, "w") as f:
                 f.writelines(new_lines)
-            self.status_msg = "ENV_UPDATED"
+            self.status_msg = "ENV_CONFIG_COMMITTED"
         except Exception as e:
-            self.status_msg = f"SAVE_FAIL: {e}"
+            self.status_msg = f"ERR: {e}"
 
-    def _create_grid_bg(self) -> pygame.Surface:
-        s = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H))
-        s.fill((2, 10, 2))
-        for x in range(0, theme.SCREEN_W, 40):
-            pygame.draw.line(s, (5, 20, 5), (x, 0), (x, theme.SCREEN_H))
-        for y in range(0, theme.SCREEN_H, 40):
-            pygame.draw.line(s, (5, 20, 5), (0, y), (theme.SCREEN_W, y))
-        return s
-
-    def _generate_neural_nodes(self):
+    def _generate_topology_nodes(self):
         nodes = []
-        # Center node (Darkbox)
-        nodes.append({"pos": [660, 250], "type": "CORE", "label": "DARKBOX", "size": 8})
+        # Main Node
+        nodes.append({"pos": [670, 240], "label": "LOCAL_NODE", "size": 6})
         return nodes
 
     def _load_gamification(self):
@@ -172,49 +164,34 @@ class RagnarView:
                 for row in reader:
                     new_targets.append(row)
             
-            if len(new_targets) > len(self.targets):
-                self._play_beep()
-            
             self.targets = new_targets
-            self._update_neural_nodes()
+            self._update_topology_nodes()
         except: pass
 
-    def _update_neural_nodes(self):
+    def _update_topology_nodes(self):
         core = self._nodes[0]
         self._nodes = [core]
         
-        # Add up to 12 zombies around the core
-        for i, t in enumerate(self.targets[:12]):
-            angle = (i / min(len(self.targets), 12)) * 2 * math.pi
-            dist = random.randint(80, 140)
+        for i, t in enumerate(self.targets[:15]):
+            angle = (i / min(len(self.targets), 15)) * 2 * math.pi
+            dist = 90 + (i % 3) * 20
             x = core["pos"][0] + math.cos(angle) * dist
             y = core["pos"][1] + math.sin(angle) * dist
             self._nodes.append({
                 "pos": [x, y],
-                "type": "ZOMBIE",
-                "label": t.get("ip", "??"),
-                "size": 4,
+                "label": t.get("ip", "0.0.0.0"),
+                "size": 3,
                 "vulns": int(t.get("vulns", 0) or 0) > 0
             })
 
-    def _play_beep(self):
-        try:
-            if not pygame.mixer.get_init(): pygame.mixer.init()
-            import array
-            sample_rate, freq, duration = 44100, 1000, 0.1
-            n_samples = int(sample_rate * duration)
-            buf = array.array('h', [int(16384 * math.sin(2 * math.pi * freq * i / sample_rate)) for i in range(n_samples)])
-            pygame.mixer.Sound(buffer=buf).play()
-        except: pass
-
     def _start_ragnar(self):
         if not os.path.exists(os.path.join(RAGNAR_DIR, "Ragnar.py")):
-            self.status_msg = "ERROR: CORE_MISSING"
+            self.status_msg = "ERR: BINARY_NOT_FOUND"
             return
 
         self.phase = PHASE_HUD
         self.history.clear()
-        self.history.append("[SYSTEM] INITIATING NEURAL_LINK...")
+        self.history.append(f"[INIT] {time.strftime('%H:%M:%S')} :: ESTABLISHING AUDIT KERNEL...")
         
         cmd = ["sudo", RAGNAR_EXEC, "Ragnar.py"]
         
@@ -232,13 +209,13 @@ class RagnarView:
             self._poll_thread = threading.Thread(target=self._poll_data, daemon=True)
             self._poll_thread.start()
             
-            self.status_msg = "NEURAL_LINK_ACTIVE"
+            self.status_msg = "LINK_ESTABLISHED"
         except Exception as e:
-            self.status_msg = f"LINK_FAIL: {e}"
+            self.status_msg = f"ERR: {e}"
 
     def _read_output(self):
         while not self._stop_event.is_set() and self.master_fd:
-            r, w, e = select.select([self.master_fd], [], [], 0.1)
+            r, _, _ = select.select([self.master_fd], [], [], 0.1)
             if self.master_fd in r:
                 try:
                     data = os.read(self.master_fd, 1024).decode("utf-8", "replace")
@@ -246,7 +223,7 @@ class RagnarView:
                         clean_data = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', data)
                         for line in clean_data.splitlines():
                             if line.strip():
-                                self.history.append(line)
+                                self.history.append(f" {line}")
                                 if "points" in line.lower() or "finding" in line.lower():
                                     self._load_gamification()
                 except OSError: break
@@ -255,7 +232,8 @@ class RagnarView:
         while not self._stop_event.is_set():
             self._load_gamification()
             self._load_targets()
-            time.sleep(5)
+            self._cpu_history.append(random.uniform(20, 60) if self.process else random.uniform(5, 12))
+            time.sleep(4)
 
     def _send_input(self, text: str):
         if self.master_fd and text:
@@ -281,21 +259,21 @@ class RagnarView:
             elif self.phase in (PHASE_HUD, PHASE_TARGETS, PHASE_CONFIG):
                 self._cleanup()
                 self.phase = PHASE_LANDING
-                self.status_msg = "LINK_DROPPED"
+                self.status_msg = "LINK_TERMINATED"
             else: self.dismissed = True
             return
             
         if self.phase == PHASE_LANDING:
             if ev.button is Button.A: self._start_ragnar()
             elif ev.button is Button.X: 
-                self.status_msg = "WEB_UI_ACCESS"
+                self.status_msg = "MOBILE_BRIDGE_ACTIVE"
                 self.phase = PHASE_QR
         
         elif self.phase == PHASE_HUD:
             if ev.button is Button.X: self.phase = PHASE_TARGETS
             elif ev.button is Button.Y: self.phase = PHASE_CONFIG
             elif ev.button in (Button.A, Button.START):
-                ctx.get_input("ORCHESTRATOR COMMAND", self._on_terminal_input)
+                ctx.get_input("OPERATOR COMMAND", self._on_terminal_input)
             elif ev.button is Button.UP: self.history.rotate(1)
             elif ev.button is Button.DOWN: self.history.rotate(-1)
 
@@ -315,7 +293,7 @@ class RagnarView:
             elif ev.button is Button.A:
                 opt = self.config_options[self.config_cursor]
                 if opt == "EDIT_OPENAI_KEY":
-                    ctx.get_input("OPENAI API KEY", self._on_openai_input, self.openai_key)
+                    ctx.get_input("OPENAI_API_KEY", self._on_openai_input, self.openai_key)
                 else:
                     self.attacks[opt] = not self.attacks[opt]
 
@@ -327,26 +305,50 @@ class RagnarView:
     def _on_terminal_input(self, text: str | None):
         if text is not None: self._send_input(text)
 
+    def _draw_hud_frame(self, surf: pygame.Surface):
+        # Professional technical frame
+        color = theme.ACCENT
+        glow = theme.FG
+        
+        # Corner brackets
+        bw, bh = 40, 40
+        thickness = 3
+        # Top-Left
+        pygame.draw.lines(surf, color, False, [(0, bh), (0, 0), (bw, 0)], thickness)
+        # Top-Right
+        pygame.draw.lines(surf, color, False, [(theme.SCREEN_W-bw, 0), (theme.SCREEN_W-1, 0), (theme.SCREEN_W-1, bh)], thickness)
+        # Bottom-Left
+        pygame.draw.lines(surf, color, False, [(0, theme.SCREEN_H-bh), (0, theme.SCREEN_H-1), (bw, theme.SCREEN_H-1)], thickness)
+        # Bottom-Right
+        pygame.draw.lines(surf, color, False, [(theme.SCREEN_W-bw, theme.SCREEN_H-1), (theme.SCREEN_W-1, theme.SCREEN_H-1), (theme.SCREEN_W-1, theme.SCREEN_H-bh)], thickness)
+        
+        # Side bars
+        pygame.draw.line(surf, theme.DIVIDER, (0, 100), (0, theme.SCREEN_H-100), 1)
+        pygame.draw.line(surf, theme.DIVIDER, (theme.SCREEN_W-1, 100), (theme.SCREEN_W-1, theme.SCREEN_H-100), 1)
+
     def render(self, surf: pygame.Surface) -> None:
-        surf.blit(self._grid_surf, (0, 0))
-        head_h = 80
-        pygame.draw.rect(surf, (5, 20, 5), (0, 0, theme.SCREEN_W, head_h))
-        pygame.draw.line(surf, (0, 255, 100), (0, head_h-1), (theme.SCREEN_W, head_h-1), 2)
+        surf.fill(theme.BG)
+        self._frame_count += 1
         
-        # Stylized Header
-        title = self.f_title.render("RAGNAR // NEURAL_HUD", True, (0, 255, 100))
-        surf.blit(title, (theme.PADDING, 10))
+        # HUD Frame
+        self._draw_hud_frame(surf)
         
-        # XP Bar
-        xp_x, xp_y = 450, 15
-        pygame.draw.rect(surf, (10, 40, 10), (xp_x, xp_y, 300, 25), border_radius=4)
-        progress = (self.points % 1000) / 1000.0
-        pygame.draw.rect(surf, (0, 200, 80), (xp_x + 2, xp_y + 2, int(296 * progress), 21), border_radius=2)
-        surf.blit(self.f_tiny.render(f"LVL {self.level} // COINS: {self.points}", True, theme.FG), (xp_x + 10, xp_y + 6))
+        # Header reading
+        head_h = 60
+        surf.blit(self.f_title.render("RAGNAR // AUDIT_ENGINE_v4", True, theme.FG), (theme.PADDING + 10, 15))
         
-        # Stats
-        stats_str = f"VULNS: {self.stats['vulns']} | CREDS: {self.stats['creds']} | ZOMBIES: {self.stats['zombies']}"
-        surf.blit(self.f_tiny.render(stats_str, True, (0, 255, 100)), (xp_x, xp_y + 35))
+        # Rank / Credits (Gamification but cleaner)
+        rank_x = 420
+        surf.blit(self.f_tiny.render(f"ENTITY_LVL: {self.level:02d}", True, theme.ACCENT), (rank_x, 15))
+        surf.blit(self.f_tiny.render(f"CREDITS: {self.points:06d}", True, theme.FG_DIM), (rank_x, 30))
+        
+        # CPU/Load Graph (mini)
+        gx, gy = rank_x + 130, 15
+        pygame.draw.rect(surf, theme.BG_ALT, (gx, gy, 120, 25))
+        for i, val in enumerate(self._cpu_history):
+            h = int(val * 0.2)
+            pygame.draw.line(surf, theme.ACCENT, (gx + i*2 + 10, gy + 22), (gx + i*2 + 10, gy + 22 - h))
+        surf.blit(self.f_tiny.render("PROC_LOAD", True, theme.FG_DIM), (gx + 130, gy + 5))
 
         if self.phase == PHASE_LANDING: self._render_landing(surf, head_h)
         elif self.phase == PHASE_HUD: self._render_hud(surf, head_h)
@@ -355,198 +357,223 @@ class RagnarView:
         elif self.phase == PHASE_CONFIG: self._render_config(surf, head_h)
         elif self.phase == PHASE_QR: self._render_qr(surf, head_h)
 
-        # Footer
+        # Tech Footer
         foot_h = 30
-        pygame.draw.rect(surf, (2, 10, 2), (0, theme.SCREEN_H - foot_h, theme.SCREEN_W, foot_h))
-        pygame.draw.line(surf, (0, 100, 50), (0, theme.SCREEN_H - foot_h), (theme.SCREEN_W, theme.SCREEN_H - foot_h))
-        surf.blit(self.f_med.render(f"STATUS: {self.status_msg}", True, (0, 255, 100)), (10, theme.SCREEN_H - 25))
+        pygame.draw.line(surf, theme.DIVIDER, (20, theme.SCREEN_H - foot_h), (theme.SCREEN_W - 20, theme.SCREEN_H - foot_h))
+        status_col = theme.ACCENT if "ACTIVE" in self.status_msg or "ESTABLISHED" in self.status_msg else theme.WARN
+        surf.blit(self.f_small.render(f"SYSTEM_STATE: {self.status_msg}", True, status_col), (25, theme.SCREEN_H - 24))
         
         hints = {
-            PHASE_LANDING: "A: START  X: WEB_UI  B: EXIT",
-            PHASE_HUD: "X: TARGETS  Y: CONFIG  A: CMD  B: STOP",
-            PHASE_TARGETS: "X: CONFIG  Y: HUD  A: DETAILS  B: STOP",
-            PHASE_DETAILS: "B: BACK",
-            PHASE_CONFIG: "X: HUD  Y: TARGETS  A: TOGGLE  B: STOP",
-            PHASE_QR: "B: BACK"
+            PHASE_LANDING: "A: INITIATE_LINK  X: MOBILE_BRIDGE  B: SHUTDOWN",
+            PHASE_HUD: "X: TARGET_LIST  Y: PROTOCOLS  A: COMMAND  B: DISCONNECT",
+            PHASE_TARGETS: "X: PROTOCOLS  Y: REALTIME_HUD  A: INSPECT  B: DISCONNECT",
+            PHASE_DETAILS: "B: RETURN",
+            PHASE_CONFIG: "X: REALTIME_HUD  Y: TARGET_LIST  A: TOGGLE  B: DISCONNECT",
+            PHASE_QR: "B: RETURN"
         }
-        h_surf = self.f_med.render(hints.get(self.phase, "B: BACK"), True, theme.FG_DIM)
-        surf.blit(h_surf, (theme.SCREEN_W - h_surf.get_width() - 10, theme.SCREEN_H - 25))
+        h_surf = self.f_small.render(hints.get(self.phase, "B: BACK"), True, theme.FG_DIM)
+        surf.blit(h_surf, (theme.SCREEN_W - h_surf.get_width() - 25, theme.SCREEN_H - 24))
 
     def _render_landing(self, surf: pygame.Surface, head_h: int):
-        y = head_h + 50
-        box = pygame.Rect(theme.SCREEN_W // 2 - 280, y, 560, 220)
-        pygame.draw.rect(surf, (5, 25, 5), box, border_radius=12)
-        pygame.draw.rect(surf, (0, 255, 100), box, 1, border_radius=12)
+        # High-fidelity tech splash
+        bx, by = theme.SCREEN_W // 2 - 250, head_h + 40
+        bw, bh = 500, 240
+        pygame.draw.rect(surf, theme.BG_ALT, (bx, by, bw, bh), border_radius=4)
+        pygame.draw.rect(surf, theme.DIVIDER, (bx, by, bw, bh), 1, border_radius=4)
         
         lines = [
-            "RAGNAR: AUTONOMOUS NEURAL AUDITOR",
-            "REASONING: MULTI-AGENT ORCHESTRATION",
-            "------------------------------------",
-            "PRESS A TO INITIATE LINK",
-            "PRESS X TO GENERATE WEB ACCESS QR"
+            "RAGNAR // AUTONOMOUS NETWORK AUDITOR",
+            "ARCHITECTURE: MULTI-AGENT REASONING",
+            "-------------------------------------",
+            f"VULNS_ARCHIVED:  {self.stats['vulns']:03d}",
+            f"IDENT_ENTITIES:  {len(self.targets):03d}",
+            "-------------------------------------",
+            ">> PRESS A TO ESTABLISH NEURAL_LINK <<",
+            ">> PRESS X FOR WEB_BRIDGE ACCESS   <<"
         ]
         for i, ln in enumerate(lines):
-            col = (0, 255, 100) if "PRESS" in ln else theme.FG
-            surf.blit(self.f_med.render(ln, True, col), (box.x + 40, box.y + 40 + i * 35))
+            col = theme.ACCENT if ">>" in ln else theme.FG
+            if "RAGNAR" in ln: col = theme.FG; font = self.f_bold
+            else: font = self.f_main
+            surf.blit(font.render(ln, True, col), (bx + 40, by + 30 + i * 26))
+            
+        # Pulsing decoration
+        pulse = abs(math.sin(self._frame_count * 0.05))
+        pygame.draw.circle(surf, (int(90*pulse), int(230*pulse), int(170*pulse)), (bx + 25, by + 42), 4)
 
     def _render_hud(self, surf: pygame.Surface, head_h: int):
-        # Log View
-        log_rect = pygame.Rect(10, head_h + 10, 520, theme.SCREEN_H - head_h - 50)
-        pygame.draw.rect(surf, (0, 15, 0), log_rect, border_radius=4)
-        pygame.draw.rect(surf, (0, 100, 0), log_rect, 1, border_radius=4)
+        # Data Stream
+        log_rect = pygame.Rect(20, head_h + 10, 500, theme.SCREEN_H - head_h - 60)
+        pygame.draw.rect(surf, (5, 6, 10), log_rect, border_radius=2)
+        pygame.draw.rect(surf, theme.DIVIDER, log_rect, 1)
         
-        line_h = self.font.get_linesize()
-        max_lines = log_rect.height // line_h - 2
+        line_h = 18
+        max_lines = log_rect.height // line_h - 1
         visible = list(self.history)[-max_lines:]
         for i, line in enumerate(visible):
-            surf.blit(self.font.render(line[:90], True, (0, 200, 50)), (log_rect.x + 10, log_rect.y + 10 + i * line_h))
+            col = theme.FG
+            if "[INIT]" in line: col = theme.ACCENT
+            elif "finding" in line.lower() or "success" in line.lower(): col = (100, 255, 150)
+            elif "err" in line.lower() or "fail" in line.lower(): col = theme.ERR
+            surf.blit(self.f_tiny.render(line[:85], True, col), (log_rect.x + 10, log_rect.y + 8 + i * line_h))
 
-        # Neural Map Area
-        self._render_neural_map(surf, head_h)
-        self._render_radar(surf, head_h)
+        # Topology / Signals
+        self._render_topology(surf, head_h)
+        self._render_signals(surf, head_h)
 
-    def _render_neural_map(self, surf: pygame.Surface, head_h: int):
-        map_rect = pygame.Rect(540, head_h + 10, 250, 250)
-        pygame.draw.rect(surf, (0, 15, 0), map_rect, border_radius=4)
-        pygame.draw.rect(surf, (0, 100, 0), map_rect, 1, border_radius=4)
+    def _render_topology(self, surf: pygame.Surface, head_h: int):
+        pane = pygame.Rect(535, head_h + 10, 245, 230)
+        pygame.draw.rect(surf, theme.BG_ALT, pane, border_radius=2)
+        pygame.draw.rect(surf, theme.DIVIDER, pane, 1)
+        surf.blit(self.f_tiny.render("NODE_TOPOLOGY", True, theme.FG_DIM), (pane.x + 10, pane.y + 5))
         
         core = self._nodes[0]
+        # Draw connections
         for node in self._nodes[1:]:
-            pygame.draw.line(surf, (0, 50, 0), core["pos"], node["pos"], 1)
-            col = (255, 50, 50) if node.get("vulns") else (0, 150, 80)
+            pygame.draw.line(surf, (30, 40, 50), core["pos"], node["pos"], 1)
+            col = theme.ERR if node.get("vulns") else theme.ACCENT
             pygame.draw.circle(surf, col, (int(node["pos"][0]), int(node["pos"][1])), node["size"])
-            label = self.f_tiny.render(node["label"], True, theme.FG_DIM)
-            surf.blit(label, (node["pos"][0] + 5, node["pos"][1] - 5))
+            if self._frame_count % 60 < 30: # Blink label for vulnerables
+                label = self.f_tiny.render(node["label"].split(".")[-1], True, theme.FG_DIM)
+                surf.blit(label, (node["pos"][0] + 5, node["pos"][1] - 5))
             
-        pygame.draw.circle(surf, (0, 255, 100), core["pos"], core["size"])
-        surf.blit(self.f_tiny.render("CORE", True, (0, 255, 100)), (core["pos"][0] - 15, core["pos"][1] + 10))
+        pygame.draw.circle(surf, theme.FG, core["pos"], core["size"], 2)
+        # Scan sweep
+        rad = (self._frame_count * 0.05) % (math.pi * 2)
+        end = (core["pos"][0] + math.cos(rad) * 110, core["pos"][1] + math.sin(rad) * 110)
+        pygame.draw.line(surf, (40, 80, 70), core["pos"], end, 1)
 
-    def _render_radar(self, surf: pygame.Surface, head_h: int):
-        radar_rect = pygame.Rect(540, head_h + 270, 250, 90)
-        pygame.draw.rect(surf, (0, 15, 0), radar_rect, border_radius=4)
-        pygame.draw.rect(surf, (0, 100, 0), radar_rect, 1, border_radius=4)
+    def _render_signals(self, surf: pygame.Surface, head_h: int):
+        pane = pygame.Rect(535, head_h + 250, 245, 110)
+        pygame.draw.rect(surf, theme.BG_ALT, pane, border_radius=2)
+        pygame.draw.rect(surf, theme.DIVIDER, pane, 1)
+        surf.blit(self.f_tiny.render("SIGNAL_INTENSITY", True, theme.FG_DIM), (pane.x + 10, pane.y + 5))
         
-        # Radar scan line
-        center = (radar_rect.x + 45, radar_rect.y + 45)
-        radius = 35
-        pygame.draw.circle(surf, (0, 50, 0), center, radius, 1)
-        self._radar_angle = (self._radar_angle + 5) % 360
-        rad = math.radians(self._radar_angle)
-        end = (center[0] + math.cos(rad) * radius, center[1] + math.sin(rad) * radius)
-        pygame.draw.line(surf, (0, 255, 100), center, end, 2)
-        
-        surf.blit(self.f_small.render("SCANNER ACTIVE", True, (0, 255, 100)), (radar_rect.x + 100, radar_rect.y + 15))
-        surf.blit(self.f_tiny.render(f"ZOMBIES: {len(self.targets)}", True, theme.FG), (radar_rect.x + 100, radar_rect.y + 40))
-        surf.blit(self.f_tiny.render(f"LINK_QLTY: 98%", True, (0, 150, 80)), (radar_rect.x + 100, radar_rect.y + 55))
+        # Oscilloscope-style wave
+        points = []
+        for x in range(pane.width - 20):
+            y = pane.centery + math.sin((self._frame_count + x) * 0.1) * 20 * math.sin(self._frame_count * 0.02)
+            points.append((pane.x + 10 + x, y))
+        if len(points) > 1:
+            pygame.draw.lines(surf, theme.ACCENT, False, points, 1)
+            
+        # Readouts
+        surf.blit(self.f_tiny.render(f"PPS: {random.randint(120, 450)}", True, theme.FG), (pane.x + 15, pane.bottom - 20))
+        surf.blit(self.f_tiny.render(f"LAT: {random.randint(5, 45)}ms", True, theme.FG), (pane.right - 60, pane.bottom - 20))
 
     def _render_targets(self, surf: pygame.Surface, head_h: int):
-        box = pygame.Rect(10, head_h + 10, 780, theme.SCREEN_H - head_h - 50)
-        pygame.draw.rect(surf, (0, 15, 0), box, border_radius=4)
-        pygame.draw.rect(surf, (0, 100, 0), box, 1, border_radius=4)
+        box = pygame.Rect(20, head_h + 10, 760, theme.SCREEN_H - head_h - 60)
+        pygame.draw.rect(surf, theme.BG_ALT, box, border_radius=4)
+        pygame.draw.rect(surf, theme.DIVIDER, box, 1)
         
         if not self.targets:
-            surf.blit(self.f_med.render("NO TARGETS IDENTIFIED", True, theme.FG_DIM), (theme.SCREEN_W // 2 - 100, theme.SCREEN_H // 2))
+            surf.blit(self.f_main.render("SEARCHING FOR NETWORK ENTITIES...", True, theme.FG_DIM), (theme.SCREEN_W // 2 - 140, theme.SCREEN_H // 2))
             return
 
-        cols = [("IP", 120), ("HOSTNAME", 180), ("VENDOR", 150), ("VULNS", 60), ("OS", 100)]
-        x = box.x + 20
-        for name, width in cols:
-            surf.blit(self.f_small.render(name, True, (0, 255, 100)), (x, box.y + 15))
-            x += width
+        headers = [("IP_ADDR", 130), ("IDENTIFIER", 180), ("HARDWARE", 160), ("THREAT", 70), ("OS_PLATFORM", 100)]
+        hx = box.x + 20
+        for name, width in headers:
+            surf.blit(self.f_small.render(name, True, theme.ACCENT), (hx, box.y + 15))
+            hx += width
             
-        pygame.draw.line(surf, (0, 50, 0), (box.x + 10, box.y + 35), (box.right - 10, box.y + 35))
+        pygame.draw.line(surf, theme.DIVIDER, (box.x + 15, box.y + 38), (box.right - 15, box.y + 38))
         
-        row_h = 28
-        visible = (box.height - 50) // row_h
-        start = max(0, min(self.target_cursor - visible // 2, len(self.targets) - visible))
+        row_h = 26
+        visible_count = (box.height - 55) // row_h
+        start = max(0, min(self.target_cursor - visible_count // 2, len(self.targets) - visible_count))
         
-        for i in range(visible):
+        for i in range(visible_count):
             idx = start + i
             if idx >= len(self.targets): break
             t = self.targets[idx]
             y = box.y + 45 + i * row_h
+            
             if idx == self.target_cursor:
-                pygame.draw.rect(surf, (10, 40, 10), (box.x + 5, y - 2, box.width - 10, row_h), border_radius=4)
+                pygame.draw.rect(surf, theme.SELECTION_BG, (box.x + 10, y - 2, box.width - 20, row_h), border_radius=2)
+                pygame.draw.rect(surf, theme.ACCENT, (box.x + 10, y - 2, box.width - 20, row_h), 1, border_radius=2)
             
             tx = box.x + 20
             surf.blit(self.f_small.render(t.get("ip", "??"), True, theme.FG), (tx, y))
-            tx += 120
-            surf.blit(self.f_small.render(t.get("hostname", "??")[:20], True, theme.FG), (tx, y))
+            tx += 130
+            surf.blit(self.f_small.render(t.get("hostname", "??")[:22], True, theme.FG), (tx, y))
             tx += 180
-            surf.blit(self.f_small.render(t.get("vendor", "??")[:18], True, theme.FG), (tx, y))
-            tx += 150
-            vcol = (255, 50, 50) if int(t.get("vulns", 0) or 0) > 0 else theme.FG_DIM
-            surf.blit(self.f_small.render(t.get("vulns", "0"), True, vcol), (tx, y))
-            tx += 60
-            surf.blit(self.f_small.render(t.get("os", "??")[:12], True, theme.FG), (tx, y))
+            surf.blit(self.f_small.render(t.get("vendor", "??")[:20], True, theme.FG_DIM), (tx, y))
+            tx += 160
+            v_val = int(t.get("vulns", 0) or 0)
+            vcol = theme.ERR if v_val > 0 else theme.FG_DIM
+            surf.blit(self.f_small.render(f"HIGH" if v_val > 0 else "LOW", True, vcol), (tx, y))
+            tx += 70
+            surf.blit(self.f_small.render(t.get("os", "??")[:14], True, theme.FG_DIM), (tx, y))
 
     def _render_details(self, surf: pygame.Surface, head_h: int):
-        if not self.targets or self.target_cursor >= len(self.targets):
-            self.phase = PHASE_TARGETS
-            return
-            
-        t = self.targets[self.target_cursor]
-        box = pygame.Rect(100, head_h + 30, 600, 300)
-        pygame.draw.rect(surf, (5, 25, 5), box, border_radius=12)
-        pygame.draw.rect(surf, (0, 255, 100), box, 1, border_radius=12)
+        if not self.targets: return
+        t = self.targets[min(self.target_cursor, len(self.targets)-1)]
         
-        title = self.f_med.render(f"ZOMBIE_DETAILS: {t.get('ip', '??')}", True, (0, 255, 100))
-        surf.blit(title, (box.x + 30, box.y + 20))
+        box = pygame.Rect(100, head_h + 30, 600, 320)
+        pygame.draw.rect(surf, theme.BG_ALT, box, border_radius=4)
+        pygame.draw.rect(surf, theme.ACCENT, box, 1, border_radius=4)
         
-        lines = [
-            f"HOSTNAME: {t.get('hostname', '??')}",
-            f"MAC_ADDR: {t.get('mac', '??')}",
-            f"VENDOR:   {t.get('vendor', '??')}",
-            f"OS_PROTO: {t.get('os', '??')}",
-            f"SERVICES: {t.get('services', '??')}",
-            f"VULNS:    {t.get('vulns', '??')}",
-            f"LAST_SEEN: {t.get('last_seen', '??')}"
+        surf.blit(self.f_bold.render(f"ENTITY_PROFILE: {t.get('ip', '??')}", True, theme.ACCENT), (box.x + 30, box.y + 20))
+        
+        fields = [
+            ("HOSTNAME", t.get('hostname')),
+            ("MAC_ADDRESS", t.get('mac')),
+            ("VENDOR_IDENT", t.get('vendor')),
+            ("OS_FINGERPRINT", t.get('os')),
+            ("ACTIVE_SERVICES", t.get('services')),
+            ("VULNERABILITIES", t.get('vulns')),
+            ("LAST_OBSERVED", t.get('last_seen'))
         ]
-        for i, ln in enumerate(lines):
-            surf.blit(self.f_small.render(ln, True, theme.FG), (box.x + 40, box.y + 70 + i * 25))
+        for i, (label, val) in enumerate(fields):
+            surf.blit(self.f_small.render(f"{label:16} ::", True, theme.FG_DIM), (box.x + 40, box.y + 70 + i * 28))
+            vcol = theme.ERR if label == "VULNERABILITIES" and int(val or 0) > 0 else theme.FG
+            surf.blit(self.f_small.render(str(val or "UNKNOWN"), True, vcol), (box.x + 200, box.y + 70 + i * 28))
 
     def _render_config(self, surf: pygame.Surface, head_h: int):
-        y = head_h + 30
-        surf.blit(self.f_med.render("PROTOCOLS & NEURAL_LINK SETTINGS", True, (0, 255, 100)), (50, y))
+        y = head_h + 20
+        surf.blit(self.f_bold.render("PROTOCOL_ORCHESTRATION", True, theme.ACCENT), (50, y))
         for i, opt in enumerate(self.config_options):
             sel = i == self.config_cursor
-            rect = pygame.Rect(50, y + 50 + i*40, 450, 35)
-            if sel: pygame.draw.rect(surf, (10, 40, 10), rect, border_radius=4)
-            pygame.draw.rect(surf, (0, 100, 0), rect, 1, border_radius=4)
-            surf.blit(self.f_med.render(f"{opt}", True, theme.FG if not sel else (0, 255, 100)), (70, rect.y + 7))
+            rect = pygame.Rect(50, y + 45 + i*38, 480, 32)
+            if sel: 
+                pygame.draw.rect(surf, theme.SELECTION_BG, rect, border_radius=2)
+                pygame.draw.rect(surf, theme.ACCENT, rect, 1, border_radius=2)
+            else:
+                pygame.draw.rect(surf, theme.BG_ALT, rect, border_radius=2)
+                pygame.draw.rect(surf, theme.DIVIDER, rect, 1, border_radius=2)
+                
+            surf.blit(self.f_main.render(f"{opt}", True, theme.FG if not sel else theme.ACCENT), (70, rect.y + 5))
             
             if opt in self.attacks:
                 val = self.attacks[opt]
                 status = "ENABLED" if val else "DISABLED"
-                scol = (100, 255, 100) if val else theme.FG_DIM
-                surf.blit(self.f_med.render(status, True, scol), (rect.right - 100, rect.y + 7))
+                scol = theme.ACCENT if val else theme.FG_DIM
+                surf.blit(self.f_main.render(status, True, scol), (rect.right - 100, rect.y + 5))
             elif opt == "EDIT_OPENAI_KEY":
-                masked = (self.openai_key[:8] + "...") if self.openai_key else "MISSING"
-                surf.blit(self.f_small.render(masked, True, (100, 255, 100) if self.openai_key else theme.ERR), (rect.right - 150, rect.y + 10))
+                masked = (self.openai_key[:12] + "...") if self.openai_key else "UNDEFINED"
+                surf.blit(self.f_small.render(masked, True, theme.ACCENT if self.openai_key else theme.ERR), (rect.right - 180, rect.y + 8))
 
     def _render_qr(self, surf: pygame.Surface, head_h: int):
         ip = qr.lan_ipv4() or "127.0.0.1"
         url = f"http://{ip}:8000"
         
-        box_w, box_h = 400, 320
-        bx = (theme.SCREEN_W - box_w) // 2
-        by = (theme.SCREEN_H - box_h) // 2 + 30
-        pygame.draw.rect(surf, (5, 25, 5), (bx, by, box_w, box_h), border_radius=12)
-        pygame.draw.rect(surf, (0, 255, 100), (bx, by, box_w, box_h), 2, border_radius=12)
+        box_w, box_h = 420, 340
+        bx, by = (theme.SCREEN_W - box_w) // 2, (theme.SCREEN_H - box_h) // 2 + 20
+        pygame.draw.rect(surf, theme.BG_ALT, (bx, by, box_w, box_h), border_radius=8)
+        pygame.draw.rect(surf, theme.ACCENT, (bx, by, box_w, box_h), 1, border_radius=8)
         
-        surf.blit(self.f_med.render("RAGNAR WEB_UI ACCESS", True, (0, 255, 100)), (bx + 80, by + 20))
+        surf.blit(self.f_bold.render("MOBILE_BRIDGE_ACCESS", True, theme.ACCENT), (bx + 85, by + 20))
         
         matrix = qr.make_matrix(url)
         if matrix:
             m_size = len(matrix)
-            cell = min(180 // m_size, 6)
-            qx = bx + (box_w - m_size * cell) // 2
-            qy = by + 60
+            cell = min(200 // m_size, 7)
+            qx, qy = bx + (box_w - m_size * cell) // 2, by + 60
             for r, row in enumerate(matrix):
                 for c, val in enumerate(row):
-                    if val:
-                        pygame.draw.rect(surf, (0, 255, 100), (qx + c*cell, qy + r*cell, cell, cell))
+                    if val: pygame.draw.rect(surf, theme.FG, (qx + c*cell, qy + r*cell, cell, cell))
         
-        surf.blit(self.f_small.render(url, True, theme.FG), (bx + (box_w - self.f_small.size(url)[0]) // 2, by + box_h - 60))
-        surf.blit(self.f_tiny.render("SCAN TO OPEN HUD IN BROWSER", True, theme.FG_DIM), (bx + 90, by + box_h - 40))
-        surf.blit(self.f_tiny.render("(ENSURE NEURAL LINK IS ACTIVE)", True, theme.WARN), (bx + 90, by + box_h - 25))
+        surf.blit(self.f_main.render(url, True, theme.ACCENT), (bx + (box_w - self.f_main.size(url)[0]) // 2, by + box_h - 70))
+        surf.blit(self.f_tiny.render("SCAN TO BRIDGE HUD TO EXTERNAL DEVICE", True, theme.FG_DIM), (bx + 80, by + box_h - 45))
+        if not self.process:
+            surf.blit(self.f_tiny.render("(ENSURE NEURAL_LINK IS ACTIVE)", True, theme.WARN), (bx + 110, by + box_h - 30))
