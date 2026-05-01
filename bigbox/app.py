@@ -33,6 +33,76 @@ from bigbox.update_checker import UpdateChecker
 from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
+# Foreground-view registry. Render and input both walk this in order;
+# the first attribute on `App` whose value is non-None wins. Order
+# matches the historical elif chain so behavior is preserved.
+#
+# handle_arity:
+#   1 = view.handle(bev)            (kb / cctv / update / result)
+#   2 = view.handle(bev, app)       (most everything else)
+#   0 = input is handled outside the registry (games_view's pre-step
+#       in _dispatch consumes events including releases)
+#
+# menu_view is *not* in the registry — it's an overlay rendered on top
+# of whatever's behind it and special-cased at the input top-level.
+_VIEWS: tuple[tuple[str, int], ...] = (
+    ("kb_view", 1),
+    ("cctv_view", 1),
+    ("ping_view", 2),
+    ("arp_view", 2),
+    ("flock_view", 2),
+    ("wifi_view", 2),
+    ("cam_scan_view", 2),
+    ("wifi_attack_view", 2),
+    ("wifi_multi_view", 2),
+    ("cracker_view", 2),
+    ("pmkid_sniper_view", 2),
+    ("media_view", 2),
+    ("tv_view", 2),
+    ("youtube_view", 2),
+    ("tailscale_view", 2),
+    ("anon_surf_view", 2),
+    ("vault_view", 2),
+    ("bettercap_view", 2),
+    ("mail_view", 2),
+    ("messenger_view", 2),
+    ("ragnar_view", 2),
+    ("scraper_view", 2),
+    ("traffic_cam_view", 2),
+    ("camera_view", 2),
+    ("wifite_view", 2),
+    ("chat_view", 2),
+    ("sherlock_view", 2),
+    ("deaddrop_view", 2),
+    ("bbs_view", 2),
+    ("ble_view", 2),
+    ("onion_view", 2),
+    ("ble_spam_view", 2),
+    ("terminal_view", 2),
+    ("theme_manager_view", 2),
+    ("wardrive_view", 2),
+    ("eviltwin_view", 2),
+    ("captures_view", 2),
+    ("scan_history_view", 2),
+    ("web_access_view", 2),
+    ("phone_camera_view", 2),
+    ("diagnostics_view", 2),
+    ("bg_tasks_view", 2),
+    ("games_view", 0),
+    ("tracker_view", 2),
+    ("probe_view", 2),
+    ("beacon_view", 2),
+    ("karma_view", 2),
+    ("update_view", 1),
+    ("result_view", 1),
+)
+
+# Method names to try when forcibly stopping a view that crashed,
+# checked in order. First one that exists is invoked.
+_STOP_METHODS = ("_stop_run", "_stop_crack", "_stop_capture",
+                 "_stop_stream", "_stop_snipe", "_stop", "_shutdown")
+
+
 class App:
     def __init__(self) -> None:
         self.dev_mode = bool(os.environ.get("BIGBOX_DEV"))
@@ -109,6 +179,23 @@ class App:
         # the soft threshold. See bigbox/disk.py.
         from bigbox import disk as _disk
         _disk.start_sweeper()
+
+        # Persistent journal storage — without this, journalctl only
+        # sees the current boot, which means the Diagnostics view loses
+        # everything across crashes/reboots. Idempotent: skips if the
+        # directory already exists.
+        try:
+            jdir = Path("/var/log/journal")
+            if not jdir.is_dir():
+                jdir.mkdir(parents=True, exist_ok=True)
+                # systemd picks up the new dir on next restart.
+                subprocess.run(
+                    ["systemctl", "restart", "systemd-journald"],
+                    timeout=5, check=False,
+                )
+                print("[journal] enabled persistent storage at /var/log/journal")
+        except Exception as e:
+            print(f"[journal] could not enable persistent storage: {e}")
 
         # Web UI state.
         # last_frame: most recent JPEG of the screen for /video_feed.
@@ -501,217 +588,8 @@ class App:
                     pass
 
             screen.fill(theme.BG)
-            if self.kb_view is not None:
-                self.kb_view.render(screen)
-                if self.kb_view.dismissed:
-                    self.kb_view = None
-            elif self.cctv_view is not None:
-                self.cctv_view.render(screen)
-                if self.cctv_view.dismissed:
-                    self.cctv_view = None
-            elif self.ping_view is not None:
-                self.ping_view.render(screen)
-                if self.ping_view.dismissed:
-                    self.ping_view = None
-            elif self.arp_view is not None:
-                self.arp_view.render(screen)
-                if self.arp_view.dismissed:
-                    self.arp_view = None
-            elif self.flock_view is not None:
-                self.flock_view.render(screen)
-                if self.flock_view.dismissed:
-                    self.flock_view = None
-            elif self.wifi_view is not None:
-                self.wifi_view.render(screen)
-                if self.wifi_view.dismissed:
-                    self.wifi_view = None
-            elif self.cam_scan_view is not None:
-                self.cam_scan_view.render(screen)
-                if self.cam_scan_view.dismissed:
-                    self.cam_scan_view = None
-            elif self.wifi_attack_view is not None:
-                self.wifi_attack_view.render(screen)
-                if self.wifi_attack_view.dismissed:
-                    self.wifi_attack_view = None
-            elif self.wifi_multi_view is not None:
-                self.wifi_multi_view.render(screen)
-                if self.wifi_multi_view.dismissed:
-                    self.wifi_multi_view = None
-            elif self.cracker_view is not None:
-                # Defensive: a render-time exception inside the cracker
-                # view used to propagate out of the main loop and kill
-                # bigbox. Catch + log + drop the view so B isn't even
-                # required to recover.
-                try:
-                    self.cracker_view.render(screen)
-                    if self.cracker_view.dismissed:
-                        self.cracker_view = None
-                except Exception as _e:
-                    import traceback
-                    print(f"[cracker] render crashed: {_e}")
-                    traceback.print_exc()
-                    try:
-                        self.cracker_view._stop_crack()
-                    except Exception:
-                        pass
-                    self.cracker_view = None
-            elif self.pmkid_sniper_view is not None:
-                from typing import Any
-                self.pmkid_sniper_view.draw(screen, self) # type: ignore
-                if self.pmkid_sniper_view.dismissed:
-                    self.pmkid_sniper_view = None
-            elif self.media_view is not None:
-                self.media_view.render(screen)
-                if self.media_view.dismissed:
-                    self.media_view = None
-            elif self.tv_view is not None:
-                self.tv_view.render(screen)
-                if self.tv_view.dismissed:
-                    self.tv_view = None
-            elif self.youtube_view is not None:
-                self.youtube_view.render(screen)
-                if self.youtube_view.dismissed:
-                    self.youtube_view = None
-            elif self.tailscale_view is not None:
-                self.tailscale_view.render(screen)
-                if self.tailscale_view.dismissed:
-                    self.tailscale_view = None
-            elif self.anon_surf_view is not None:
-                self.anon_surf_view.render(screen)
-                if self.anon_surf_view.dismissed:
-                    self.anon_surf_view = None
-            elif self.vault_view is not None:
-                self.vault_view.render(screen)
-                if self.vault_view.dismissed:
-                    self.vault_view = None
-            elif self.bettercap_view is not None:
-                self.bettercap_view.render(screen)
-                if self.bettercap_view.dismissed:
-                    self.bettercap_view = None
-            elif self.mail_view is not None:
-                self.mail_view.render(screen)
-                if self.mail_view.dismissed:
-                    self.mail_view = None
-            elif self.messenger_view is not None:
-                self.messenger_view.render(screen)
-                if self.messenger_view.dismissed:
-                    self.messenger_view = None
-            elif self.ragnar_view is not None:
-                self.ragnar_view.render(screen)
-                if self.ragnar_view.dismissed:
-                    self.ragnar_view = None
-            elif self.scraper_view is not None:
-                self.scraper_view.render(screen)
-                if self.scraper_view.dismissed:
-                    self.scraper_view = None
-            elif self.traffic_cam_view is not None:
-                self.traffic_cam_view.render(screen)
-                if self.traffic_cam_view.dismissed:
-                    self.traffic_cam_view = None
-            elif self.camera_view is not None:
-                self.camera_view.render(screen)
-                if self.camera_view.dismissed:
-                    self.camera_view = None
-            elif self.wifite_view is not None:
-                self.wifite_view.render(screen)
-                if self.wifite_view.dismissed:
-                    self.wifite_view = None
-            elif self.chat_view is not None:
-                self.chat_view.render(screen)
-                if self.chat_view.dismissed:
-                    self.chat_view = None
-            elif self.sherlock_view is not None:
-                self.sherlock_view.render(screen)
-                if self.sherlock_view.dismissed:
-                    self.sherlock_view = None
-            elif self.deaddrop_view is not None:
-                self.deaddrop_view.render(screen)
-                if self.deaddrop_view.dismissed:
-                    self.deaddrop_view = None
-            elif self.bbs_view is not None:
-                self.bbs_view.render(screen)
-                if self.bbs_view.dismissed:
-                    self.bbs_view = None
-            elif self.ble_view is not None:
-                self.ble_view.render(screen)
-                if self.ble_view.dismissed:
-                    self.ble_view = None
-            elif self.onion_view is not None:
-                self.onion_view.render(screen)
-                if self.onion_view.dismissed:
-                    self.onion_view = None
-            elif self.ble_spam_view is not None:
-                self.ble_spam_view.render(screen)
-                if self.ble_spam_view.dismissed:
-                    self.ble_spam_view = None
-            elif self.terminal_view is not None:
-                self.terminal_view.render(screen)
-                if self.terminal_view.dismissed:
-                    self.terminal_view = None
-            elif self.theme_manager_view is not None:
-                self.theme_manager_view.render(screen)
-                if self.theme_manager_view.dismissed:
-                    self.theme_manager_view = None
-            elif self.wardrive_view is not None:
-                self.wardrive_view.render(screen)
-                if self.wardrive_view.dismissed:
-                    self.wardrive_view = None
-            elif self.eviltwin_view is not None:
-                self.eviltwin_view.render(screen)
-                if self.eviltwin_view.dismissed:
-                    self.eviltwin_view = None
-            elif self.captures_view is not None:
-                self.captures_view.render(screen)
-                if self.captures_view.dismissed:
-                    self.captures_view = None
-            elif self.scan_history_view is not None:
-                self.scan_history_view.render(screen)
-                if self.scan_history_view.dismissed:
-                    self.scan_history_view = None
-            elif self.web_access_view is not None:
-                self.web_access_view.render(screen)
-                if self.web_access_view.dismissed:
-                    self.web_access_view = None
-            elif self.phone_camera_view is not None:
-                self.phone_camera_view.render(screen)
-                if self.phone_camera_view.dismissed:
-                    self.phone_camera_view = None
-            elif self.diagnostics_view is not None:
-                self.diagnostics_view.render(screen)
-                if self.diagnostics_view.dismissed:
-                    self.diagnostics_view = None
-            elif self.bg_tasks_view is not None:
-                self.bg_tasks_view.render(screen)
-                if self.bg_tasks_view.dismissed:
-                    self.bg_tasks_view = None
-            elif self.games_view is not None:
-                self.games_view.render(screen)
-                if self.games_view.dismissed:
-                    self.games_view = None
-            elif self.tracker_view is not None:
-                self.tracker_view.render(screen)
-                if self.tracker_view.dismissed:
-                    self.tracker_view = None
-            elif self.probe_view is not None:
-                self.probe_view.render(screen)
-                if self.probe_view.dismissed:
-                    self.probe_view = None
-            elif self.beacon_view is not None:
-                self.beacon_view.render(screen)
-                if self.beacon_view.dismissed:
-                    self.beacon_view = None
-            elif self.karma_view is not None:
-                self.karma_view.render(screen)
-                if self.karma_view.dismissed:
-                    self.karma_view = None
-            elif self.update_view is not None:
-                self.update_view.render(screen)
-                if self.update_view.dismissed:
-                    self.update_view = None
-            elif self.result_view is not None:
-                self.result_view.render(screen)
-                if self.result_view.dismissed:
-                    self.result_view = None
+            if self._dispatch_view_render(screen):
+                pass
             else:
                 if self.show_status:
                     statusbar.render(screen, self)
@@ -753,6 +631,66 @@ class App:
 
         pygame.quit()
         return 0
+
+    # ---------- view registry helpers --------------------------------------
+    def _active_view(self) -> tuple[str, object, int]:
+        """Return ``(attr_name, view, handle_arity)`` of the highest-
+        priority active view, or ``("", None, 0)`` if none."""
+        for name, arity in _VIEWS:
+            v = getattr(self, name, None)
+            if v is not None:
+                return name, v, arity
+        return "", None, 0
+
+    def _force_stop_view(self, view: object) -> None:
+        """Best-effort: call any plausible stop method on a crashed
+        view so its subprocess/thread doesn't leak."""
+        for stop_name in _STOP_METHODS:
+            stop_fn = getattr(view, stop_name, None)
+            if callable(stop_fn):
+                try:
+                    stop_fn()
+                except Exception:
+                    pass
+                return
+
+    def _dispatch_view_render(self, screen: pygame.Surface) -> bool:
+        """Render the foreground view if any. Returns True if a view
+        was rendered. A crashing view is logged + dropped instead of
+        propagating, so one broken view can't take down bigbox."""
+        name, view, _ = self._active_view()
+        if view is None:
+            return False
+        try:
+            view.render(screen)
+            if getattr(view, "dismissed", False):
+                setattr(self, name, None)
+        except Exception as e:
+            import traceback
+            print(f"[render] {name} crashed: {type(e).__name__}: {e}")
+            traceback.print_exc()
+            self._force_stop_view(view)
+            setattr(self, name, None)
+        return True
+
+    def _dispatch_view_input(self, bev: ButtonEvent) -> bool:
+        """Hand input to the active view if any. Returns True if a
+        view consumed it (caller should skip global hotkeys)."""
+        name, view, arity = self._active_view()
+        if view is None or arity == 0:
+            return False
+        try:
+            if arity == 2:
+                view.handle(bev, self)
+            else:
+                view.handle(bev)
+        except Exception as e:
+            import traceback
+            print(f"[input] {name} crashed: {type(e).__name__}: {e}")
+            traceback.print_exc()
+            self._force_stop_view(view)
+            setattr(self, name, None)
+        return True
 
     def _dispatch(self, bev: ButtonEvent, carousel: Carousel) -> None:
         if bev.pressed:
@@ -800,199 +738,9 @@ class App:
             self.menu_view.handle(bev)
             return
 
-        if self.kb_view is not None:
-            self.kb_view.handle(bev)
-            return
-
-        if self.cctv_view is not None:
-            self.cctv_view.handle(bev)
-            return
-
-        if self.ping_view is not None:
-            self.ping_view.handle(bev, self)
-            return
-
-        if self.arp_view is not None:
-            self.arp_view.handle(bev, self)
-            return
-
-        if self.flock_view is not None:
-            self.flock_view.handle(bev, self)
-            return
-
-        if self.wifi_view is not None:
-            self.wifi_view.handle(bev, self)
-            return
-
-        if self.cam_scan_view is not None:
-            self.cam_scan_view.handle(bev, self)
-            return
-
-        if self.wifi_attack_view is not None:
-            self.wifi_attack_view.handle(bev, self)
-            return
-
-        if self.wifi_multi_view is not None:
-            self.wifi_multi_view.handle(bev, self)
-            return
-
-        if self.cracker_view is not None:
-            self.cracker_view.handle(bev, self)
-            return
-
-        if self.pmkid_sniper_view is not None:
-            self.pmkid_sniper_view.handle(bev, self)
-            return
-
-        if self.media_view is not None:
-            self.media_view.handle(bev, self)
-            return
-
-        if self.tv_view is not None:
-            try:
-                self.tv_view.handle(bev, self)
-            except Exception as e:
-                self.show_result("TV Error", f"{type(e).__name__}: {e}")
-            return
-
-        if self.youtube_view is not None:
-            self.youtube_view.handle(bev, self)
-            return
-
-        if self.tailscale_view is not None:
-            self.tailscale_view.handle(bev, self)
-            return
-
-        if self.anon_surf_view is not None:
-            self.anon_surf_view.handle(bev, self)
-            return
-
-        if self.vault_view is not None:
-            self.vault_view.handle(bev, self)
-            return
-
-        if self.bettercap_view is not None:
-            self.bettercap_view.handle(bev, self)
-            return
-
-        if self.mail_view is not None:
-            self.mail_view.handle(bev, self)
-            return
-
-        if self.messenger_view is not None:
-            self.messenger_view.handle(bev, self)
-            return
-
-        if self.ragnar_view is not None:
-            self.ragnar_view.handle(bev, self)
-            return
-
-        if self.scraper_view is not None:
-            self.scraper_view.handle(bev, self)
-            return
-
-        if self.traffic_cam_view is not None:
-            self.traffic_cam_view.handle(bev, self)
-            return
-
-        if self.camera_view is not None:
-            self.camera_view.handle(bev, self)
-            return
-
-        if self.wifite_view is not None:
-            self.wifite_view.handle(bev, self)
-            return
-
-        if self.chat_view is not None:
-            self.chat_view.handle(bev, self)
-            return
-
-        if self.sherlock_view is not None:
-            self.sherlock_view.handle(bev, self)
-            return
-
-        if self.deaddrop_view is not None:
-            self.deaddrop_view.handle(bev, self)
-            return
-
-        if self.bbs_view is not None:
-            self.bbs_view.handle(bev, self)
-            return
-
-        if self.ble_view is not None:
-            self.ble_view.handle(bev, self)
-            return
-
-        if self.onion_view is not None:
-            self.onion_view.handle(bev, self)
-            return
-
-        if self.ble_spam_view is not None:
-            self.ble_spam_view.handle(bev, self)
-            return
-
-        if self.terminal_view is not None:
-            self.terminal_view.handle(bev, self)
-            return
-
-        if self.theme_manager_view is not None:
-            self.theme_manager_view.handle(bev, self)
-            return
-
-        if self.wardrive_view is not None:
-            self.wardrive_view.handle(bev, self)
-            return
-
-        if self.eviltwin_view is not None:
-            self.eviltwin_view.handle(bev, self)
-            return
-
-        if self.captures_view is not None:
-            self.captures_view.handle(bev, self)
-            return
-
-        if self.scan_history_view is not None:
-            self.scan_history_view.handle(bev, self)
-            return
-
-        if self.web_access_view is not None:
-            self.web_access_view.handle(bev, self)
-            return
-
-        if self.phone_camera_view is not None:
-            self.phone_camera_view.handle(bev, self)
-            return
-
-        if self.diagnostics_view is not None:
-            self.diagnostics_view.handle(bev, self)
-            return
-
-        if self.bg_tasks_view is not None:
-            self.bg_tasks_view.handle(bev, self)
-            return
-
-        if self.tracker_view is not None:
-            self.tracker_view.handle(bev, self)
-            return
-
-        if self.probe_view is not None:
-            self.probe_view.handle(bev, self)
-            return
-
-        if self.beacon_view is not None:
-            self.beacon_view.handle(bev, self)
-            return
-
-        if self.karma_view is not None:
-            self.karma_view.handle(bev, self)
-            return
-
-        if self.update_view is not None:
-            self.update_view.handle(bev)
-            return
-
-        if self.result_view is not None:
-            self.result_view.handle(bev)
+        # Foreground view (registry-driven, with try/except so a
+        # crashing view drops itself instead of taking down bigbox).
+        if self._dispatch_view_input(bev):
             return
 
         # Global hotkeys (low priority/contextual).

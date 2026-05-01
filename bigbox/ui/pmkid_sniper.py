@@ -174,11 +174,14 @@ class PMKIDSniperView:
     def update(self) -> None:
         pass
 
-    def draw(self, surf: pygame.Surface, ctx: SectionContext) -> None:
-        f = ctx.fonts["base"]
-        f_bold = ctx.fonts["bold"]
-        f_small = ctx.fonts["small"]
-        f_tiny = ctx.fonts["small"] # Use small as tiny for now
+    def render(self, surf: pygame.Surface) -> None:
+        # Fonts here use the standard pygame.font.Font(None, N) form so
+        # the bigbox._font_cache monkey-patch can dedupe instances —
+        # don't reach back into App for a shared dict.
+        f = pygame.font.Font(None, theme.FS_BODY)
+        f_bold = pygame.font.Font(None, theme.FS_TITLE)
+        f_small = pygame.font.Font(None, theme.FS_SMALL)
+        f_tiny = f_small
         
         head_h, foot_h = 40, 32
         surf.fill(theme.BG)
