@@ -8,7 +8,7 @@ from typing import Callable
 
 import pygame
 
-from bigbox import background, disk, theme
+from bigbox import background, disk, power, theme
 from bigbox.events import Button, ButtonEvent
 
 
@@ -111,9 +111,69 @@ class StatusBar:
         surf.blit(right, (right_x, (bar.height - right.get_height()) // 2))
 
         disk_surf = font.render(disk_str, True, disk_color)
+        disk_x = right_x - disk_surf.get_width() - 16
         surf.blit(disk_surf,
-                  (right_x - disk_surf.get_width() - 16,
-                   (bar.height - disk_surf.get_height()) // 2))
+                  (disk_x, (bar.height - disk_surf.get_height()) // 2))
+
+        # Battery indicator — themed glyph + percentage. Only renders
+        # when a UPS HAT / PiSugar is detected; bare Pi 4 with no
+        # power source returns None and we silently skip.
+        batt = power.battery()
+        if batt is not None:
+            self._draw_battery(surf, font, batt,
+                               disk_x - 12, bar.height)
+
+    @staticmethod
+    def _draw_battery(surf: pygame.Surface, font: pygame.font.Font,
+                      batt: power.BatteryInfo,
+                      right_edge: int, bar_h: int) -> None:
+        # Body geometry — small horizontal battery glyph with a nub on
+        # the right. Positioned to the LEFT of `right_edge` (the disk
+        # indicator's left edge).
+        pct = max(0, min(100, batt.percent))
+        if pct < 20:
+            color = theme.ERR
+        elif pct < 50:
+            color = theme.WARN
+        else:
+            color = theme.ACCENT
+
+        # Percentage label sits to the right of the glyph.
+        pct_surf = font.render(f"{pct}%", True, color)
+        pct_w = pct_surf.get_width()
+
+        body_w = 22
+        body_h = max(10, bar_h // 2)
+        nub_w = 3
+        nub_h = max(4, body_h // 2)
+
+        glyph_total = body_w + nub_w + 4
+        x = right_edge - pct_w - glyph_total
+        y = (bar_h - body_h) // 2
+
+        # Outline + terminal nub.
+        pygame.draw.rect(surf, theme.FG_DIM, (x, y, body_w, body_h), 1)
+        pygame.draw.rect(surf, theme.FG_DIM,
+                         (x + body_w, y + (body_h - nub_h) // 2,
+                          nub_w, nub_h))
+        # Fill bar — leave 2px padding inside the outline.
+        inner_w = body_w - 4
+        fill_w = max(0, int(inner_w * pct / 100))
+        if fill_w > 0:
+            pygame.draw.rect(surf, color,
+                             (x + 2, y + 2, fill_w, body_h - 4))
+
+        # Charging glyph: a small "+" on top of the body in BG color
+        # so it's visible regardless of fill width.
+        if batt.charging:
+            cx = x + body_w // 2
+            cy = y + body_h // 2
+            pygame.draw.line(surf, theme.BG, (cx - 3, cy), (cx + 3, cy), 2)
+            pygame.draw.line(surf, theme.BG, (cx, cy - 3), (cx, cy + 3), 2)
+
+        # Percentage text to the right of the glyph.
+        surf.blit(pct_surf, (x + body_w + nub_w + 4,
+                             (bar_h - pct_surf.get_height()) // 2))
 
 
 class ResultView:
