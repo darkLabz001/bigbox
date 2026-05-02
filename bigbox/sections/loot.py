@@ -14,6 +14,10 @@ def _scan_history(ctx: SectionContext) -> None:
     ctx.show_scan_history()
 
 
+def _tracker_history(ctx: SectionContext) -> None:
+    ctx.show_tracker_history()
+
+
 def _ragnar_db(ctx: SectionContext) -> None:
     ctx.show_ragnar(phase="targets")
 
@@ -73,6 +77,7 @@ def build() -> Section:
         actions=[
             Action("Secure Vault", _vault, "Password-protected encrypted storage"),
             Action("Scan History", _scan_history, "Saved ARP and probe-request scans"),
+            Action("Tracker History", _tracker_history, "Long-term 'is anything following me' analysis"),
             Action("Ragnar Database", _ragnar_db, "View discovered network entities"),
             Action("Raw Intel", _raw_loot, "View unencrypted session logs"),
             Action("WiFi Captures", _view_wifi_loot, "Handshakes, PMKIDs, and Captive logs"),

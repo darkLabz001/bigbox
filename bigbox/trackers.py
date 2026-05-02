@@ -290,6 +290,14 @@ class TrackerDetector:
         )
         self.detections.append(d)
         self.recent[address] = d
+        # Persist for the long-term "Who's tailing me" analysis. Append
+        # only — JSONL keeps the file diff-friendly and lets the history
+        # view stream-parse it.
+        try:
+            from bigbox import tracker_history
+            tracker_history.append(d)
+        except Exception as e:
+            print(f"[trackers] history persist failed: {e}")
         # Trim recent dict to most recent ~50
         if len(self.recent) > 50:
             oldest = sorted(self.recent.values(), key=lambda x: x.ts)[: -50]

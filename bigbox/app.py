@@ -82,12 +82,14 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("theme_manager_view", 2),
     ("wardrive_view", 2),
     ("eviltwin_view", 2),
+    ("honeypot_view", 2),
     ("captures_view", 2),
     ("scan_history_view", 2),
     ("web_access_view", 2),
     ("phone_camera_view", 2),
     ("diagnostics_view", 2),
     ("bg_tasks_view", 2),
+    ("tracker_history_view", 2),
     ("games_view", 0),
     ("tracker_view", 2),
     ("probe_view", 2),
@@ -348,6 +350,14 @@ class App:
     def show_background_tasks(self) -> None:
         from bigbox.ui.background_tasks import BackgroundTasksView
         self.bg_tasks_view = BackgroundTasksView()
+
+    def show_tracker_history(self) -> None:
+        from bigbox.ui.tracker_history import TrackerHistoryView
+        self.tracker_history_view = TrackerHistoryView()
+
+    def show_honeypot(self) -> None:
+        from bigbox.ui.honeypot import HoneypotView
+        self.honeypot_view = HoneypotView()
 
     def show_games(self) -> None:
         self.games_view = GamesView()
