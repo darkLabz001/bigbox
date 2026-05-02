@@ -404,7 +404,8 @@ class GamesView:
             surf.blit(btn_s, (box_x + 200, y))
 
         hint = self.hint_font.render(
-            "SELECT + START to stop", True, theme.FG_DIM)
+            "HK to exit emulator   (or SELECT + START)",
+            True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
 
     def _render_result(self, surf: pygame.Surface, head_h: int) -> None:

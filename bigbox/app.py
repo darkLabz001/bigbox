@@ -667,12 +667,25 @@ class App:
         else:
             print(f"[app] Button release: {bev.button}")
             self.held_buttons.discard(bev.button)
+            # HK release normally opens the system hotkey menu, but
+            # during emulator gameplay HK is reserved as the "exit
+            # emulator" button — popping the HK menu over the emulator
+            # is bad UX, and the injector doesn't pass HK to the game.
             if bev.button is Button.HK and not self.hk_used:
+                if (self.games_view is not None
+                        and getattr(self.games_view, "phase", "") == "running"):
+                    try:
+                        self.games_view._stop()
+                    except Exception as e:
+                        print(f"[games] HK exit failed: {e}")
+                    return
                 self._open_hk_menu()
                 return
 
-        # Allow GamesView to receive key releases for the emulator
-        if self.games_view is not None:
+        # Allow GamesView to receive key releases for the emulator.
+        # Suppress HK while the emulator is running so it can't reach
+        # the injector — HK belongs to bigbox during gameplay.
+        if self.games_view is not None and bev.button is not Button.HK:
             if self.games_view.handle(bev, self):
                 return
         
