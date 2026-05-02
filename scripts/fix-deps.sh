@@ -22,6 +22,7 @@ PKGS=(
     cryptsetup bettercap bluez alsa-utils mpv mgba-sdl mednafen pcsxr
     python3-serial rfkill curl ca-certificates fonts-dejavu-core
     traceroute dnsutils iputils-ping sqlite3 build-essential pkg-config
+    hostapd dnsmasq
 )
 
 NEEDED=()

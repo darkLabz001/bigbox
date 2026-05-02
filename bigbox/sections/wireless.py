@@ -44,6 +44,10 @@ def _evil_twin(ctx: SectionContext) -> None:
     ctx.show_eviltwin()
 
 
+def _honeypot(ctx: SectionContext) -> None:
+    ctx.show_honeypot()
+
+
 def _probe_sniffer(ctx: SectionContext) -> None:
     ctx.show_probe_sniffer()
 
@@ -80,6 +84,7 @@ def build() -> Section:
             Action("Handshake / Deauth", _handshake_deauth, "capture WPA handshakes"),
             Action("Crack Handshake (offline)", _crack_handshake, "aircrack-ng + wordlist"),
             Action("Evil Twin / Captive Portal", _evil_twin, "rogue AP + cred capture"),
+            Action("Honeypot AP", _honeypot, "open SSID — log who connects"),
             Action("Probe Sniffer", _probe_sniffer, "passive — see every phone's known SSIDs"),
             Action("Beacon Flood", _beacon_flood, "spam fake SSIDs into nearby devices"),
             Action("Karma-lite", _karma_lite, "broadcast SSIDs phones are probing for"),
