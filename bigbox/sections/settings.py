@@ -22,11 +22,14 @@ def _vol_mute(ctx: SectionContext) -> None:
 
 
 def _reboot(ctx: SectionContext) -> None:
-    ctx.run_streaming("reboot", ["sudo", "reboot"])
+    # bigbox runs as root under bigbox.service, so call systemctl
+    # directly. Avoids the sudo round-trip and won't hang on a
+    # missing sudoers entry.
+    ctx.run_streaming("reboot", ["systemctl", "reboot"])
 
 
 def _poweroff(ctx: SectionContext) -> None:
-    ctx.run_streaming("poweroff", ["sudo", "poweroff"])
+    ctx.run_streaming("poweroff", ["systemctl", "poweroff"])
 
 
 def _view_loot(ctx: SectionContext) -> None:

@@ -109,56 +109,12 @@ class App:
         self.bus = EventBus()
         self.running = True
         self.update_checker = UpdateChecker(self)
-        self.result_view: ResultView | None = None
-        self.update_view: UpdateView | None = None
+        # Foreground views — all initialized to None here via _VIEWS so adding
+        # a new view is a one-line registry update. menu_view is the
+        # only foreground attribute outside _VIEWS (it is an overlay).
         self.menu_view: MenuView | None = None
-        self.cctv_view: CCTVView | None = None
-        self.ping_view: PingSweepView | None = None
-        self.arp_view: ARPScanView | None = None
-        self.kb_view: KeyboardView | None = None
-        self.flock_view: FlockScannerView | None = None
-        self.wifi_view: WifiConnectView | None = None
-        self.cam_scan_view: CamScannerView | None = None
-        self.wifi_attack_view: WifiAttackView | None = None
-        self.wifi_multi_view: WifiMultiToolView | None = None
-        self.cracker_view: OfflineCrackerView | None = None
-        self.pmkid_sniper_view: PMKIDSniperView | None = None
-        self.media_view: MediaPlayerView | None = None
-        self.tv_view: InternetTVView | None = None
-        self.youtube_view: YouTubeView | None = None
-        self.tailscale_view: TailscaleView | None = None
-        self.anon_surf_view: AnonSurfView | None = None
-        self.vault_view: VaultView | None = None
-        self.bettercap_view: BettercapView | None = None
-        self.mail_view: MailView | None = None
-        self.messenger_view: MessengerView | None = None
-        self.ragnar_view: RagnarView | None = None
-        self.scraper_view: SignalScraperView | None = None
-        self.traffic_cam_view: TrafficCamView | None = None
-        self.camera_view: CameraInterceptorView | None = None
-        self.wifite_view: WifiteView | None = None
-        self.chat_view: ChatView | None = None
-        self.sherlock_view: SherlockView | None = None
-        self.deaddrop_view: DeadDropView | None = None
-        self.bbs_view: BBSView | None = None
-        self.ble_view: BLEChatView | None = None
-        self.onion_view: OnionChatView | None = None
-        self.ble_spam_view: BLESpamView | None = None
-        self.terminal_view: TerminalView | None = None
-        self.theme_manager_view: ThemeManagerView | None = None
-        self.wardrive_view: WardriveView | None = None
-        self.eviltwin_view: EvilTwinView | None = None
-        self.games_view: GamesView | None = None
-        self.captures_view: CapturesView | None = None
-        self.scan_history_view = None  # type: ignore[var-annotated]
-        self.web_access_view = None  # type: ignore[var-annotated]
-        self.phone_camera_view = None  # type: ignore[var-annotated]
-        self.diagnostics_view = None  # type: ignore[var-annotated]
-        self.bg_tasks_view = None  # type: ignore[var-annotated]
-        self.tracker_view: TrackerView | None = None
-        self.probe_view: ProbeSnifferView | None = None
-        self.beacon_view: BeaconFloodView | None = None
-        self.karma_view: KarmaLiteView | None = None
+        for _vname, _ in _VIEWS:
+            setattr(self, _vname, None)
         self.show_status = True
         self.held_buttons: set[Button] = set()
         self.hk_used = False
@@ -768,8 +724,8 @@ class App:
     def _open_system_menu(self) -> None:
         actions = [
             ("Back to Tool", lambda: None),
-            ("Reboot", lambda: subprocess.run(["sudo", "reboot"])),
-            ("Power Off", lambda: subprocess.run(["sudo", "poweroff"])),
+            ("Reboot", lambda: subprocess.run(["systemctl", "reboot"])),
+            ("Power Off", lambda: subprocess.run(["systemctl", "poweroff"])),
         ]
         if self.dev_mode:
             actions.append(("Exit bigbox", lambda: setattr(self, "running", False)))
@@ -784,7 +740,7 @@ class App:
             ("Screenshot (Y)", self._take_screenshot),
             ("Record Screen (Toggle)", self._toggle_screen_record),
             ("OTA Update", lambda: self.show_update("OTA update", [str(update_script)])),
-            ("Reboot System", lambda: subprocess.run(["sudo", "reboot"])),
+            ("Reboot System", lambda: subprocess.run(["systemctl", "reboot"])),
         ]
         self.menu_view = MenuView("HOTKEYS", actions)
 
