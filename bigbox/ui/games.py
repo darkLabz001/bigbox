@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 from bigbox import emulator as _emu
-from bigbox import theme
+from bigbox import games_state, theme
 from bigbox.events import Button, ButtonEvent
 from bigbox.ui.scroll_list import ScrollList
 from bigbox.ui.section import Action
@@ -30,6 +30,36 @@ PHASE_ROM = "rom"
 PHASE_RUNNING = "running"
 PHASE_RESULT = "result"
 PHASE_PYTHON = "python"
+
+
+def _read_pcm_volume() -> str | None:
+    """Return amixer's current PCM volume on Card 1 (e.g. '67%') or
+    None if amixer isn't available. We restore to whatever the user
+    had before the emulator launch bumped it to 100%."""
+    try:
+        out = subprocess.check_output(
+            ["amixer", "-c", "1", "sget", "PCM"],
+            text=True, timeout=2, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return None
+    # amixer output line format: "Mono: Playback 256 [67%] [-12.50dB] [on]"
+    import re
+    m = re.search(r"\[(\d+)%\]", out)
+    return f"{m.group(1)}%" if m else None
+
+
+def _restore_pcm_volume(saved: str | None) -> None:
+    if not saved:
+        return
+    try:
+        subprocess.run(
+            ["amixer", "-c", "1", "sset", "PCM", saved],
+            check=False, timeout=2,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
 
 
 class GamesView:
@@ -78,10 +108,12 @@ class GamesView:
         out: list[tuple[str, str, int]] = []
         # Add internal Classics
         out.append(("classics", "CLASSIC TERMINAL PAYLOADS", 2))
-        
+
+        # Show every system the emulator module knows about. Empty rom
+        # dirs render as "0 roms" — they're a hint for the user that
+        # the system is wired up and ready for an upload.
         for key, sd in _emu.SYSTEMS.items():
-            if key == "gba":  # Only GBA as requested
-                out.append((key, sd.label, len(sd.list_roms())))
+            out.append((key, sd.label, len(sd.list_roms())))
         self.systems = out
         if self.sys_cursor >= len(out):
             self.sys_cursor = max(0, len(out) - 1)
@@ -97,12 +129,14 @@ class GamesView:
         sd = _emu.SYSTEMS.get(self.current_system or "")
         if not sd:
             return ScrollList([Action("[ no system ]", None)])
-        roms = sd.list_roms()
+        roms = games_state.sorted_roms(self.current_system or "", sd.list_roms())
         actions: list[Action] = []
         for r in roms:
             def make_handler(rom_name: str):
                 return lambda ctx: self._launch(rom_name)
-            actions.append(Action(r, make_handler(r)))
+            count = games_state.play_count(self.current_system or "", r)
+            desc = f"played {count}x" if count else ""
+            actions.append(Action(r, make_handler(r), desc))
         if not actions:
             actions.append(Action("[ Empty — upload via Web UI ]", None))
         return ScrollList(actions)
@@ -120,6 +154,13 @@ class GamesView:
         self.playing_rom = rom_filename
         self.last_result = None
         self.last_result_rc = None
+
+        # Save current PCM volume so we can restore it on emulator exit.
+        # The launch path bumps to 100% so games are audible without
+        # reaching for the device — but stealing the user's volume
+        # silently is rude; restore it on the way out.
+        self._saved_volume = _read_pcm_volume()
+
         proc, msg = _emu.launch(self.current_system, rom_filename)
         if proc is None:
             self.last_result = [msg]
@@ -129,6 +170,7 @@ class GamesView:
         self.proc = proc
         self.injector = _emu.InputInjector()
         self._launch_time = time.time()
+        games_state.record_play(self.current_system, rom_filename)
         self.phase = PHASE_RUNNING
 
     def _launch_python(self, game_name: str) -> None:
@@ -157,8 +199,13 @@ class GamesView:
             self.injector = None
         self.proc = None
         self.playing_rom = None
+        # Restore the volume the user had before we launched.
+        _restore_pcm_volume(getattr(self, "_saved_volume", None))
         # Bounce back to the rom list of the same system
         self.phase = PHASE_ROM if self.current_system else PHASE_SYSTEM
+        # Refresh so the just-played rom floats to the top.
+        if self.current_system:
+            self.list = self._build_rom_list()
 
     # ---------- input ----------
     def handle(self, ev: ButtonEvent, ctx: App) -> bool:
@@ -316,20 +363,45 @@ class GamesView:
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
 
     def _render_running(self, surf: pygame.Surface, head_h: int) -> None:
-        center_x, center_y = theme.SCREEN_W // 2, theme.SCREEN_H // 2
-        f_big = pygame.font.Font(None, 48)
+        center_x = theme.SCREEN_W // 2
+        f_big = pygame.font.Font(None, 36)
         f_med = pygame.font.Font(None, 22)
+        f_chord = pygame.font.Font(None, 20)
 
+        # Title block
         msg = f_big.render("emulator running", True, theme.ACCENT)
-        surf.blit(msg, (center_x - msg.get_width() // 2, center_y - 60))
+        surf.blit(msg, (center_x - msg.get_width() // 2, head_h + 16))
 
         sub = f_med.render(self.playing_rom or "", True, theme.FG_DIM)
-        surf.blit(sub, (center_x - sub.get_width() // 2, center_y - 10))
+        surf.blit(sub, (center_x - sub.get_width() // 2,
+                        head_h + 16 + msg.get_height() + 4))
 
-        warn = f_med.render(
-            "Plug in a USB keyboard or controller to play.",
-            True, theme.WARN)
-        surf.blit(warn, (center_x - warn.get_width() // 2, center_y + 30))
+        # Control map — bigbox GPIO buttons are wired into a virtual
+        # gamepad via uinput (see bigbox/emulator.py InputInjector).
+        # Show the actual mapping so users don't think they need a
+        # second controller.
+        mappings = [
+            ("D-Pad",     "UP / DOWN / LEFT / RIGHT"),
+            ("A button",  "A"),
+            ("B button",  "B"),
+            ("L / R",     "X / Y  (or LL / RR)"),
+            ("START",     "START"),
+            ("SELECT",    "SELECT"),
+        ]
+        box_w = 540
+        box_h = 30 + len(mappings) * 26 + 10
+        box_x = (theme.SCREEN_W - box_w) // 2
+        box_y = head_h + 90
+        pygame.draw.rect(surf, (5, 5, 10), (box_x, box_y, box_w, box_h))
+        pygame.draw.rect(surf, theme.DIVIDER, (box_x, box_y, box_w, box_h), 1)
+        header = f_chord.render("CONTROLS", True, theme.ACCENT)
+        surf.blit(header, (box_x + 12, box_y + 6))
+        for i, (game, btn) in enumerate(mappings):
+            y = box_y + 30 + i * 26
+            game_s = f_chord.render(game, True, theme.FG_DIM)
+            btn_s = f_chord.render(btn, True, theme.FG)
+            surf.blit(game_s, (box_x + 16, y))
+            surf.blit(btn_s, (box_x + 200, y))
 
         hint = self.hint_font.render(
             "SELECT + START to stop", True, theme.FG_DIM)
