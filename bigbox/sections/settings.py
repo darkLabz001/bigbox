@@ -126,10 +126,32 @@ def _network_menu(ctx: SectionContext) -> None:
 
 def _diagnostics_menu(ctx: SectionContext) -> None:
     ctx.show_menu("Diagnostics", [
-        ("Running Tasks",   lambda: ctx.show_background_tasks()),
-        ("Recent Crashes",  lambda: ctx.show_diagnostics()),
-        ("View Flock Loot", lambda: _view_loot(ctx)),
+        ("Running Tasks",      lambda: ctx.show_background_tasks()),
+        ("Recent Crashes",     lambda: ctx.show_diagnostics()),
+        ("Send Loot Bundle",   lambda: _send_loot_bundle(ctx)),
+        ("View Flock Loot",    lambda: _view_loot(ctx)),
     ])
+
+
+def _send_loot_bundle(ctx: SectionContext) -> None:
+    """Bundle every loot dir + captures and ship via the configured
+    webhook. Toasts result. Whole pipeline runs in a background thread
+    since gz over many MB can take a couple seconds."""
+    import threading
+    from bigbox import loot_export, webhooks
+
+    def _worker():
+        ctx.toast("Bundling loot...")
+        path = loot_export.bundle()
+        if path is None:
+            ctx.toast("No loot to send (loot/ + captures/ are empty)")
+            return
+        size_mb = loot_export.bundle_size_mb(path)
+        ctx.toast(f"Bundle: {size_mb} MB — uploading...")
+        ok, msg = webhooks.send_file(str(path))
+        ctx.toast(f"Loot bundle: {msg}" if ok else f"Upload failed: {msg}")
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def _power_menu(ctx: SectionContext) -> None:
