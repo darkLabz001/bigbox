@@ -32,34 +32,9 @@ PHASE_RESULT = "result"
 PHASE_PYTHON = "python"
 
 
-def _read_pcm_volume() -> str | None:
-    """Return amixer's current PCM volume on Card 1 (e.g. '67%') or
-    None if amixer isn't available. We restore to whatever the user
-    had before the emulator launch bumped it to 100%."""
-    try:
-        out = subprocess.check_output(
-            ["amixer", "-c", "1", "sget", "PCM"],
-            text=True, timeout=2, stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        return None
-    # amixer output line format: "Mono: Playback 256 [67%] [-12.50dB] [on]"
-    import re
-    m = re.search(r"\[(\d+)%\]", out)
-    return f"{m.group(1)}%" if m else None
-
-
-def _restore_pcm_volume(saved: str | None) -> None:
-    if not saved:
-        return
-    try:
-        subprocess.run(
-            ["amixer", "-c", "1", "sset", "PCM", saved],
-            check=False, timeout=2,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        pass
+# Audio volume save/restore lives in bigbox.emulator now (it
+# auto-detects whether to use pactl-vs-amixer based on what daemon
+# owns the cards). See save_audio_volume / restore_audio_volume there.
 
 
 class GamesView:
@@ -155,11 +130,11 @@ class GamesView:
         self.last_result = None
         self.last_result_rc = None
 
-        # Save current PCM volume so we can restore it on emulator exit.
-        # The launch path bumps to 100% so games are audible without
-        # reaching for the device — but stealing the user's volume
-        # silently is rude; restore it on the way out.
-        self._saved_volume = _read_pcm_volume()
+        # Save current audio volume so we can restore it on emulator
+        # exit. emulator.launch bumps to 100% so games are audible
+        # without reaching for the device, but stealing the user's
+        # volume silently is rude; we put it back on the way out.
+        self._saved_audio = _emu.save_audio_volume()
 
         proc, msg = _emu.launch(self.current_system, rom_filename)
         if proc is None:
@@ -200,7 +175,7 @@ class GamesView:
         self.proc = None
         self.playing_rom = None
         # Restore the volume the user had before we launched.
-        _restore_pcm_volume(getattr(self, "_saved_volume", None))
+        _emu.restore_audio_volume(getattr(self, "_saved_audio", None))
         # Bounce back to the rom list of the same system
         self.phase = PHASE_ROM if self.current_system else PHASE_SYSTEM
         # Refresh so the just-played rom floats to the top.

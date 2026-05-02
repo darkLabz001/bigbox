@@ -191,6 +191,104 @@ def list_all_roms() -> dict[str, list[str]]:
     return out
 
 
+def _pulse_env() -> dict:
+    """Env vars that let root talk to a user's pipewire-pulse session.
+    bigbox.service runs as root, but pipewire-pulse runs under the
+    desktop user (typically uid 1000) and its native socket lives at
+    /run/user/<uid>/pulse/native — root needs PULSE_SERVER and
+    XDG_RUNTIME_DIR pointed at that path or libpulse can't find it."""
+    try:
+        for d in sorted(os.listdir("/run/user")):
+            sock = f"/run/user/{d}/pulse/native"
+            if os.path.exists(sock):
+                return {
+                    "PULSE_SERVER": f"unix:{sock}",
+                    "XDG_RUNTIME_DIR": f"/run/user/{d}",
+                }
+    except OSError:
+        pass
+    return {}
+
+
+def save_audio_volume() -> dict:
+    """Snapshot the current audio volume so the caller can restore it
+    after launch() bumps it to 100%. Returns an opaque dict; pass it
+    to restore_audio_volume()."""
+    if _audio_daemon_running():
+        env = {**os.environ, **_pulse_env()}
+        try:
+            out = subprocess.check_output(
+                ["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+                text=True, stderr=subprocess.DEVNULL, timeout=2, env=env,
+            )
+            import re
+            m = re.search(r"(\d+)%", out)
+            if m:
+                return {"kind": "pulse", "volume": int(m.group(1))}
+        except Exception:
+            pass
+        return {"kind": "pulse"}
+    try:
+        out = subprocess.check_output(
+            ["amixer", "-c", "1", "sget", "PCM"],
+            text=True, stderr=subprocess.DEVNULL, timeout=2,
+        )
+        import re
+        m = re.search(r"\[(\d+)%\]", out)
+        if m:
+            return {"kind": "alsa", "volume": int(m.group(1))}
+    except Exception:
+        pass
+    return {"kind": "none"}
+
+
+def restore_audio_volume(ctx: dict | None) -> None:
+    if not ctx:
+        return
+    kind = ctx.get("kind")
+    vol = ctx.get("volume")
+    if vol is None:
+        return
+    try:
+        if kind == "pulse":
+            env = {**os.environ, **_pulse_env()}
+            subprocess.run(
+                ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{vol}%"],
+                check=False, timeout=2, env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        elif kind == "alsa":
+            subprocess.run(
+                ["amixer", "-c", "1", "sset", "PCM", f"{vol}%"],
+                check=False, timeout=2,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+    except Exception:
+        pass
+
+
+def _audio_daemon_running() -> bool:
+    """True if pipewire-pulse or PulseAudio is running. When either
+    owns the audio cards, SDL apps must go through the pulse driver —
+    direct-ALSA paths silently fail for shared devices."""
+    try:
+        out = subprocess.check_output(
+            ["pgrep", "-x", "-f", "pipewire-pulse|pulseaudio"],
+            text=True, stderr=subprocess.DEVNULL, timeout=2,
+        )
+        return bool(out.strip())
+    except Exception:
+        # Fallback: check for the user runtime socket, which both
+        # daemons create at /run/user/<uid>/pulse/native.
+        try:
+            for d in os.listdir("/run/user"):
+                if os.path.exists(f"/run/user/{d}/pulse/native"):
+                    return True
+        except OSError:
+            pass
+    return False
+
+
 def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None, str]:
     """Spawn the emulator subprocess for `system_key` and `rom_filename`.
 
@@ -231,16 +329,52 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", "/root/.Xauthority")
-    # Force the emulator's ALSA usage onto the Headphones card (Card 1).
-    env.setdefault("SDL_AUDIODRIVER", "alsa")
-    env.setdefault("AUDIODEV", "plughw:1,0")
-    env.setdefault("ALSA_PCM_DEVICE", "plughw:1,0")
-    env.setdefault("ALSA_CARD", "Headphones")
-    try:
-        # Pre-bump system volume for card 1 (Headphones) and ensure it's unmuted
-        subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"], capture_output=True)
-    except:
-        pass
+
+    # Audio routing. Detect what's actually managing the cards:
+    #
+    #   - If pipewire-pulse / pulseaudio is running, go through the
+    #     pulse compatibility layer. Direct-to-ALSA via plughw:1,0
+    #     loses to the daemon for the device and produces silence
+    #     (this was the original bug — bigbox forced ALSA + plughw
+    #     even though Pipewire owned the cards).
+    #   - Otherwise fall back to direct ALSA on the Headphones card.
+    #
+    # mGBA / pcsxr both honour SDL_AUDIODRIVER, so this single env
+    # decides for every supported emulator.
+    use_pulse = _audio_daemon_running()
+    if use_pulse:
+        env.setdefault("SDL_AUDIODRIVER", "pulse")
+        # Point libpulse at the user-session's socket so the emulator
+        # (running as root) can reach pipewire-pulse (running as the
+        # desktop user). Without these, SDL_AUDIODRIVER=pulse silently
+        # falls back and the game is mute.
+        for k, v in _pulse_env().items():
+            env.setdefault(k, v)
+        # Best-effort: full-volume + unmute the default sink so games
+        # are audible without rummaging for `wpctl`.
+        for cmd_args in (
+            ["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"],
+            ["pactl", "set-sink-volume", "@DEFAULT_SINK@", "100%"],
+        ):
+            try:
+                subprocess.run(cmd_args, check=False, timeout=2,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL,
+                               env=env)
+            except Exception:
+                pass
+    else:
+        env.setdefault("SDL_AUDIODRIVER", "alsa")
+        env.setdefault("AUDIODEV", "plughw:1,0")
+        env.setdefault("ALSA_PCM_DEVICE", "plughw:1,0")
+        env.setdefault("ALSA_CARD", "Headphones")
+        try:
+            subprocess.run(
+                ["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"],
+                capture_output=True, timeout=2,
+            )
+        except Exception:
+            pass
 
     cmd = [binary, *sd.extra_args, str(rom_path.resolve())]
 

@@ -19,7 +19,7 @@ PKGS=(
     python3 python3-venv python3-pip python3-pygame python3-lgpio
     libturbojpeg0 nmap arp-scan aircrack-ng iw wireless-tools
     tcpdump mdk4 wifite reaver bully pixiewps tshark hashcat macchanger
-    cryptsetup bettercap bluez alsa-utils mpv mgba-sdl mednafen pcsxr
+    cryptsetup bettercap bluez alsa-utils pulseaudio-utils mpv mgba-sdl mednafen pcsxr
     python3-serial rfkill curl ca-certificates fonts-dejavu-core
     traceroute dnsutils iputils-ping sqlite3 build-essential pkg-config
     hostapd dnsmasq
