@@ -290,6 +290,9 @@ class WifiAttackView:
             target=self._poll_csv, daemon=True
         )
         self._csv_poll_thread.start()
+        from bigbox import background as _bg
+        _bg.register("wifi_attack", "WiFi Attack (airodump)", "Wireless",
+                     stop=self._stop_airodump)
 
     def _stop_airodump(self) -> None:
         self._stop = True
@@ -303,6 +306,8 @@ class WifiAttackView:
                 except Exception:
                     pass
         self._airodump = None
+        from bigbox import background as _bg
+        _bg.unregister("wifi_attack")
 
     def _watch_airodump_stdout(self) -> None:
         proc = self._airodump

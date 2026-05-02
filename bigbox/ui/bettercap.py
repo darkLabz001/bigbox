@@ -68,7 +68,10 @@ class BettercapView:
                     bufsize=1
                 )
                 self.status = "ENGINE_RUNNING"
-                
+                from bigbox import background as _bg
+                _bg.register("bettercap", "Bettercap engine", "Network",
+                             stop=self._stop_engine)
+
                 # Format: IP | MAC | Name | Vendor | Sent | Recvd | Last Seen
                 host_re = re.compile(r"([\d\.]+)\s+([0-9a-f:]{17})\s+(.*?)\s+(.*?)\s+\d+")
                 
@@ -116,6 +119,8 @@ class BettercapView:
             self._send_cmd("net.probe off; arp.spoof off; exit")
             self.proc.terminate()
             self.proc = None
+        from bigbox import background as _bg
+        _bg.unregister("bettercap")
 
     def _open_attack_menu(self):
         hosts = sorted(self.hosts.values(), key=lambda x: x["last_seen"], reverse=True)

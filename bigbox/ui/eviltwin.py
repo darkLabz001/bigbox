@@ -187,6 +187,11 @@ class EvilTwinView:
             if ok:
                 self.status_msg = msg
                 self.phase = PHASE_RUNNING
+                from bigbox import background as _bg
+                _bg.register("eviltwin",
+                             f"EvilTwin AP '{self.selected_ssid}' "
+                             f"({self.selected_iface})",
+                             "Wireless", stop=self._stop_session)
             else:
                 self.error_msg = msg
                 self.status_msg = msg
@@ -200,6 +205,8 @@ class EvilTwinView:
                 self.session.stop()
             except Exception:
                 pass
+        from bigbox import background as _bg
+        _bg.unregister("eviltwin")
         self.status_msg = "Stopped"
         self.phase = PHASE_STOPPED
 

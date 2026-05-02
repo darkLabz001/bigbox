@@ -190,6 +190,9 @@ class WifiteView:
             self._reader_thread = threading.Thread(target=self._read_output, daemon=True)
             self._reader_thread.start()
             self.status_msg = "SCANNING_RECON_ACTIVE"
+            from bigbox import background as _bg
+            _bg.register("wifite", f"Wifite ({active_iface})", "Wireless",
+                         stop=self._cleanup)
         except Exception as e:
             self.status_msg = f"LAUNCH_FAIL: {e}"
             self.phase = PHASE_LANDING
@@ -253,6 +256,8 @@ class WifiteView:
             except: pass
         self.master_fd = self.slave_fd = self.process = None
         hardware.ensure_wifi_managed()
+        from bigbox import background as _bg
+        _bg.unregister("wifite")
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
         if not ev.pressed: return

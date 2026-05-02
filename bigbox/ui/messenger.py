@@ -101,52 +101,70 @@ class MessengerSync:
         self._stop.set()
 
     def _run(self):
+        # Outer try/except so a single iteration's exception (config
+        # parse error, network blip during sleep, anything not caught
+        # by the IMAP block below) can't silently kill the daemon
+        # thread. Logged tracebacks show up in Settings → Diagnostics.
         while not self._stop.is_set():
-            if not self.config.email or not self.config.password:
-                time.sleep(10)
-                self.config = MailConfig.load() # Reload if changed
-                continue
-
             try:
-                mail = imaplib.IMAP4_SSL(self.config.imap_server)
-                mail.login(self.config.email, self.config.password)
-                mail.select("inbox")
-                
-                new_found = False
-                # Known gateway domains
-                domains = ["vtext.com", "txt.att.net", "tmomail.net", "messaging.sprintpcs.com", "vmobl.com"]
-                for domain in domains:
-                    status, data = mail.search(None, f'(FROM "{domain}")')
-                    if status != "OK": continue
-                    
-                    for m_id in data[0].split():
-                        res, msg_data = mail.fetch(m_id, "(RFC822)")
-                        for part in msg_data:
-                            if isinstance(part, tuple):
-                                msg = email.message_from_bytes(part[1])
-                                sender = msg.get("From", "")
-                                num_match = re.search(r'(\d+)@', sender)
-                                if num_match:
-                                    number = num_match.group(1)
-                                    body = ""
-                                    if msg.is_multipart():
-                                        for p in msg.walk():
-                                            if p.get_content_type() == "text/plain":
-                                                body = p.get_payload(decode=True).decode(errors="replace")
-                                                break
-                                    else:
-                                        body = msg.get_payload(decode=True).decode(errors="replace")
-                                    
-                                    body = body.split("\n--")[0].strip()
-                                    if self.store.add_message(number, body, is_me=False):
-                                        new_found = True
-                                        self.app.toast(f"NEW SMS: {number}")
-                                        self._play_ping()
-                
-                mail.close()
-                mail.logout()
-            except: pass
-            time.sleep(30)
+                self._sync_iter()
+            except Exception:
+                import traceback
+                print("[messenger] sync iteration failed:")
+                traceback.print_exc()
+                time.sleep(60)
+
+    def _sync_iter(self):
+        if not self.config.email or not self.config.password:
+            time.sleep(10)
+            self.config = MailConfig.load()  # Reload if changed
+            return
+
+        try:
+            mail = imaplib.IMAP4_SSL(self.config.imap_server)
+            mail.login(self.config.email, self.config.password)
+            mail.select("inbox")
+
+            # Known SMS gateway domains
+            domains = ["vtext.com", "txt.att.net", "tmomail.net",
+                       "messaging.sprintpcs.com", "vmobl.com"]
+            for domain in domains:
+                status, data = mail.search(None, f'(FROM "{domain}")')
+                if status != "OK":
+                    continue
+
+                for m_id in data[0].split():
+                    res, msg_data = mail.fetch(m_id, "(RFC822)")
+                    for part in msg_data:
+                        if isinstance(part, tuple):
+                            msg = email.message_from_bytes(part[1])
+                            sender = msg.get("From", "")
+                            num_match = re.search(r'(\d+)@', sender)
+                            if num_match:
+                                number = num_match.group(1)
+                                body = ""
+                                if msg.is_multipart():
+                                    for p in msg.walk():
+                                        if p.get_content_type() == "text/plain":
+                                            body = p.get_payload(decode=True).decode(errors="replace")
+                                            break
+                                else:
+                                    body = msg.get_payload(decode=True).decode(errors="replace")
+
+                                body = body.split("\n--")[0].strip()
+                                if self.store.add_message(number, body, is_me=False):
+                                    self.app.toast(f"NEW SMS: {number}")
+                                    self._play_ping()
+
+            mail.close()
+            mail.logout()
+        except Exception:
+            # IMAP/network errors are noisy and expected in the field
+            # (no signal, wrong creds, server temporarily refusing). The
+            # outer wrapper in _run handles logging — we just sleep
+            # before the next attempt.
+            pass
+        time.sleep(30)
 
     def _play_ping(self):
         try:

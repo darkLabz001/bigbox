@@ -49,13 +49,22 @@ class UpdateChecker:
     def _run(self) -> None:
         # Initial wait to let system boot and network stabilize
         time.sleep(10)
-        
+
         while not self._stop.is_set():
-            if self._check_now():
-                if not self.update_ready:
-                    self.update_ready = True
-                    self.app.toast("SYSTEM UPDATE AVAILABLE")
-            
+            try:
+                if self._check_now():
+                    if not self.update_ready:
+                        self.update_ready = True
+                        self.app.toast("SYSTEM UPDATE AVAILABLE")
+            except Exception:
+                # Whole-iteration safety net: a surprise from
+                # _check_now (it has its own try/except, but bugs
+                # happen) or self.app.toast (App might be tearing
+                # down) shouldn't kill the only update poller.
+                import traceback
+                print("[update_checker] iteration failed:")
+                traceback.print_exc()
+
             # Wait for next interval or stop signal
             for _ in range(self.interval):
                 if self._stop.is_set():
