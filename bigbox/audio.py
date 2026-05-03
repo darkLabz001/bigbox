@@ -142,6 +142,58 @@ def set_default_sink(name: str) -> bool:
     return ok
 
 
+def preferred_sink_for(role: str) -> Optional[str]:
+    """Pick the sink best suited for ``role``. Currently:
+      "emulator" / "media" → Headphones if present (handheld bigbox
+                              normally uses the 3.5 mm jack), else
+                              first real sink.
+    Returns the sink name or None if no real sink exists."""
+    if not _audio_daemon_running():
+        return None
+    sinks = list_sinks()
+    if not sinks:
+        return None
+    real = [s for s in sinks if s.name != "auto_null"]
+    pool = real or sinks
+    if role in ("emulator", "media"):
+        chosen = next(
+            (s for s in pool if "headphone" in s.description.lower()),
+            pool[0],
+        )
+        return chosen.name
+    return (real[0].name if real else sinks[0].name)
+
+
+def ensure_real_sink() -> Optional[str]:
+    """If the default sink is pipewire's ``auto_null`` (the virtual
+    "no real output" fallback — selected when bigbox starts before
+    the ALSA cards register), switch to a real one. Prefers the
+    Headphones jack so emulators are audible without HDMI plugged in;
+    falls back to whatever real sink exists.
+
+    Returns the name of the active default sink after this call (or
+    None if nothing real exists)."""
+    if not _audio_daemon_running():
+        return None
+    cur = current_sink()
+    sinks = list_sinks()
+    real = [s for s in sinks if s.name != "auto_null"]
+    if not real:
+        return cur
+    # If the current default is already a real sink, keep it.
+    if cur and cur != "auto_null":
+        return cur
+    # Pick Headphones over HDMI — handheld bigbox is normally used
+    # with the 3.5 mm jack, not external display audio.
+    chosen = next(
+        (s for s in real if "headphone" in s.description.lower()),
+        real[0],
+    )
+    if set_default_sink(chosen.name):
+        return chosen.name
+    return cur
+
+
 # ---------- volume -----------------------------------------------------------
 
 def get_volume_percent() -> Optional[int]:

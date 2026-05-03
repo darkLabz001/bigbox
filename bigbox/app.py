@@ -138,6 +138,18 @@ class App:
         from bigbox import disk as _disk
         _disk.start_sweeper()
 
+        # Pipewire's default sink is often auto_null (a virtual no-
+        # output fallback) when bigbox boots before the ALSA cards
+        # register. Switch to a real sink at startup so volume
+        # controls and emulator audio actually reach the hardware.
+        try:
+            from bigbox import audio as _audio
+            picked = _audio.ensure_real_sink()
+            if picked:
+                print(f"[audio] default sink → {picked}")
+        except Exception as e:
+            print(f"[audio] startup sink check failed: {e}")
+
         # Persistent journal storage — without this, journalctl only
         # sees the current boot, which means the Diagnostics view loses
         # everything across crashes/reboots. Idempotent: skips if the

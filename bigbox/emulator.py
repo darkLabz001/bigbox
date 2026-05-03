@@ -424,19 +424,28 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
         # falls back and the game is mute.
         for k, v in _pulse_env().items():
             env.setdefault(k, v)
-        # Best-effort: full-volume + unmute the default sink so games
-        # are audible without rummaging for `wpctl`.
-        for cmd_args in (
-            ["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"],
-            ["pactl", "set-sink-volume", "@DEFAULT_SINK@", "100%"],
-        ):
-            try:
-                subprocess.run(cmd_args, check=False, timeout=2,
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL,
-                               env=env)
-            except Exception:
-                pass
+        # Pin emulator audio to the Headphones sink whenever it
+        # exists — handheld bigbox is normally listened to through
+        # the 3.5 mm jack, not HDMI. PULSE_SINK is per-process, so
+        # this overrides the system default for *just* the emulator
+        # without messing with what the rest of the UI plays through.
+        # Also explicitly bump volume + unmute the chosen sink (not
+        # @DEFAULT_SINK@) so we never silently boost auto_null.
+        try:
+            from bigbox import audio as _audio
+            target_sink = _audio.preferred_sink_for("emulator")
+            if target_sink and target_sink != "auto_null":
+                env["PULSE_SINK"] = target_sink
+                for cmd_args in (
+                    ["pactl", "set-sink-mute", target_sink, "0"],
+                    ["pactl", "set-sink-volume", target_sink, "100%"],
+                ):
+                    subprocess.run(cmd_args, check=False, timeout=2,
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL,
+                                   env=env)
+        except Exception as e:
+            print(f"[emulator] sink prep failed: {e}")
     else:
         env.setdefault("SDL_AUDIODRIVER", "alsa")
         env.setdefault("AUDIODEV", "plughw:1,0")
