@@ -106,6 +106,23 @@ _STOP_METHODS = ("_stop_run", "_stop_crack", "_stop_capture",
                  "_stop_stream", "_stop_snipe", "_stop", "_shutdown")
 
 
+_IDLE_CFG = Path("/etc/bigbox/idle.json")
+_IDLE_DEFAULT_DIM_SECS = 120        # 2 min → screensaver
+_IDLE_DEFAULT_OFF_SECS = 30 * 60    # 30 min → poweroff
+
+
+def _load_idle_thresholds() -> tuple[int, int]:
+    """Returns (dim_seconds, off_seconds). 0 disables that step."""
+    try:
+        import json
+        with _IDLE_CFG.open() as f:
+            data = json.load(f)
+        return (int(data.get("dim_secs", _IDLE_DEFAULT_DIM_SECS)),
+                int(data.get("off_secs", _IDLE_DEFAULT_OFF_SECS)))
+    except Exception:
+        return _IDLE_DEFAULT_DIM_SECS, _IDLE_DEFAULT_OFF_SECS
+
+
 class App:
     def __init__(self) -> None:
         self.dev_mode = bool(os.environ.get("BIGBOX_DEV"))
@@ -122,6 +139,13 @@ class App:
         self.held_buttons: set[Button] = set()
         self.hk_used = False
         self._last_vol_enforce = 0
+        # Idle screensaver / sleep timer — bumped on every button event.
+        # 0 thresholds disable; populated from /etc/bigbox/idle.json
+        # (so the user can tune them without editing code).
+        self._last_input_ts = time.time()
+        self._idle_dim_secs, self._idle_off_secs = _load_idle_thresholds()
+        # Cheat sheet overlay state — true while HK+SELECT held.
+        self._cheat_sheet_open = False
         
         # Screen recording state
         self.recording_proc: subprocess.Popen | None = None
@@ -584,17 +608,50 @@ class App:
                     pass
 
             screen.fill(theme.BG)
-            if self._dispatch_view_render(screen):
-                pass
-            else:
-                if self.show_status:
-                    statusbar.render(screen, self)
-                carousel.render(screen, body_font, title_font)
+            # Idle screensaver / auto-poweroff. Suppress when an
+            # emulator's running, when any background task is alive,
+            # or when the web UI is being mirrored — those count as
+            # the device "doing something" even without button input.
+            idle = now - self._last_input_ts
+            idle_eligible = self._idle_active(idle)
+            if (idle_eligible
+                    and self._idle_off_secs > 0
+                    and idle >= self._idle_off_secs):
+                print(f"[idle] auto-shutdown after {int(idle)}s idle")
+                try:
+                    subprocess.run(
+                        ["systemctl", "poweroff"],
+                        check=False, timeout=5,
+                    )
+                except Exception as e:
+                    print(f"[idle] poweroff failed: {e}")
+                self.running = False
 
-            if self.menu_view is not None:
-                self.menu_view.render(screen)
-                if self.menu_view.dismissed:
-                    self.menu_view = None
+            screensaver_active = (
+                idle_eligible
+                and self._idle_dim_secs > 0
+                and idle >= self._idle_dim_secs
+            )
+            if screensaver_active:
+                self._render_screensaver(screen, idle)
+            else:
+                if self._dispatch_view_render(screen):
+                    pass
+                else:
+                    if self.show_status:
+                        statusbar.render(screen, self)
+                    carousel.render(screen, body_font, title_font)
+
+                # Cheat sheet overlay — drawn on top of everything
+                # except the screensaver, since the user can't see it
+                # when the screen is dimmed anyway.
+                if self._cheat_sheet_open:
+                    self._render_cheat_sheet(screen)
+
+                if self.menu_view is not None:
+                    self.menu_view.render(screen)
+                    if self.menu_view.dismissed:
+                        self.menu_view = None
 
             # 4. Web UI screen capture — only encode when somebody's
             #    actually watching. The web server bumps
@@ -627,6 +684,124 @@ class App:
 
         pygame.quit()
         return 0
+
+    # ---------- idle / screensaver helpers ---------------------------------
+    def _idle_active(self, idle_secs: float) -> bool:
+        """True if it's safe to dim/sleep right now. Suppress while an
+        emulator is running, while any background task is alive, while
+        a recording is going, or while the web UI is being watched."""
+        if idle_secs <= 0:
+            return False
+        try:
+            from bigbox import background as _bg
+            if _bg.count() > 0:
+                return False
+        except Exception:
+            pass
+        if self.recording_proc is not None:
+            return False
+        gv = getattr(self, "games_view", None)
+        if gv is not None and getattr(gv, "phase", "") == "running":
+            return False
+        if time.time() - self.last_web_view_request < 30.0:
+            return False
+        return True
+
+    def _render_screensaver(self, screen: pygame.Surface, idle_secs: float) -> None:
+        """Dim the panel and show a small status face — uptime, tasks,
+        last activity. Wakes on any GPIO press (handled in _dispatch
+        which bumps _last_input_ts)."""
+        screen.fill((0, 0, 0))
+        from datetime import datetime
+        f_big = pygame.font.Font(None, 48)
+        f = pygame.font.Font(None, 24)
+        f_small = pygame.font.Font(None, 18)
+
+        # Clock — center
+        clock_str = datetime.now().strftime("%H:%M")
+        ct = f_big.render(clock_str, True, theme.FG_DIM)
+        screen.blit(ct, (theme.SCREEN_W // 2 - ct.get_width() // 2,
+                         theme.SCREEN_H // 2 - ct.get_height() // 2 - 30))
+
+        # Idle stats — small, beneath
+        try:
+            from bigbox import activity, background as _bg
+            tasks = _bg.count()
+            ev = activity.latest()
+        except Exception:
+            tasks = 0
+            ev = None
+        sub_lines = [f"idle {int(idle_secs)}s"]
+        if tasks:
+            sub_lines.append(f"{tasks} task{'s' if tasks != 1 else ''} live")
+        if ev is not None:
+            age = int(time.time() - ev.ts)
+            sub_lines.append(f"last: {ev.message[:40]} ({age}s)")
+        sub_lines.append("any button to wake")
+        for i, line in enumerate(sub_lines):
+            ls = f_small.render(line, True, (60, 60, 60))
+            screen.blit(ls, (theme.SCREEN_W // 2 - ls.get_width() // 2,
+                             theme.SCREEN_H // 2 + 20 + i * 22))
+
+    # ---------- cheat sheet --------------------------------------------------
+    def _render_cheat_sheet(self, screen: pygame.Surface) -> None:
+        """Modal overlay showing button mappings for the active view.
+        Triggered by HK+SELECT chord; B dismisses (handled in _dispatch)."""
+        # Dim background
+        overlay = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H),
+                                 pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 220))
+        screen.blit(overlay, (0, 0))
+
+        f_title = pygame.font.Font(None, theme.FS_TITLE)
+        f_body = pygame.font.Font(None, theme.FS_BODY)
+        f_small = pygame.font.Font(None, theme.FS_SMALL)
+
+        name, view, _ = self._active_view()
+        if view is not None:
+            getter = getattr(view, "cheat_sheet", None)
+            if callable(getter):
+                try:
+                    rows = list(getter())
+                except Exception:
+                    rows = []
+            else:
+                rows = []
+            view_label = name.replace("_view", "").upper()
+        else:
+            rows = []
+            view_label = "CAROUSEL"
+
+        # Universal defaults appended at the bottom.
+        defaults = [
+            ("UP / DOWN",  "navigate"),
+            ("A",          "select / confirm"),
+            ("B",          "back / cancel"),
+            ("HK",         "system menu (or exit emulator)"),
+            ("HK + SELECT","this cheat sheet"),
+            ("HK + START", "open hotkey menu"),
+            ("HK + B",     "go back"),
+        ]
+        rows = list(rows) + ([("", "")] if rows else []) + defaults
+
+        x = 60
+        y = 60
+        title = f_title.render(f"CONTROLS · {view_label}",
+                               True, theme.ACCENT)
+        screen.blit(title, (x, y))
+        y += title.get_height() + 12
+        for chord, action in rows:
+            if not chord and not action:
+                y += 12
+                continue
+            cs = f_body.render(chord, True, theme.ACCENT)
+            screen.blit(cs, (x, y))
+            asurf = f_body.render(action, True, theme.FG)
+            screen.blit(asurf, (x + 220, y))
+            y += cs.get_height() + 4
+
+        hint = f_small.render("B to dismiss", True, theme.FG_DIM)
+        screen.blit(hint, (theme.PADDING, theme.SCREEN_H - 30))
 
     # ---------- view registry helpers --------------------------------------
     def _active_view(self) -> tuple[str, object, int]:
@@ -689,6 +864,9 @@ class App:
         return True
 
     def _dispatch(self, bev: ButtonEvent, carousel: Carousel) -> None:
+        # Any button event resets the idle clock — keeps screensaver
+        # away while the user is interacting.
+        self._last_input_ts = time.time()
         if bev.pressed:
             print(f"[app] Button press: {bev.button}")
             self.held_buttons.add(bev.button)
@@ -719,6 +897,16 @@ class App:
             if self.games_view.handle(bev, self):
                 return
         
+        # Cheat sheet — modal overlay, eats input until B dismisses.
+        # Press order doesn't matter for the chord (HK + SELECT).
+        if (self._cheat_sheet_open
+                and bev.pressed
+                and bev.button is Button.B):
+            self._cheat_sheet_open = False
+            return
+        if self._cheat_sheet_open:
+            return
+
         if not bev.pressed:
             return
 
@@ -726,7 +914,7 @@ class App:
         if Button.HK in self.held_buttons and not bev.repeat:
             if bev.button is not Button.HK:
                 self.hk_used = True
-            
+
             if bev.button is Button.START:
                 self.running = False  # Emergency exit
                 return
@@ -735,6 +923,9 @@ class App:
                 return
             if bev.button is Button.A:
                 self._open_hk_menu()
+                return
+            if bev.button is Button.SELECT:
+                self._cheat_sheet_open = True
                 return
 
         # Fallback for HK menu: SELECT + START (if not already handled)
