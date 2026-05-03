@@ -193,6 +193,7 @@ class EvilTwinSession:
     iface: str
     ssid: str
     channel: int = 6
+    skip_portal: bool = False
 
     portal: Optional[CaptivePortal] = None
     hostapd_proc: Optional[subprocess.Popen] = None
@@ -209,6 +210,12 @@ class EvilTwinSession:
         if not shutil.which("dnsmasq"):
             self.error = "dnsmasq not installed"
             return False, self.error
+
+        # 0. Kill any existing dnsmasq/hostapd that might be lingering from a
+        #    crashed session or another tool (DeadDrop, Honeypot).
+        _run(["killall", "dnsmasq"], timeout=2)
+        _run(["killall", "hostapd"], timeout=2)
+        time.sleep(0.5)
 
         # 1. Take iface away from NetworkManager + clean its addrs
         if shutil.which("nmcli"):
@@ -264,12 +271,13 @@ class EvilTwinSession:
             return False, self.error
 
         # 6. Captive portal
-        self.portal = CaptivePortal(ssid=self.ssid)
-        ok, msg = self.portal.start()
-        if not ok:
-            self.error = msg
-            self.stop()
-            return False, msg
+        if not self.skip_portal:
+            self.portal = CaptivePortal(ssid=self.ssid)
+            ok, msg = self.portal.start()
+            if not ok:
+                self.error = msg
+                self.stop()
+                return False, msg
 
         self.started_at = time.time()
         self.last_status = f"AP '{self.ssid}' up on {self.iface}"

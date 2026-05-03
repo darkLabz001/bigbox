@@ -63,56 +63,16 @@ class DeadDropView:
             self.ssid = text.strip()[:32] or "FREE_CHAT"
 
     def _start_session(self):
-        self.session = EvilTwinSession(iface=self.iface, ssid=self.ssid)
-        # Monkey-patch or swap the portal?
-        # Let's just start the DeadDropServer on port 80 manually after session starts
-        # and ensure EvilTwinSession doesn't start its own portal.
-        
-        # We need a modified session start that uses DeadDropServer instead of CaptivePortal
+        self.session = EvilTwinSession(iface=self.iface, ssid=self.ssid, skip_portal=True)
         self.chat_server = DeadDropServer(ssid=self.ssid)
         
-        # Manually run the session steps to use our chat server
-        ok, msg = self._manual_session_start()
+        ok, msg = self.session.start()
         if not ok:
             self.phase = "ERROR"
             self.error_msg = msg
         else:
+            self.chat_server.start()
             self.phase = "RUNNING"
-
-    def _manual_session_start(self) -> tuple[bool, str]:
-        # Implementation of EvilTwinSession.start but swapping portal for DeadDropServer
-        # This is a bit hacky but works for the prototype
-        import subprocess
-        from bigbox.eviltwin import _run, _write_hostapd_conf, _write_dnsmasq_conf, _install_iptables, DNSMASQ_LOG, HOSTAPD_LOG, DNSMASQ_CONF, HOSTAPD_CONF
-        
-        if not shutil.which("hostapd") or not shutil.which("dnsmasq"):
-            return False, "hostapd/dnsmasq missing"
-
-        _run(["nmcli", "device", "set", self.iface, "managed", "no"])
-        _run(["ip", "addr", "flush", "dev", self.iface])
-        _run(["ip", "link", "set", self.iface, "up"])
-        _run(["ip", "addr", "add", "192.168.45.1/24", "dev", self.iface])
-
-        _write_hostapd_conf(self.iface, self.ssid)
-        _write_dnsmasq_conf(self.iface)
-        _install_iptables(self.iface)
-
-        self.session.dnsmasq_proc = subprocess.Popen(
-            ["dnsmasq", "--keep-in-foreground", "--conf-file=" + str(DNSMASQ_CONF)],
-            stdout=DNSMASQ_LOG.open("w"), stderr=subprocess.STDOUT
-        )
-        time.sleep(0.5)
-        self.session.hostapd_proc = subprocess.Popen(
-            ["hostapd", str(HOSTAPD_CONF)],
-            stdout=HOSTAPD_LOG.open("w"), stderr=subprocess.STDOUT
-        )
-        time.sleep(1.0)
-        
-        if self.session.hostapd_proc.poll() is not None:
-            return False, "hostapd failed"
-
-        self.chat_server.start()
-        return True, "Running"
 
     def _stop_session(self):
         if self.chat_server:

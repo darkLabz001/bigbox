@@ -71,7 +71,8 @@ def ensure_wifi_managed(iface: str | None = None) -> None:
     """Bring Wi-Fi back to a clean managed state.
 
     1. Kill any leftover capture / injection processes (airodump, aireplay,
-       hcxdumptool) that might still hold the radio.
+       hcxdumptool, hostapd, dnsmasq) that might still hold the radio or
+       the network stack.
     2. airmon-ng stop on every monitor-mode interface — covers the case
        where WifiAttackView crashed before its cleanup ran.
     3. nmcli networking on (no-op if already on) so NM owns wlan0 again.
@@ -81,6 +82,8 @@ def ensure_wifi_managed(iface: str | None = None) -> None:
         "aireplay-ng",
         "airbase-ng",
         "hcxdumptool",
+        "hostapd",
+        "dnsmasq",
     )
     for mon in list_monitor_ifaces():
         _run(["airmon-ng", "stop", mon], timeout=10)
