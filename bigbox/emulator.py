@@ -154,11 +154,10 @@ SYSTEMS: dict[str, SystemDef] = {
         binary_candidates=("duckstation-nogui", "duckstation-qt",
                            "mednafen",
                            "pcsxr", "pcsx_rearmed", "pcsx-rearmed"),
-        # mednafen takes "-fs 1" (two args) for fullscreen; DuckStation
-        # uses "-fullscreen". Each of these is harmless to the others
-        # because mednafen ignores unknown flags and DuckStation accepts
-        # extras.
-        extra_args=("-fs", "1", "-fullscreen"),
+        # extra_args is empty here — PS1 emus take incompatible flags
+        # (mednafen errors out on unknown ones), so the actual flags
+        # are picked per-binary in launch() via _ps1_args_for_binary.
+        extra_args=(),
     ),
 }
 
@@ -189,6 +188,72 @@ def list_all_roms() -> dict[str, list[str]]:
     else:
         out["ps1-bios"] = []
     return out
+
+
+def _ps1_args_for_binary(bin_name: str) -> tuple[str, ...]:
+    """Per-binary CLI flags for PS1 emulators. mednafen rejects
+    unknown args (errors out — not silent); duckstation takes
+    --fullscreen; pcsxr is GUI-only and takes no useful CLI."""
+    name = bin_name.lower()
+    if "mednafen" in name:
+        return ("-fs", "1")
+    if "duckstation" in name:
+        return ("-fullscreen",)
+    return ()
+
+
+# PS1 BIOS files mednafen looks for (priority order, scph5501 is US)
+_MEDNAFEN_BIOS_NAMES = ("scph5501.bin", "scph5500.bin", "scph5502.bin")
+
+
+def _configure_mednafen_psx_bios() -> None:
+    """Mednafen needs psx.bios_{na,jp,eu} pointing to a real BIOS file
+    or it refuses to run PS1 games. Users typically drop scph1001.bin
+    or similar into /opt/bigbox/bios/ps1/; mednafen wants the *5500
+    series by default. Sidestep the filename mismatch by writing the
+    paths into mednafen.cfg directly. Idempotent — re-runs are no-ops.
+
+    Also disables psx.bios_sanity so older BIOS dumps with non-canonical
+    SHA1s still work."""
+    bios_dir = Path("/opt/bigbox/bios/ps1")
+    if not bios_dir.is_dir():
+        return
+    candidates = [p for p in bios_dir.iterdir()
+                  if p.is_file() and p.suffix.lower() == ".bin"]
+    if not candidates:
+        return
+    # Prefer scph5501 if present (NTSC-U canonical), else first .bin.
+    chosen = next(
+        (p for p in candidates if p.name.lower() in _MEDNAFEN_BIOS_NAMES),
+        candidates[0],
+    )
+
+    cfg_path = Path("/root/.mednafen/mednafen.cfg")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    settings = {
+        "psx.bios_jp": str(chosen),
+        "psx.bios_na": str(chosen),
+        "psx.bios_eu": str(chosen),
+        "psx.bios_sanity": "0",
+        "video.driver": "opengl",
+        "video.fs": "1",
+        # Audio: SDL driver picks up the env vars we set in launch()
+        "sound.driver": "sdl",
+    }
+
+    existing: dict[str, str] = {}
+    if cfg_path.is_file():
+        for line in cfg_path.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(";"):
+                continue
+            parts = stripped.split(None, 1)
+            if len(parts) == 2:
+                existing[parts[0]] = parts[1]
+    existing.update(settings)
+    body = "\n".join(f"{k} {v}" for k, v in existing.items()) + "\n"
+    cfg_path.write_text(body)
 
 
 def _pulse_env() -> dict:
@@ -310,9 +375,18 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
         candidates = ", ".join(sd.binary_candidates)
         return None, f"no emulator installed (tried {candidates})"
 
-    # mGBA setup: pre-write display + audio config, then layer in any
-    # RetroAchievements creds. Both are best-effort.
+    # Per-system pre-launch setup. mGBA wants its own config file
+    # written; PS1 emulators want per-binary CLI args + (for mednafen)
+    # BIOS paths injected into mednafen.cfg.
     bin_name = os.path.basename(binary)
+    sys_extra_args: tuple[str, ...] = sd.extra_args
+    if sd.key == "ps1":
+        sys_extra_args = _ps1_args_for_binary(bin_name)
+        if "mednafen" in bin_name.lower():
+            try:
+                _configure_mednafen_psx_bios()
+            except Exception as e:
+                print(f"[emulator] mednafen bios config failed: {e}")
     if "mgba" in bin_name:
         try:
             _write_mgba_display_config()
@@ -376,7 +450,7 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
         except Exception:
             pass
 
-    cmd = [binary, *sd.extra_args, str(rom_path.resolve())]
+    cmd = [binary, *sys_extra_args, str(rom_path.resolve())]
 
     try:
         log_fd: int | object = open(EMULATOR_LOG, "w")
