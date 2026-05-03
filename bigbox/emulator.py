@@ -33,72 +33,98 @@ ROMS_ROOT = Path("roms")
 BIOS_ROOT = Path("bios")
 EMULATOR_LOG = Path("/tmp/bigbox-emu.log")
 
+def _build_keymaps():
+    """Per-system bigbox-button → evdev-key tables. Built lazily so
+    the module can be imported when evdev isn't available."""
+    if not HAS_EVDEV:
+        return {}
+    from bigbox.events import Button
+    return {
+        # PSX: 4 distinct face + 2 shoulder + d-pad + start/select.
+        "ps1": {
+            Button.UP: e.KEY_UP,
+            Button.DOWN: e.KEY_DOWN,
+            Button.LEFT: e.KEY_LEFT,
+            Button.RIGHT: e.KEY_RIGHT,
+            Button.A: e.KEY_X,            # Cross
+            Button.B: e.KEY_Z,            # Circle
+            Button.X: e.KEY_C,            # Triangle
+            Button.Y: e.KEY_V,            # Square
+            Button.LL: e.KEY_Q,           # L1
+            Button.RR: e.KEY_W,           # R1
+            Button.START: e.KEY_ENTER,
+            Button.SELECT: e.KEY_BACKSPACE,
+        },
+        # GB / GBC / GBA: 2 face + 2 shoulder, with X/Y doubling as L/R
+        # (matches mGBA's defaults).
+        "gba": {
+            Button.UP: e.KEY_UP,
+            Button.DOWN: e.KEY_DOWN,
+            Button.LEFT: e.KEY_LEFT,
+            Button.RIGHT: e.KEY_RIGHT,
+            Button.A: e.KEY_X,
+            Button.B: e.KEY_Z,
+            Button.X: e.KEY_A,
+            Button.Y: e.KEY_S,
+            Button.LL: e.KEY_A,
+            Button.RR: e.KEY_S,
+            Button.START: e.KEY_ENTER,
+            Button.SELECT: e.KEY_BACKSPACE,
+        },
+    }
+
+
 class InputInjector:
-    """Creates a virtual keyboard via uinput to feed bigbox ButtonEvents
-    into the emulator. The keymap is system-aware: PSX needs 4 distinct
-    face buttons (Cross/Circle/Triangle/Square) plus L1/R1, so X and Y
-    can't double as L/R the way they do for GB/GBA."""
+    """Single long-lived uinput device, reused across emulator launches.
 
-    def __init__(self, system_key: str = ""):
+    Used to be created/destroyed per-launch — that's too late for X11:
+    the device appears at /dev/input/eventN microseconds before mednafen
+    starts SDL, and Xorg/libinput often misses the udev hot-add. By
+    keeping one device alive for the entire bigbox process lifetime,
+    udev sees it at boot and X11 has it enumerated long before any
+    emulator window opens.
+
+    set_system(key) flips which keymap inject() uses; the underlying
+    uinput device pre-declares the union of every possible key so the
+    device's capabilities never change at runtime."""
+
+    def __init__(self):
         self.ui: Optional[UInput] = None
-        self.system_key = system_key
-        if not HAS_EVDEV:
+        self.system_key = "gba"   # safe default
+        self._keymaps = _build_keymaps()
+        if not HAS_EVDEV or not self._keymaps:
             return
-
-        from bigbox.events import Button
-        if system_key == "ps1":
-            # PSX: face buttons A/B/X/Y → Cross/Circle/Triangle/Square,
-            # shoulders LL/RR → L1/R1. Distinct keys for every input
-            # so mednafen can tell them apart.
-            self.keymap = {
-                Button.UP: e.KEY_UP,
-                Button.DOWN: e.KEY_DOWN,
-                Button.LEFT: e.KEY_LEFT,
-                Button.RIGHT: e.KEY_RIGHT,
-                Button.A: e.KEY_X,            # Cross
-                Button.B: e.KEY_Z,            # Circle
-                Button.X: e.KEY_C,            # Triangle
-                Button.Y: e.KEY_V,            # Square
-                Button.LL: e.KEY_Q,           # L1
-                Button.RR: e.KEY_W,           # R1
-                Button.START: e.KEY_ENTER,
-                Button.SELECT: e.KEY_BACKSPACE,
-            }
-        else:
-            # GB / GBC / GBA — only 4 face buttons + 2 shoulders, X
-            # doubles as L (matches mGBA's default) and Y doubles as R.
-            self.keymap = {
-                Button.UP: e.KEY_UP,
-                Button.DOWN: e.KEY_DOWN,
-                Button.LEFT: e.KEY_LEFT,
-                Button.RIGHT: e.KEY_RIGHT,
-                Button.A: e.KEY_X,
-                Button.B: e.KEY_Z,
-                Button.X: e.KEY_A,
-                Button.Y: e.KEY_S,
-                Button.LL: e.KEY_A,
-                Button.RR: e.KEY_S,
-                Button.START: e.KEY_ENTER,
-                Button.SELECT: e.KEY_BACKSPACE,
-            }
-
-        events = {e.EV_KEY: list(self.keymap.values())}
+        # Union of all keys across every system's keymap.
+        all_keys = set()
+        for km in self._keymaps.values():
+            all_keys.update(km.values())
         try:
-            self.ui = UInput(events, name="bigbox-virtual-gamepad")
+            self.ui = UInput({e.EV_KEY: sorted(all_keys)},
+                             name="bigbox-virtual-gamepad")
         except Exception as ex:
             print(f"[emulator] Failed to create UInput: {ex}")
 
-    def inject(self, btn, pressed: bool):
-        if not self.ui or btn not in self.keymap:
+    def set_system(self, system_key: str) -> None:
+        """Pick which keymap inject() will use until the next call."""
+        self.system_key = system_key if system_key in self._keymaps else "gba"
+
+    @property
+    def keymap(self) -> dict:
+        return self._keymaps.get(self.system_key, {})
+
+    def inject(self, btn, pressed: bool) -> None:
+        if not self.ui:
             return
-        
+        key = self.keymap.get(btn)
+        if key is None:
+            return
         try:
-            self.ui.write(e.EV_KEY, self.keymap[btn], 1 if pressed else 0)
+            self.ui.write(e.EV_KEY, key, 1 if pressed else 0)
             self.ui.syn()
         except Exception:
             pass
 
-    def close(self):
+    def close(self) -> None:
         if self.ui:
             try:
                 self.ui.close()

@@ -108,7 +108,7 @@ class GamesView:
         actions: list[Action] = []
         for r in roms:
             def make_handler(rom_name: str):
-                return lambda ctx: self._launch(rom_name)
+                return lambda ctx: self._launch(rom_name, ctx)
             count = games_state.play_count(self.current_system or "", r)
             desc = f"played {count}x" if count else ""
             actions.append(Action(r, make_handler(r), desc))
@@ -123,7 +123,7 @@ class GamesView:
             self.list = self._build_rom_list()
 
     # ---------- launch ----------
-    def _launch(self, rom_filename: str) -> None:
+    def _launch(self, rom_filename: str, ctx=None) -> None:
         if not self.current_system:
             return
         self.playing_rom = rom_filename
@@ -143,7 +143,12 @@ class GamesView:
             self.phase = PHASE_RESULT
             return
         self.proc = proc
-        self.injector = _emu.InputInjector(self.current_system or "")
+        # Reuse the App-owned singleton InputInjector so the uinput
+        # device has been visible to udev/Xorg since boot. Flip its
+        # keymap to the current system before forwarding events.
+        self.injector = getattr(ctx, "input_injector", None) if ctx else None
+        if self.injector is not None:
+            self.injector.set_system(self.current_system or "")
         self._launch_time = time.time()
         games_state.record_play(self.current_system, rom_filename)
         self.phase = PHASE_RUNNING
@@ -169,8 +174,11 @@ class GamesView:
                     self.proc.kill()
                 except Exception:
                     pass
-        if self.injector:
-            self.injector.close()
+        # Don't .close() the injector — it's the App-owned singleton
+        # and we want the uinput device alive for the next launch.
+        # Drop our reference; reset its keymap to the safe default.
+        if self.injector is not None:
+            self.injector.set_system("")
             self.injector = None
         self.proc = None
         self.playing_rom = None

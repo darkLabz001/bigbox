@@ -151,6 +151,20 @@ class App:
         except Exception as e:
             print(f"[audio] startup sink check failed: {e}")
 
+        # Single uinput "virtual gamepad" for the whole bigbox lifetime.
+        # Created here at app startup (not per-emulator-launch) so udev
+        # has plenty of time to enumerate it before any emulator opens
+        # an SDL/X11 window — otherwise the hot-added device often
+        # misses Xorg's input class scan and emulator key presses do
+        # nothing. games_view.handle() and emulator.launch() both pull
+        # this off the App instance.
+        try:
+            from bigbox import emulator as _emu
+            self.input_injector = _emu.InputInjector()
+        except Exception as e:
+            print(f"[emulator] InputInjector init failed: {e}")
+            self.input_injector = None
+
         # Persistent journal storage — without this, journalctl only
         # sees the current boot, which means the Diagnostics view loses
         # everything across crashes/reboots. Idempotent: skips if the

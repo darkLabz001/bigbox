@@ -27,6 +27,51 @@ def _vol_mute(ctx: SectionContext) -> None:
         ctx.toast("muted" if state else "unmuted")
 
 
+def _audio_test(ctx: SectionContext) -> None:
+    """Play a short tone on each ALSA card in turn so the user can
+    identify which one actually drives the GamePi43's built-in
+    speaker. Runs in a background thread so the UI stays responsive
+    while aplay blocks on each playback."""
+    import subprocess
+    import threading
+    from pathlib import Path
+
+    candidates = [
+        ("HDMI (Card 0)",       "plughw:0,0"),
+        ("Headphones (Card 1)", "plughw:1,0"),
+    ]
+    wav = Path("/usr/share/sounds/alsa/Front_Center.wav")
+    if not wav.is_file():
+        ctx.toast(f"missing test wav: {wav}")
+        return
+
+    def _worker():
+        # Pre-bump both cards so a quiet mixer doesn't mask a working
+        # output. Best-effort.
+        for c in (0, 1):
+            try:
+                subprocess.run(
+                    ["amixer", "-c", str(c), "sset", "PCM", "100%", "unmute"],
+                    capture_output=True, timeout=2,
+                )
+            except Exception:
+                pass
+        for label, dev in candidates:
+            ctx.toast(f"Audio test: {label}")
+            try:
+                subprocess.run(
+                    ["aplay", "-D", dev, str(wav)],
+                    timeout=5,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception as e:
+                ctx.toast(f"{label} failed: {e}")
+        ctx.toast("Audio test done — use Audio Output to set the working one")
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def _audio_output(ctx: SectionContext) -> None:
     from bigbox import audio
     sinks = audio.list_sinks()
@@ -190,6 +235,7 @@ def _power_menu(ctx: SectionContext) -> None:
         ("Volume down",   lambda: _vol_down(ctx)),
         ("Mute toggle",   lambda: _vol_mute(ctx)),
         ("Audio Output",  lambda: _audio_output(ctx)),
+        ("Audio Test",    lambda: _audio_test(ctx)),
         ("Reboot",        lambda: _reboot(ctx)),
         ("Power off",     lambda: _poweroff(ctx)),
     ])
