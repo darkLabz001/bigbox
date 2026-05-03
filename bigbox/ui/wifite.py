@@ -274,7 +274,10 @@ class WifiteView:
             try: os.close(self.slave_fd)
             except: pass
         self.master_fd = self.slave_fd = self.process = None
-        hardware.ensure_wifi_managed()
+        
+        # Pass the selected interface to ensure it is returned to managed mode
+        hardware.ensure_wifi_managed(self.selected_iface)
+        
         from bigbox import background as _bg
         _bg.unregister("wifite")
 
@@ -286,7 +289,9 @@ class WifiteView:
                 self.phase = PHASE_LANDING
                 self.status_msg = "AUDIT_TERMINATED"
             elif self.phase == PHASE_CONFIG: self.phase = PHASE_LANDING
-            else: self.dismissed = True
+            else:
+                self._cleanup() # Final cleanup before exit
+                self.dismissed = True
             return
 
         if self.phase == PHASE_LANDING:
