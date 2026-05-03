@@ -74,6 +74,7 @@ class WifiteView:
         self.opt_pmkid = True
         self.opt_pixie = True
         self.opt_pow_threshold = 40
+        self.opt_prioritize_alfa = True
         self.custom_args = ""
         
         self.selected_iface: Optional[str] = None
@@ -103,10 +104,28 @@ class WifiteView:
     def _detect_iface(self):
         active_mon = hardware.list_monitor_ifaces()
         if active_mon:
+            # If we prioritize Alfa, check if any active mon is an Alfa
+            if self.opt_prioritize_alfa:
+                alfas = hardware.list_alfa_ifaces()
+                for mon in active_mon:
+                    # airmon-ng usually adds 'mon' suffix or 'vif' prefix
+                    # let's check if the base name matches an alfa
+                    for a in alfas:
+                        if a in mon:
+                            self.selected_iface = mon
+                            return
+            
             self.selected_iface = active_mon[0]
             return
             
         capable = hardware.list_monitor_capable_clients()
+        
+        if self.opt_prioritize_alfa:
+            alfas = hardware.list_alfa_ifaces()
+            if alfas:
+                self.selected_iface = alfas[0]
+                return
+
         if "wlan1" in capable: self.selected_iface = "wlan1"
         elif "wlan0" in capable: self.selected_iface = "wlan0"
         elif capable: self.selected_iface = capable[0]
@@ -318,14 +337,17 @@ class WifiteView:
             ifaces = sorted(list(set(["wlan0", "wlan1"] + hardware.list_wifi_clients() + hardware.list_monitor_ifaces())))
             idx = (ifaces.index(self.selected_iface) + 1) % len(ifaces) if self.selected_iface in ifaces else 0
             self.selected_iface = ifaces[idx]
-        elif self.config_cursor == 1: self.opt_5ghz = not self.opt_5ghz
-        elif self.config_cursor == 2: self.opt_wps = not self.opt_wps
-        elif self.config_cursor == 3: self.opt_wpa = not self.opt_wpa
-        elif self.config_cursor == 4: self.opt_pmkid = not self.opt_pmkid
-        elif self.config_cursor == 5: self.opt_pixie = not self.opt_pixie
-        elif self.config_cursor == 6:
-            ctx.get_input("MIN_POWER_DB", lambda v: setattr(self, "opt_pow_threshold", int(v or 0)), str(self.opt_pow_threshold))
+        elif self.config_cursor == 1:
+            self.opt_prioritize_alfa = not self.opt_prioritize_alfa
+            self._detect_iface() # Re-detect immediately
+        elif self.config_cursor == 2: self.opt_5ghz = not self.opt_5ghz
+        elif self.config_cursor == 3: self.opt_wps = not self.opt_wps
+        elif self.config_cursor == 4: self.opt_wpa = not self.opt_wpa
+        elif self.config_cursor == 5: self.opt_pmkid = not self.opt_pmkid
+        elif self.config_cursor == 6: self.opt_pixie = not self.opt_pixie
         elif self.config_cursor == 7:
+            ctx.get_input("MIN_POWER_DB", lambda v: setattr(self, "opt_pow_threshold", int(v or 0)), str(self.opt_pow_threshold))
+        elif self.config_cursor == 8:
             ctx.get_input("CUSTOM_PARAMS", lambda v: setattr(self, "custom_args", v or ""), self.custom_args)
 
     def render(self, surf: pygame.Surface) -> None:
@@ -391,7 +413,17 @@ class WifiteView:
     def _render_config(self, surf: pygame.Surface, head_h: int):
         y = head_h + 15
         surf.blit(self.f_bold.render("AUDIT_PARAMETER_CONFIGURATION", True, theme.ACCENT), (50, y))
-        opts = [("INTERFACE", self.selected_iface), ("SCAN_5GHZ", self.opt_5ghz), ("ATTACK_WPS", self.opt_wps), ("ATTACK_WPA", self.opt_wpa), ("CAPTURE_PMKID", self.opt_pmkid), ("WPS_PIXIE_DUST", self.opt_pixie), ("MIN_POWER_DB", f"-{self.opt_pow_threshold}"), ("CUSTOM_PARAMS", self.custom_args or "NONE")]
+        opts = [
+            ("INTERFACE", self.selected_iface),
+            ("PRIORITIZE_ALFA", self.opt_prioritize_alfa),
+            ("SCAN_5GHZ", self.opt_5ghz),
+            ("ATTACK_WPS", self.opt_wps),
+            ("ATTACK_WPA", self.opt_wpa),
+            ("CAPTURE_PMKID", self.opt_pmkid),
+            ("WPS_PIXIE_DUST", self.opt_pixie),
+            ("MIN_POWER_DB", f"-{self.opt_pow_threshold}"),
+            ("CUSTOM_PARAMS", self.custom_args or "NONE")
+        ]
         for i, (lbl, val) in enumerate(opts):
             sel = i == self.config_cursor
             rect = pygame.Rect(50, y + 40 + i*35, 450, 30)

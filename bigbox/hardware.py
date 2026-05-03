@@ -219,6 +219,47 @@ def enable_monitor(iface: str, timeout: float = 15.0) -> str | None:
     return None
 
 
+def list_alfa_ifaces() -> list[str]:
+    """Identify Alfa or other high-performance USB adapters.
+    
+    Looks for common Alfa chipsets (Atheros, Realtek, Mediatek) in USB
+    descriptors or by checking the driver associated with the interface.
+    """
+    alfa_ifaces = []
+    clients = list_wifi_clients()
+    
+    for iface in clients:
+        # Check driver via ethtool
+        rc, out = _run(["ethtool", "-i", iface], timeout=2)
+        if rc == 0:
+            driver = ""
+            for line in out.splitlines():
+                if line.startswith("driver:"):
+                    driver = line.split(":")[1].strip()
+                    break
+            
+            # Common Alfa / High-gain drivers
+            # rtl88xx: AWUS036ACH, AWUS036ACS, etc.
+            # ath9k_htc: AWUS036NHA
+            # rt2800usb: AWUS036NH
+            # mt76: AWUS036ACM
+            if any(d in driver for d in ["rtl88", "ath9k", "rt2800", "mt76"]):
+                alfa_ifaces.append(iface)
+                continue
+
+        # Check for 'Alfa' in uevent if we can
+        uevent_path = f"/sys/class/net/{iface}/device/uevent"
+        try:
+            with open(uevent_path, "r") as f:
+                content = f.read().upper()
+                if "ALFA" in content or "AWUS" in content:
+                    if iface not in alfa_ifaces:
+                        alfa_ifaces.append(iface)
+        except: pass
+
+    return alfa_ifaces
+
+
 def list_wifi_clients() -> list[str]:
     """Names of wlan ifaces in managed (client) mode — usable for scanning."""
     rc, out = _run(["iw", "dev"], timeout=3)
