@@ -15,6 +15,7 @@ from bigbox.ui.games import GamesView
 from bigbox.ui.trackers import TrackerView
 from bigbox.ui.wifi_multi_tool import WifiMultiToolView
 from bigbox.ui.cracker import OfflineCrackerView
+from bigbox.ui.data_sniper import DataSniperView
 from bigbox.ui.media_player import MediaPlayerView
 from bigbox.ui.tv import InternetTVView
 from bigbox.ui.youtube import YouTubeView
@@ -66,6 +67,7 @@ __all__ = [
     "TrackerView",
     "WifiMultiToolView",
     "OfflineCrackerView",
+    "DataSniperView",
     "MediaPlayerView",
     "InternetTVView",
     "YouTubeView",

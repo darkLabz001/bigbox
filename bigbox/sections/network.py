@@ -36,6 +36,10 @@ def _bettercap(ctx: SectionContext) -> None:
     ctx.show_bettercap()
 
 
+def _data_sniper(ctx: SectionContext) -> None:
+    ctx.show_data_sniper()
+
+
 def _random_mac(ctx: SectionContext) -> None:
     # Down interface, randomize, up interface
     cmd = "sudo ip link set wlan0 down && sudo macchanger -r wlan0 && sudo ip link set wlan0 up"
@@ -58,5 +62,6 @@ def build() -> Section:
             Action("Anon Surf (Stealth)", _anonsurf, "Route all traffic via Tor"),
             Action("Random MAC (wlan0)", _random_mac, "Randomize hardware address"),
             Action("Bettercap Dashboard", _bettercap, "Real-time network monitoring"),
+            Action("Data Sniper", _data_sniper, "Extract credentials and POST data"),
         ],
     )

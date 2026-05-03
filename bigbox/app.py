@@ -30,7 +30,7 @@ from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.update_checker import UpdateChecker
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 # Foreground-view registry. Render and input both walk this in order;
@@ -56,6 +56,7 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("wifi_attack_view", 2),
     ("wifi_multi_view", 2),
     ("cracker_view", 2),
+    ("data_sniper_view", 2),
     ("pmkid_sniper_view", 2),
     ("media_view", 2),
     ("tv_view", 2),
@@ -286,6 +287,9 @@ class App:
 
     def show_cracker(self) -> None:
         self.cracker_view = OfflineCrackerView()
+
+    def show_data_sniper(self) -> None:
+        self.data_sniper_view = DataSniperView()
 
     def show_pmkid_sniper(self) -> None:
         from bigbox.ui.pmkid_sniper import PMKIDSniperView
