@@ -231,6 +231,11 @@ def _configure_mednafen_psx_bios() -> None:
     cfg_path = Path("/root/.mednafen/mednafen.cfg")
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Audio: pin mednafen to direct ALSA on the Headphones card
+    # rather than going through SDL → pulse. Pulse on this image
+    # frequently has only auto_null loaded (the ALSA monitor doesn't
+    # consistently see the cards), and mednafen's own ALSA driver is
+    # rock-solid. plughw lets ALSA convert rate/format on the fly.
     settings = {
         "psx.bios_jp": str(chosen),
         "psx.bios_na": str(chosen),
@@ -238,8 +243,10 @@ def _configure_mednafen_psx_bios() -> None:
         "psx.bios_sanity": "0",
         "video.driver": "opengl",
         "video.fs": "1",
-        # Audio: SDL driver picks up the env vars we set in launch()
-        "sound.driver": "sdl",
+        "sound.driver": "alsa",
+        "sound.device": "plughw:1,0",
+        "sound.rate": "48000",
+        "sound.volume": "100",
     }
 
     existing: dict[str, str] = {}
@@ -415,38 +422,48 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     #
     # mGBA / pcsxr both honour SDL_AUDIODRIVER, so this single env
     # decides for every supported emulator.
-    use_pulse = _audio_daemon_running()
-    if use_pulse:
+    # Audio routing strategy:
+    #
+    #   1. If pipewire-pulse is running AND has a real (non-auto_null)
+    #      sink loaded → route SDL through pulse, pinned to Headphones.
+    #   2. Otherwise (pulse missing OR pulse only has auto_null because
+    #      its ALSA monitor hasn't loaded cards) → fall back to direct
+    #      ALSA on the Headphones card. We've verified `aplay -D
+    #      plughw:1,0` works even when pulse can't see the device.
+    #
+    # Without (2), bigbox would route to pulse, pulse would route to
+    # auto_null, and the user would hear silence even though the
+    # underlying ALSA hardware was fine.
+    use_pulse = False
+    target_sink: Optional[str] = None
+    try:
+        from bigbox import audio as _audio
+        if _audio_daemon_running() and _audio.has_real_pulse_sink():
+            target_sink = _audio.preferred_sink_for("emulator")
+            use_pulse = bool(target_sink and target_sink != "auto_null")
+    except Exception:
+        pass
+
+    if use_pulse and target_sink:
         env.setdefault("SDL_AUDIODRIVER", "pulse")
-        # Point libpulse at the user-session's socket so the emulator
-        # (running as root) can reach pipewire-pulse (running as the
-        # desktop user). Without these, SDL_AUDIODRIVER=pulse silently
-        # falls back and the game is mute.
         for k, v in _pulse_env().items():
             env.setdefault(k, v)
-        # Pin emulator audio to the Headphones sink whenever it
-        # exists — handheld bigbox is normally listened to through
-        # the 3.5 mm jack, not HDMI. PULSE_SINK is per-process, so
-        # this overrides the system default for *just* the emulator
-        # without messing with what the rest of the UI plays through.
-        # Also explicitly bump volume + unmute the chosen sink (not
-        # @DEFAULT_SINK@) so we never silently boost auto_null.
-        try:
-            from bigbox import audio as _audio
-            target_sink = _audio.preferred_sink_for("emulator")
-            if target_sink and target_sink != "auto_null":
-                env["PULSE_SINK"] = target_sink
-                for cmd_args in (
-                    ["pactl", "set-sink-mute", target_sink, "0"],
-                    ["pactl", "set-sink-volume", target_sink, "100%"],
-                ):
-                    subprocess.run(cmd_args, check=False, timeout=2,
-                                   stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL,
-                                   env=env)
-        except Exception as e:
-            print(f"[emulator] sink prep failed: {e}")
+        env["PULSE_SINK"] = target_sink
+        for cmd_args in (
+            ["pactl", "set-sink-mute", target_sink, "0"],
+            ["pactl", "set-sink-volume", target_sink, "100%"],
+        ):
+            try:
+                subprocess.run(cmd_args, check=False, timeout=2,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL,
+                               env=env)
+            except Exception:
+                pass
     else:
+        # Direct ALSA on the Headphones card. plughw lets ALSA do
+        # rate/format conversion so SDL doesn't have to match the
+        # card's native settings exactly.
         env.setdefault("SDL_AUDIODRIVER", "alsa")
         env.setdefault("AUDIODEV", "plughw:1,0")
         env.setdefault("ALSA_PCM_DEVICE", "plughw:1,0")

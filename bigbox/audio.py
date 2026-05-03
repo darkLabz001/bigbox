@@ -142,6 +142,15 @@ def set_default_sink(name: str) -> bool:
     return ok
 
 
+def has_real_pulse_sink() -> bool:
+    """True iff pipewire-pulse has at least one non-auto_null sink.
+    Pipewire's ALSA monitor sometimes hasn't loaded the cards (or has
+    crashed); when only auto_null exists, every pulse stream silently
+    goes to /dev/null. Use this to decide whether to fall back to
+    direct-ALSA paths."""
+    return any(s.name != "auto_null" for s in list_sinks())
+
+
 def preferred_sink_for(role: str) -> Optional[str]:
     """Pick the sink best suited for ``role``. Currently:
       "emulator" / "media" → Headphones if present (handheld bigbox
