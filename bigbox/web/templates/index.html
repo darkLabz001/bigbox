@@ -334,8 +334,14 @@
     <!-- LIBRARY PANEL -->
     <div id="library" class="tab-panel">
         <div class="card">
-            <h2>GBA :: ROMS</h2>
-            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+            <h2>GAMES :: ROMS</h2>
+            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 15px;">
+                <select id="romSystem" style="background: #000; color: #fff; border: 1px solid var(--border); padding: 8px;">
+                    <option value="gbc">GAME BOY / GBC</option>
+                    <option value="gba">GAME BOY ADVANCE</option>
+                    <option value="ps1">PLAYSTATION 1</option>
+                    <option value="ps1-bios">PS1 BIOS</option>
+                </select>
                 <input type="file" id="romInput" style="display: none;">
                 <button class="action-btn" onclick="document.getElementById('romInput').click()">Upload ROM</button>
                 <span id="romStatus" style="font-size: 12px; color: var(--fg-dim);"></span>
@@ -504,10 +510,30 @@
         fetch('/roms').then(r => r.json()).then(data => {
             const list = document.getElementById('romList');
             let html = '';
-            (data['gba'] || []).forEach(f => {
-                html += `<div class="list-item"><span>${f}</span><a href="#" style="color:var(--err)" onclick="deleteRom('gba','${encodeURIComponent(f)}')">[DELETE]</a></div>`;
+            
+            const systemLabels = {
+                'gbc': 'GAME BOY / GBC',
+                'gba': 'GAME BOY ADVANCE',
+                'ps1': 'PLAYSTATION 1',
+                'ps1-bios': 'PS1 BIOS'
+            };
+
+            ['gbc', 'gba', 'ps1', 'ps1-bios'].forEach(sys => {
+                const items = data[sys] || [];
+                if (items.length || sys !== 'ps1-bios') {
+                    html += `<div style="color:var(--fg-dim); margin: 10px 0 5px; font-weight: bold;">${systemLabels[sys]}</div>`;
+                    if (items.length === 0) {
+                        html += `<div style="color:#444; font-size: 11px; margin-left: 10px; margin-bottom: 10px;">No files found.</div>`;
+                    }
+                    items.forEach(f => {
+                        html += `<div class="list-item" style="margin-left: 10px;">
+                            <span>${f}</span>
+                            <a href="#" style="color:var(--err)" onclick="deleteRom('${sys}','${encodeURIComponent(f)}')">[DELETE]</a>
+                        </div>`;
+                    });
+                }
             });
-            list.innerHTML = html || '<div style="color:var(--fg-dim)">No GBA ROMs found.</div>';
+            list.innerHTML = html || '<div style="color:var(--fg-dim)">No game data found.</div>';
         });
 
         // Media
@@ -519,7 +545,7 @@
                 if (items.length) {
                     html += `<div style="color:var(--fg-dim); margin: 10px 0 5px; font-weight: bold;">${cat.toUpperCase()}</div>`;
                     items.forEach(f => {
-                        html += `<div class="list-item"><span>${f}</span></div>`;
+                        html += `<div class="list-item" style="margin-left: 10px;"><span>${f}</span></div>`;
                     });
                 }
             });
@@ -528,7 +554,8 @@
     }
 
     document.getElementById('romInput').onchange = function() {
-        uploadFile(this.files[0], 'roms', 'romStatus', 'gba');
+        const sys = document.getElementById('romSystem').value;
+        uploadFile(this.files[0], 'roms', 'romStatus', sys);
         this.value = '';
     };
     document.getElementById('mediaInput').onchange = function() {
