@@ -275,14 +275,26 @@ class App:
             set_app(self)
             
             def run_server():
-                # Increase timeouts for large movie uploads (1GB can take a while over WiFi)
+                # Use SSL for secure context (required for GPS on iOS)
+                cert_path = Path("config/ssl/cert.pem")
+                key_path = Path("config/ssl/key.pem")
+                
+                ssl_args = {}
+                if cert_path.exists() and key_path.exists():
+                    ssl_args = {
+                        "ssl_certfile": str(cert_path),
+                        "ssl_keyfile": str(key_path)
+                    }
+
+                # Increase timeouts for large movie uploads
                 uvicorn.run(
                     app, 
                     host="0.0.0.0", 
                     port=8080, 
                     log_level="error",
                     timeout_keep_alive=60,
-                    loop="asyncio"
+                    loop="asyncio",
+                    **ssl_args
                 )
             
             t = threading.Thread(target=run_server, daemon=True)

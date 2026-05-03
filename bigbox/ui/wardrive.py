@@ -605,7 +605,7 @@ class WardriveView:
     def _render_phone_qr(self, surf: pygame.Surface, head_h: int) -> None:
         from bigbox import qr
         ip = qr.lan_ipv4()
-        url = f"http://{ip}:8080/gps/link" if ip else None
+        url = f"https://{ip}:8080/gps/link" if ip else None
         
         f_big = pygame.font.Font(None, 36)
         f_med = pygame.font.Font(None, 24)
