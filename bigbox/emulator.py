@@ -34,30 +34,54 @@ BIOS_ROOT = Path("bios")
 EMULATOR_LOG = Path("/tmp/bigbox-emu.log")
 
 class InputInjector:
-    """Creates a virtual keyboard via uinput to feed bigbox ButtonEvents into the emulator."""
-    
-    def __init__(self):
+    """Creates a virtual keyboard via uinput to feed bigbox ButtonEvents
+    into the emulator. The keymap is system-aware: PSX needs 4 distinct
+    face buttons (Cross/Circle/Triangle/Square) plus L1/R1, so X and Y
+    can't double as L/R the way they do for GB/GBA."""
+
+    def __init__(self, system_key: str = ""):
         self.ui: Optional[UInput] = None
+        self.system_key = system_key
         if not HAS_EVDEV:
             return
-            
-        # Map bigbox buttons to standard emulator keys
+
         from bigbox.events import Button
-        self.keymap = {
-            Button.UP: e.KEY_UP,
-            Button.DOWN: e.KEY_DOWN,
-            Button.LEFT: e.KEY_LEFT,
-            Button.RIGHT: e.KEY_RIGHT,
-            Button.A: e.KEY_X,          # GBA A -> KEY_X (matches RetroArch default)
-            Button.B: e.KEY_Z,          # GBA B -> KEY_Z
-            Button.X: e.KEY_A,          # GBA L -> KEY_A
-            Button.Y: e.KEY_S,          # GBA R -> KEY_S
-            Button.LL: e.KEY_A,
-            Button.RR: e.KEY_S,
-            Button.START: e.KEY_ENTER,
-            Button.SELECT: e.KEY_BACKSPACE,
-        }
-        
+        if system_key == "ps1":
+            # PSX: face buttons A/B/X/Y → Cross/Circle/Triangle/Square,
+            # shoulders LL/RR → L1/R1. Distinct keys for every input
+            # so mednafen can tell them apart.
+            self.keymap = {
+                Button.UP: e.KEY_UP,
+                Button.DOWN: e.KEY_DOWN,
+                Button.LEFT: e.KEY_LEFT,
+                Button.RIGHT: e.KEY_RIGHT,
+                Button.A: e.KEY_X,            # Cross
+                Button.B: e.KEY_Z,            # Circle
+                Button.X: e.KEY_C,            # Triangle
+                Button.Y: e.KEY_V,            # Square
+                Button.LL: e.KEY_Q,           # L1
+                Button.RR: e.KEY_W,           # R1
+                Button.START: e.KEY_ENTER,
+                Button.SELECT: e.KEY_BACKSPACE,
+            }
+        else:
+            # GB / GBC / GBA — only 4 face buttons + 2 shoulders, X
+            # doubles as L (matches mGBA's default) and Y doubles as R.
+            self.keymap = {
+                Button.UP: e.KEY_UP,
+                Button.DOWN: e.KEY_DOWN,
+                Button.LEFT: e.KEY_LEFT,
+                Button.RIGHT: e.KEY_RIGHT,
+                Button.A: e.KEY_X,
+                Button.B: e.KEY_Z,
+                Button.X: e.KEY_A,
+                Button.Y: e.KEY_S,
+                Button.LL: e.KEY_A,
+                Button.RR: e.KEY_S,
+                Button.START: e.KEY_ENTER,
+                Button.SELECT: e.KEY_BACKSPACE,
+            }
+
         events = {e.EV_KEY: list(self.keymap.values())}
         try:
             self.ui = UInput(events, name="bigbox-virtual-gamepad")
@@ -236,6 +260,21 @@ def _configure_mednafen_psx_bios() -> None:
     # frequently has only auto_null loaded (the ALSA monitor doesn't
     # consistently see the cards), and mednafen's own ALSA driver is
     # rock-solid. plughw lets ALSA convert rate/format on the fly.
+    # SDL scancodes that match what InputInjector emits in PS1 mode.
+    # Format: `keyboard 0x0 <decimal_scancode>` — verified against
+    # the existing md.input.* bindings already in mednafen.cfg.
+    # Bigbox button → SDL scancode → PSX action:
+    #   UP/DOWN/LEFT/RIGHT  →  82/81/80/79  →  D-Pad
+    #   A (KEY_X = SDL X)   →  27          →  Cross
+    #   B (KEY_Z = SDL Z)   →  29          →  Circle
+    #   X (KEY_C = SDL C)   →  6           →  Triangle
+    #   Y (KEY_V = SDL V)   →  25          →  Square
+    #   LL (KEY_Q = SDL Q)  →  20          →  L1
+    #   RR (KEY_W = SDL W)  →  26          →  R1
+    #   START (KEY_ENTER)   →  40          →  Start
+    #   SELECT (BACKSPACE)  →  42          →  Select
+    # L2/R2 left at scancode 0 (unbound) — bigbox has no extra
+    # shoulders to spare. Most PSX titles work without them.
     settings = {
         "psx.bios_jp": str(chosen),
         "psx.bios_na": str(chosen),
@@ -247,6 +286,21 @@ def _configure_mednafen_psx_bios() -> None:
         "sound.device": "plughw:1,0",
         "sound.rate": "48000",
         "sound.volume": "100",
+        "psx.input.port1": "gamepad",
+        "psx.input.port1.gamepad.up":       "keyboard 0x0 82",
+        "psx.input.port1.gamepad.down":     "keyboard 0x0 81",
+        "psx.input.port1.gamepad.left":     "keyboard 0x0 80",
+        "psx.input.port1.gamepad.right":    "keyboard 0x0 79",
+        "psx.input.port1.gamepad.cross":    "keyboard 0x0 27",
+        "psx.input.port1.gamepad.circle":   "keyboard 0x0 29",
+        "psx.input.port1.gamepad.triangle": "keyboard 0x0 6",
+        "psx.input.port1.gamepad.square":   "keyboard 0x0 25",
+        "psx.input.port1.gamepad.l1":       "keyboard 0x0 20",
+        "psx.input.port1.gamepad.r1":       "keyboard 0x0 26",
+        "psx.input.port1.gamepad.l2":       "keyboard 0x0 0",
+        "psx.input.port1.gamepad.r2":       "keyboard 0x0 0",
+        "psx.input.port1.gamepad.start":    "keyboard 0x0 40",
+        "psx.input.port1.gamepad.select":   "keyboard 0x0 42",
     }
 
     existing: dict[str, str] = {}

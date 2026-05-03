@@ -143,7 +143,7 @@ class GamesView:
             self.phase = PHASE_RESULT
             return
         self.proc = proc
-        self.injector = _emu.InputInjector()
+        self.injector = _emu.InputInjector(self.current_system or "")
         self._launch_time = time.time()
         games_state.record_play(self.current_system, rom_filename)
         self.phase = PHASE_RUNNING
@@ -352,17 +352,30 @@ class GamesView:
                         head_h + 16 + msg.get_height() + 4))
 
         # Control map — bigbox GPIO buttons are wired into a virtual
-        # gamepad via uinput (see bigbox/emulator.py InputInjector).
-        # Show the actual mapping so users don't think they need a
-        # second controller.
-        mappings = [
-            ("D-Pad",     "UP / DOWN / LEFT / RIGHT"),
-            ("A button",  "A"),
-            ("B button",  "B"),
-            ("L / R",     "X / Y  (or LL / RR)"),
-            ("START",     "START"),
-            ("SELECT",    "SELECT"),
-        ]
+        # gamepad via uinput (see bigbox/emulator.py InputInjector),
+        # with a per-system keymap. Show the actual mapping for the
+        # system that's currently running.
+        if self.current_system == "ps1":
+            mappings = [
+                ("D-Pad",       "UP / DOWN / LEFT / RIGHT"),
+                ("Cross  (X)",  "A"),
+                ("Circle (O)",  "B"),
+                ("Triangle",    "X"),
+                ("Square",      "Y"),
+                ("L1 / R1",     "LL / RR"),
+                ("Start",       "START"),
+                ("Select",      "SELECT"),
+            ]
+        else:
+            # GB / GBC / GBA
+            mappings = [
+                ("D-Pad",     "UP / DOWN / LEFT / RIGHT"),
+                ("A button",  "A"),
+                ("B button",  "B"),
+                ("L / R",     "X / Y  (or LL / RR)"),
+                ("START",     "START"),
+                ("SELECT",    "SELECT"),
+            ]
         box_w = 540
         box_h = 30 + len(mappings) * 26 + 10
         box_x = (theme.SCREEN_W - box_w) // 2
