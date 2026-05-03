@@ -56,6 +56,7 @@ VIEW_CASES: list[tuple[str, str, str, object]] = [
     ("wifi_attack_view",   "bigbox.ui.wifi_attack",      "WifiAttackView",        None),  # iface picker → None safe
     ("wifi_multi_view",    "bigbox.ui.wifi_multi_tool",  "WifiMultiToolView",     None),
     ("cracker_view",       "bigbox.ui.cracker",          "OfflineCrackerView",    lambda C: C()),
+    ("data_sniper_view",   "bigbox.ui.data_sniper",      "DataSniperView",        None),
     ("pmkid_sniper_view",  "bigbox.ui.pmkid_sniper",     "PMKIDSniperView",       lambda C: C()),
     ("media_view",         "bigbox.ui.media_player",     "MediaPlayerView",       lambda C: C()),
     ("tv_view",            "bigbox.ui.tv",               "InternetTVView",        None),
