@@ -27,6 +27,30 @@ def _vol_mute(ctx: SectionContext) -> None:
         ctx.toast("muted" if state else "unmuted")
 
 
+def _emulator_audio_card(ctx: SectionContext) -> None:
+    """Pick which ALSA card emulators should send audio to. Persists
+    to /etc/bigbox/emulator_audio.json so it survives bigbox restarts
+    and OTA updates."""
+    from bigbox import emulator as _emu
+    current = _emu._emulator_audio_card()
+    options = [
+        ("HDMI (Card 0)",       0),
+        ("Headphones (Card 1)", 1),
+    ]
+    actions = []
+    for label, card in options:
+        marker = " ●" if card == current else ""
+        def make_handler(c=card, lbl=label):
+            def _set():
+                ok = _emu.set_emulator_audio_card(c)
+                ctx.toast(f"Emulator audio → {lbl}" if ok
+                          else "Could not save")
+                ctx.go_back()
+            return _set
+        actions.append((f"{label}{marker}", make_handler()))
+    ctx.show_menu("Emulator Audio Card", actions)
+
+
 def _audio_test(ctx: SectionContext) -> None:
     """Play a short tone on each ALSA card in turn so the user can
     identify which one actually drives the GamePi43's built-in
@@ -234,8 +258,9 @@ def _power_menu(ctx: SectionContext) -> None:
         ("Volume up",     lambda: _vol_up(ctx)),
         ("Volume down",   lambda: _vol_down(ctx)),
         ("Mute toggle",   lambda: _vol_mute(ctx)),
-        ("Audio Output",  lambda: _audio_output(ctx)),
-        ("Audio Test",    lambda: _audio_test(ctx)),
+        ("Audio Output",        lambda: _audio_output(ctx)),
+        ("Audio Test",          lambda: _audio_test(ctx)),
+        ("Emulator Audio Card", lambda: _emulator_audio_card(ctx)),
         ("Reboot",        lambda: _reboot(ctx)),
         ("Power off",     lambda: _poweroff(ctx)),
     ])

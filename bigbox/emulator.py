@@ -240,6 +240,39 @@ def list_all_roms() -> dict[str, list[str]]:
     return out
 
 
+EMULATOR_AUDIO_CFG = Path("/etc/bigbox/emulator_audio.json")
+_DEFAULT_EMULATOR_CARD = 1   # Headphones (3.5 mm jack)
+
+
+def _emulator_audio_card() -> int:
+    """Which ALSA card emulators should output to. Override via
+    /etc/bigbox/emulator_audio.json — `{"alsa_card": 0}` for HDMI,
+    `{"alsa_card": 1}` for Headphones. Default 1."""
+    try:
+        import json
+        with EMULATOR_AUDIO_CFG.open() as f:
+            data = json.load(f)
+        n = int(data.get("alsa_card", _DEFAULT_EMULATOR_CARD))
+        return n if n in (0, 1) else _DEFAULT_EMULATOR_CARD
+    except Exception:
+        return _DEFAULT_EMULATOR_CARD
+
+
+def set_emulator_audio_card(card: int) -> bool:
+    """Persist the user's choice of ALSA card for emulator audio."""
+    if card not in (0, 1):
+        return False
+    try:
+        import json
+        EMULATOR_AUDIO_CFG.parent.mkdir(parents=True, exist_ok=True)
+        with EMULATOR_AUDIO_CFG.open("w") as f:
+            json.dump({"alsa_card": card}, f)
+        return True
+    except Exception as e:
+        print(f"[emulator] save audio card failed: {e}")
+        return False
+
+
 def _ps1_args_for_binary(bin_name: str) -> tuple[str, ...]:
     """Per-binary CLI flags for PS1 emulators. mednafen rejects
     unknown args (errors out — not silent); duckstation takes
@@ -309,7 +342,7 @@ def _configure_mednafen_psx_bios() -> None:
         "video.driver": "opengl",
         "video.fs": "1",
         "sound.driver": "alsa",
-        "sound.device": "plughw:1,0",
+        "sound.device": f"plughw:{_emulator_audio_card()},0",
         "sound.rate": "48000",
         "sound.volume": "100",
         "psx.input.port1": "gamepad",
@@ -502,59 +535,32 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     #
     # mGBA / pcsxr both honour SDL_AUDIODRIVER, so this single env
     # decides for every supported emulator.
-    # Audio routing strategy:
+    # Audio: direct ALSA, always. Pipewire on this image has a habit
+    # of reverting to an auto_null-only state where every pulse stream
+    # silently dies; chasing it cost too many rounds. mednafen's log
+    # also showed it ignored `sound.driver alsa` and stuck with SDL,
+    # so the SDL path has to actually deliver audio to the hardware
+    # by itself. plughw lets ALSA do rate/format conversion so SDL
+    # doesn't have to match the card's native settings exactly.
     #
-    #   1. If pipewire-pulse is running AND has a real (non-auto_null)
-    #      sink loaded → route SDL through pulse, pinned to Headphones.
-    #   2. Otherwise (pulse missing OR pulse only has auto_null because
-    #      its ALSA monitor hasn't loaded cards) → fall back to direct
-    #      ALSA on the Headphones card. We've verified `aplay -D
-    #      plughw:1,0` works even when pulse can't see the device.
-    #
-    # Without (2), bigbox would route to pulse, pulse would route to
-    # auto_null, and the user would hear silence even though the
-    # underlying ALSA hardware was fine.
-    use_pulse = False
-    target_sink: Optional[str] = None
+    # Card selection: read from /etc/bigbox/emulator_audio.json
+    # ({"alsa_card": 0} for HDMI / {"alsa_card": 1} for Headphones).
+    # Defaults to Card 1 (Headphones) because handheld bigbox
+    # normally drives a 3.5 mm jack output; Audio Test action lets
+    # the user verify which one actually drives the GamePi43 speaker.
+    card = _emulator_audio_card()
+    dev = f"plughw:{card},0"
+    env["SDL_AUDIODRIVER"] = "alsa"
+    env["AUDIODEV"] = dev
+    env["ALSA_PCM_DEVICE"] = dev
+    env["ALSA_CARD"] = "Headphones" if card == 1 else "HDMI"
     try:
-        from bigbox import audio as _audio
-        if _audio_daemon_running() and _audio.has_real_pulse_sink():
-            target_sink = _audio.preferred_sink_for("emulator")
-            use_pulse = bool(target_sink and target_sink != "auto_null")
+        subprocess.run(
+            ["amixer", "-c", str(card), "sset", "PCM", "100%", "unmute"],
+            capture_output=True, timeout=2,
+        )
     except Exception:
         pass
-
-    if use_pulse and target_sink:
-        env.setdefault("SDL_AUDIODRIVER", "pulse")
-        for k, v in _pulse_env().items():
-            env.setdefault(k, v)
-        env["PULSE_SINK"] = target_sink
-        for cmd_args in (
-            ["pactl", "set-sink-mute", target_sink, "0"],
-            ["pactl", "set-sink-volume", target_sink, "100%"],
-        ):
-            try:
-                subprocess.run(cmd_args, check=False, timeout=2,
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL,
-                               env=env)
-            except Exception:
-                pass
-    else:
-        # Direct ALSA on the Headphones card. plughw lets ALSA do
-        # rate/format conversion so SDL doesn't have to match the
-        # card's native settings exactly.
-        env.setdefault("SDL_AUDIODRIVER", "alsa")
-        env.setdefault("AUDIODEV", "plughw:1,0")
-        env.setdefault("ALSA_PCM_DEVICE", "plughw:1,0")
-        env.setdefault("ALSA_CARD", "Headphones")
-        try:
-            subprocess.run(
-                ["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"],
-                capture_output=True, timeout=2,
-            )
-        except Exception:
-            pass
 
     cmd = [binary, *sys_extra_args, str(rom_path.resolve())]
 
