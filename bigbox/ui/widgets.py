@@ -8,7 +8,7 @@ from typing import Callable
 
 import pygame
 
-from bigbox import background, disk, power, theme
+from bigbox import activity, background, disk, power, theme
 from bigbox.events import Button, ButtonEvent
 
 
@@ -58,13 +58,34 @@ class StatusBar:
         left = font.render(f"bigbox · {self._hostname}", True, theme.FG_DIM)
         surf.blit(left, (theme.PADDING, (bar.height - left.get_height()) // 2))
 
-        # Update Notification
-        if app and getattr(app, "update_checker", None) and app.update_checker.update_ready:
+        # Update notification takes priority over the activity ticker —
+        # both render in the centered slot.
+        update_ready = bool(
+            app and getattr(app, "update_checker", None)
+            and app.update_checker.update_ready
+        )
+        if update_ready:
             import math
             pulse = int(127 + 128 * math.sin(time.time() * 4))
             notif = font.render("UPDATE AVAILABLE", True, theme.ACCENT)
             notif.set_alpha(pulse)
             surf.blit(notif, (theme.SCREEN_W // 2 - notif.get_width() // 2, (bar.height - notif.get_height()) // 2))
+        else:
+            # Activity ticker — show the most recent event for 60s
+            # after it fired, then fade out by hiding entirely.
+            ev = activity.latest()
+            if ev is not None:
+                age = time.time() - ev.ts
+                if age < 60:
+                    age_s = int(age)
+                    age_label = "now" if age_s < 1 else f"{age_s}s"
+                    ticker = font.render(
+                        f"· {ev.message}  ({age_label})", True, theme.FG_DIM)
+                    surf.blit(
+                        ticker,
+                        (theme.SCREEN_W // 2 - ticker.get_width() // 2,
+                         (bar.height - ticker.get_height()) // 2),
+                    )
 
         # Recording Indicator
         if app and getattr(app, "recording_proc", None):

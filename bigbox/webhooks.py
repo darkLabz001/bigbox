@@ -56,6 +56,11 @@ def send_file(path: str) -> tuple[bool, str]:
             r = requests.post(url, files=files, data=data, timeout=30)
             
         if r.status_code in (200, 201, 204):
+            try:
+                from bigbox import activity
+                activity.record(f"webhook sent: {p.name}")
+            except Exception:
+                pass
             return True, "Sent successfully"
         else:
             return False, f"Server returned HTTP {r.status_code}"

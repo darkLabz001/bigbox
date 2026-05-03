@@ -39,11 +39,22 @@ def register(task_id: str, label: str, section: str = "",
     with _lock:
         _tasks[task_id] = Task(id=task_id, label=label, section=section,
                                stop=stop)
+    try:
+        from bigbox import activity
+        activity.record(f"started: {label}")
+    except Exception:
+        pass
 
 
 def unregister(task_id: str) -> None:
     with _lock:
-        _tasks.pop(task_id, None)
+        task = _tasks.pop(task_id, None)
+    if task is not None:
+        try:
+            from bigbox import activity
+            activity.record(f"stopped: {task.label}")
+        except Exception:
+            pass
 
 
 def list_tasks() -> list[Task]:

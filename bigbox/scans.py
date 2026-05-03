@@ -63,6 +63,11 @@ def save(record: ScanRecord) -> Path | None:
         path = SCANS_DIR / record.filename()
         with path.open("w", encoding="utf-8") as f:
             json.dump(asdict(record), f, indent=2)
+        try:
+            from bigbox import activity
+            activity.record(f"scan saved: {record.summary()}")
+        except Exception:
+            pass
         return path
     except Exception as e:
         print(f"[scans] save failed: {e}")
