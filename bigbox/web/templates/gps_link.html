@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BigB0X // GPS Link</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body {
+            background: #050505;
+            color: #00ff00;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+        }
+        #status {
+            font-size: 1.2em;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #00ff00;
+        }
+        #info {
+            font-size: 0.9em;
+            color: #888;
+        }
+        .btn {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .active {
+            color: #00ff00;
+            background: #000;
+            border: 1px solid #00ff00;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏴‍☠️ BIGBOX GPS LINK</h1>
+    <div id="status">Ready to Link</div>
+    <div id="info">Waiting for location permission...</div>
+    <button id="startBtn" class="btn">START SHARING</button>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const infoEl = document.getElementById('info');
+        const btn = document.getElementById('startBtn');
+        let watchId = null;
+
+        btn.onclick = () => {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                btn.innerText = "START SHARING";
+                btn.classList.remove('active');
+                statusEl.innerText = "Ready to Link";
+                return;
+            }
+
+            if (!navigator.geolocation) {
+                statusEl.innerText = "ERROR";
+                infoEl.innerText = "Geolocation not supported by this browser.";
+                return;
+            }
+
+            statusEl.innerText = "LINKING...";
+            
+            watchId = navigator.geolocation.watchPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lon = pos.coords.longitude;
+                    const alt = pos.coords.altitude || 0;
+                    const acc = pos.coords.accuracy || 1;
+
+                    statusEl.innerText = "CONNECTED";
+                    infoEl.innerText = `Lat: ${lat.toFixed(5)}, Lon: ${lon.toFixed(5)}\nAcc: ${acc}m`;
+                    btn.innerText = "STOP SHARING";
+                    btn.classList.add('active');
+
+                    // Send to BigB0X
+                    const formData = new FormData();
+                    formData.append('lat', lat);
+                    formData.append('lon', lon);
+                    formData.append('alt', alt);
+                    formData.append('hdop', acc / 5.0); // Rough inverse
+
+                    fetch('/gps/phone', {
+                        method: 'POST',
+                        body: formData
+                    }).catch(err => {
+                        console.error("Sync failed", err);
+                        statusEl.innerText = "SYNC ERROR";
+                    });
+                },
+                (err) => {
+                    statusEl.innerText = "PERMISSION DENIED";
+                    infoEl.innerText = err.message;
+                    watchId = null;
+                    btn.innerText = "START SHARING";
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
+                }
+            );
+        };
+    </script>
+</body>
+</html>

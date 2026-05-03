@@ -41,6 +41,7 @@ LOOT_DIR = Path("loot/wardrive")
 
 
 PHASE_LANDING = "landing"        # show GPS state, big "A: start" hint
+PHASE_PHONE_QR = "phone_qr"      # show QR code to link phone GPS
 PHASE_CAPTURING = "capturing"    # actively logging
 PHASE_RESULT = "result"          # final stats after stop
 
@@ -470,6 +471,13 @@ class WardriveView:
         if self.phase == PHASE_LANDING:
             if ev.button is Button.A:
                 self._start_capture()
+            elif ev.button is Button.Y:
+                self.phase = PHASE_PHONE_QR
+            return
+
+        if self.phase == PHASE_PHONE_QR:
+            if ev.button in (Button.B, Button.Y, Button.A):
+                self.phase = PHASE_LANDING
             return
 
         if self.phase == PHASE_CAPTURING:
@@ -534,6 +542,8 @@ class WardriveView:
 
         if self.phase == PHASE_LANDING:
             self._render_landing(surf, head_h)
+        elif self.phase == PHASE_PHONE_QR:
+            self._render_phone_qr(surf, head_h)
         elif self.phase == PHASE_CAPTURING:
             self._render_capturing(surf, head_h, foot_h)
         elif self.phase == PHASE_RESULT:
@@ -541,7 +551,9 @@ class WardriveView:
 
     def _hint(self) -> str:
         if self.phase == PHASE_LANDING:
-            return "A: Start  B: Back"
+            return "A: Start  Y: Phone GPS  B: Back"
+        if self.phase == PHASE_PHONE_QR:
+            return "B: Back"
         if self.phase == PHASE_CAPTURING:
             return "A: Stop  B: Back"
         if self.phase == PHASE_RESULT:
@@ -589,6 +601,48 @@ class WardriveView:
             True, theme.FG_DIM)
         surf.blit(sub3, (theme.SCREEN_W // 2 - sub3.get_width() // 2,
                          head_h + 220))
+
+    def _render_phone_qr(self, surf: pygame.Surface, head_h: int) -> None:
+        from bigbox import qr
+        ip = qr.lan_ipv4()
+        url = f"http://{ip}:8080/gps/link" if ip else None
+        
+        f_big = pygame.font.Font(None, 36)
+        f_med = pygame.font.Font(None, 24)
+        
+        msg = f_big.render("LINK PHONE GPS", True, theme.ACCENT)
+        surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2, head_h + 40))
+        
+        if not url:
+            err = f_med.render("No LAN IP found. Connect to Wi-Fi first.", True, theme.ERR)
+            surf.blit(err, (theme.SCREEN_W // 2 - err.get_width() // 2, head_h + 120))
+            return
+
+        sub = f_med.render("Scan this QR with your iPhone to share GPS", True, theme.FG)
+        surf.blit(sub, (theme.SCREEN_W // 2 - sub.get_width() // 2, head_h + 80))
+        
+        # Draw QR
+        matrix = qr.make_matrix(url)
+        if matrix:
+            padding = 4
+            mod_size = 6
+            qr_w = (len(matrix) + 2 * padding) * mod_size
+            qx = (theme.SCREEN_W - qr_w) // 2
+            qy = head_h + 120
+            
+            # White background for QR
+            pygame.draw.rect(surf, (255, 255, 255), (qx, qy, qr_w, qr_w))
+            
+            for r, row in enumerate(matrix):
+                for c, val in enumerate(row):
+                    if val:
+                        pygame.draw.rect(surf, (0, 0, 0), 
+                                         (qx + (c + padding) * mod_size, 
+                                          qy + (r + padding) * mod_size, 
+                                          mod_size, mod_size))
+        
+        u_surf = f_med.render(url, True, theme.ACCENT)
+        surf.blit(u_surf, (theme.SCREEN_W // 2 - u_surf.get_width() // 2, head_h + 380))
 
     def _render_capturing(self, surf: pygame.Surface,
                           head_h: int, foot_h: int) -> None:

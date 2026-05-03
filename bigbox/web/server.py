@@ -22,6 +22,7 @@ from bigbox import wigle as wigle_mod
 from bigbox import emulator as emu_mod
 from bigbox import retroachievements as ra_mod
 from bigbox import webhooks as webhook_mod
+from bigbox.gps import GPSReader
 
 if TYPE_CHECKING:
     from bigbox.app import App
@@ -385,4 +386,24 @@ async def webhook_save(url: str = Form(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"could not save webhook: {e}")
     return {"status": "ok", "url": url}
+
+
+# ---------------- External GPS ---------------------------------------------
+
+@app.post("/gps/phone")
+async def gps_phone(
+    lat: float = Form(...),
+    lon: float = Form(...),
+    alt: float = Form(0.0),
+    hdop: float = Form(1.0),
+):
+    """Receive GPS fix from a phone browser."""
+    GPSReader.inject_external_fix(lat, lon, alt, hdop)
+    return {"status": "ok"}
+
+
+@app.get("/gps/link", response_class=HTMLResponse)
+async def gps_link(request: Request):
+    """Page for the phone to open to share its GPS."""
+    return templates.TemplateResponse(request, "gps_link.html")
 

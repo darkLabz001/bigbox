@@ -146,6 +146,9 @@ class GPSReader:
     """Background NMEA reader. Thread-safe latest() snapshot."""
 
     BAUDS = (9600, 115200, 38400)  # LC86L typically 115200 from cold
+    
+    _external_fix: Optional[GPSFix] = None
+    _external_lock = threading.Lock()
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -153,6 +156,19 @@ class GPSReader:
         self._stop = False
         self._thread: Optional[threading.Thread] = None
         self._serial: Optional["serial.Serial"] = None  # type: ignore[name-defined]
+
+    @classmethod
+    def inject_external_fix(cls, lat: float, lon: float, alt_m: float = 0.0, hdop: float = 1.0) -> None:
+        with cls._external_lock:
+            cls._external_fix = GPSFix(
+                has_fix=True,
+                lat=lat,
+                lon=lon,
+                alt_m=alt_m,
+                hdop=hdop,
+                device_path="PHONE",
+                timestamp_iso=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+            )
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -171,6 +187,19 @@ class GPSReader:
         self._serial = None
 
     def latest(self) -> GPSFix:
+        # Check for external fix first (Phone GPS)
+        with self._external_lock:
+            if self._external_fix and self._external_fix.has_fix:
+                # Basic expiry check for external fix: if it's older than 15s, ignore it.
+                try:
+                    import datetime
+                    fix_time = datetime.datetime.strptime(self._external_fix.timestamp_iso, "%Y-%m-%d %H:%M:%S")
+                    now = datetime.datetime.utcnow()
+                    if (now - fix_time).total_seconds() < 15:
+                        return GPSFix(**self._external_fix.__dict__)
+                except Exception:
+                    pass
+
         with self._lock:
             # Return a copy so callers can mutate freely.
             return GPSFix(**self._fix.__dict__)
