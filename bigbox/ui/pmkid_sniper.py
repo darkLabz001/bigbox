@@ -14,95 +14,188 @@ import threading
 import pty
 import select
 import time
+import shutil
+import math
 from collections import deque
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, List, Optional
+from dataclasses import dataclass
 
 import pygame
 
 from bigbox import theme, hardware, hashopolis
 from bigbox.events import Button, ButtonEvent
-from bigbox.ui.section import SectionContext
-from bigbox.ui.wifi_attack import _list_wlan_ifaces
 
-PHASE_PICK_IFACE = "iface"
+if TYPE_CHECKING:
+    from bigbox.app import App
+
+PHASE_LANDING = "landing"
+PHASE_CONFIG = "config"
 PHASE_SNIPING = "sniping"
 PHASE_RESULT = "result"
+
+@dataclass
+class _Iface:
+    name: str
+    is_monitor: bool
 
 class PMKIDSniperView:
     def __init__(self) -> None:
         self.dismissed = False
-        self.phase = PHASE_PICK_IFACE
-        self.status_msg = "Select Interface"
+        self.phase = PHASE_LANDING
+        self.status_msg = "CORE_IDLE"
         
-        self.ifaces = _list_wlan_ifaces()
+        # Hardware
+        self.ifaces: List[_Iface] = []
+        self._refresh_ifaces()
         self.iface_idx = 0
         self.mon_iface: str | None = None
         
+        # Options
+        self.opt_hop = True
+        self.opt_channel = 6
+        self.opt_aggressive = False
+        self.opt_bpf = ""
+        self.opt_wait = 5 # seconds to wait for PMKID per AP
+        
+        # Process management
         self.process = None
         self.master_fd = None
         self.slave_fd = None
         self._stop_event = threading.Event()
-        self.history = deque(maxlen=200)
+        self.history = deque(maxlen=250)
         
+        # Stats
         self.pcapng_path: Path | None = None
         self.pmkid_count = 0
         self.eapol_count = 0
         self.start_time = 0.0
+        self.last_capture_time = 0.0
+        
+        # UI
+        self.config_cursor = 0
+        self.f_main = pygame.font.Font(None, 24)
+        self.f_title = pygame.font.Font(None, 34)
+        self.f_bold = pygame.font.Font(None, 26)
+        self.f_small = pygame.font.Font(None, 18)
+        self.f_tiny = pygame.font.Font(None, 14)
         
         self.LOOT_DIR = Path("loot/handshakes")
+        self._frame_count = 0
 
-    def handle(self, ev: ButtonEvent, ctx: SectionContext) -> None:
+    def _refresh_ifaces(self):
+        self.ifaces = []
+        # Get all wifi ifaces
+        clients = hardware.list_wifi_clients()
+        mons = hardware.list_monitor_ifaces()
+        
+        seen = set()
+        for m in mons:
+            self.ifaces.append(_Iface(m, True))
+            seen.add(m)
+        for c in clients:
+            if c not in seen:
+                self.ifaces.append(_Iface(c, False))
+        
+        if not self.ifaces:
+            self.ifaces = [_Iface("wlan0", False)]
+
+    def handle(self, ev: ButtonEvent, ctx: App) -> None:
         if not ev.pressed: return
 
-        if self.phase == PHASE_PICK_IFACE:
+        if self.phase == PHASE_LANDING:
             if ev.button is Button.UP:
                 self.iface_idx = (self.iface_idx - 1) % len(self.ifaces)
             elif ev.button is Button.DOWN:
                 self.iface_idx = (self.iface_idx + 1) % len(self.ifaces)
             elif ev.button is Button.A:
-                if self.ifaces:
-                    self.mon_iface = self.ifaces[self.iface_idx].name
-                    self._start_snipe()
+                self.mon_iface = self.ifaces[self.iface_idx].name
+                self.phase = PHASE_CONFIG
+            elif ev.button is Button.X:
+                self._refresh_ifaces()
             elif ev.button is Button.B:
                 self.dismissed = True
+
+        elif self.phase == PHASE_CONFIG:
+            opts_count = 6
+            if ev.button is Button.UP:
+                self.config_cursor = (self.config_cursor - 1) % opts_count
+            elif ev.button is Button.DOWN:
+                self.config_cursor = (self.config_cursor + 1) % opts_count
+            elif ev.button is Button.A:
+                self._toggle_config(ctx)
+            elif ev.button is Button.START:
+                self._start_snipe()
+            elif ev.button is Button.B:
+                self.phase = PHASE_LANDING
 
         elif self.phase == PHASE_SNIPING:
             if ev.button is Button.A: # Stop
                 self._stop_snipe()
-            elif ev.button is Button.X: # Upload to Hashopolis
+            elif ev.button is Button.X: # Upload
                 if self.pcapng_path and self.pcapng_path.exists():
-                    self.status_msg = "UPLOADING TO HASHOPOLIS..."
-                    # Run in thread to not block UI
+                    self.status_msg = "UPLOADING_TO_HASHOPOLIS..."
                     threading.Thread(target=self._do_upload, daemon=True).start()
             elif ev.button is Button.B:
                 self._stop_snipe()
-                self.dismissed = True
+                self.phase = PHASE_LANDING
 
         elif self.phase == PHASE_RESULT:
-            if ev.button in (Button.A, Button.B):
-                self.phase = PHASE_PICK_IFACE
+            if ev.button in (Button.A, Button.B, Button.START):
+                self.phase = PHASE_LANDING
+
+    def _toggle_config(self, ctx: App):
+        if self.config_cursor == 0:
+            self.opt_hop = not self.opt_hop
+        elif self.config_cursor == 1:
+            ctx.get_input("CHANNEL", lambda v: setattr(self, "opt_channel", int(v or 6)), str(self.opt_channel))
+        elif self.config_cursor == 2:
+            self.opt_aggressive = not self.opt_aggressive
+        elif self.config_cursor == 3:
+            ctx.get_input("WAIT_TIME", lambda v: setattr(self, "opt_wait", int(v or 5)), str(self.opt_wait))
+        elif self.config_cursor == 4:
+            ctx.get_input("BPF_FILTER", lambda v: setattr(self, "opt_bpf", v or ""), self.opt_bpf)
+        elif self.config_cursor == 5:
+            self._start_snipe()
 
     def _do_upload(self):
         success = hashopolis.upload_hash(self.pcapng_path)
-        self.status_msg = "UPLOAD SUCCESS" if success else "UPLOAD FAILED"
+        self.status_msg = "UPLOAD_SUCCESS" if success else "UPLOAD_FAILED"
 
     def _start_snipe(self) -> None:
+        if not shutil.which("hcxdumptool"):
+            self.status_msg = "ERR: HCXDUMPTOOL_MISSING"
+            self.phase = PHASE_RESULT
+            return
+
+        # 1. Ensure monitor mode
+        mon_ifaces = hardware.list_monitor_ifaces()
+        active_iface = self.mon_iface
+        if active_iface not in mon_ifaces:
+            self.status_msg = f"ENABLING_MONITOR_{active_iface}..."
+            new_mon = hardware.enable_monitor(active_iface)
+            if not new_mon:
+                self.status_msg = "ERR: MONITOR_MODE_FAILED"
+                self.phase = PHASE_LANDING
+                return
+            active_iface = new_mon
+            self.mon_iface = active_iface
+
         self.LOOT_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.pcapng_path = self.LOOT_DIR / f"sniper_{ts}.pcapng"
         
-        # hcxdumptool command
-        # -i interface, -o output pcapng, --enable_status=1 for console output
-        cmd = [
-            "sudo", "hcxdumptool",
-            "-i", self.mon_iface,
-            "-o", str(self.pcapng_path),
-            "--enable_status=1"
-        ]
+        # Build command (hcxdumptool v6.x uses -w instead of -o)
+        cmd = ["sudo", "hcxdumptool", "-i", active_iface, "-w", str(self.pcapng_path)]
         
+        if not self.opt_hop:
+            # Try to set channel via iw
+            subprocess.run(["sudo", "iw", "dev", active_iface, "set", "channel", str(self.opt_channel)], 
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
         self.phase = PHASE_SNIPING
-        self.status_msg = "SNIPING ACTIVE"
+        self.status_msg = "SNIPING_ACTIVE"
         self.start_time = time.time()
         self.pmkid_count = 0
         self.eapol_count = 0
@@ -116,16 +209,17 @@ class PMKIDSniperView:
                 stdin=self.slave_fd, stdout=self.slave_fd, stderr=self.slave_fd,
                 env=os.environ
             )
-            threading.Thread(target=self._read_output, daemon=True).start()
+            self._reader_thread = threading.Thread(target=self._read_output, daemon=True)
+            self._reader_thread.start()
             from bigbox import background as _bg
             _bg.register(
                 "pmkid_sniper",
-                f"PMKID sniper ({self.mon_iface})",
+                f"PMKID sniper ({active_iface})",
                 "Wireless",
                 stop=self._stop_snipe,
             )
         except Exception as e:
-            self.status_msg = f"ERR: {str(e)}"
+            self.status_msg = f"LAUNCH_FAIL: {e}"
             self.phase = PHASE_RESULT
 
     def _read_output(self) -> None:
@@ -135,20 +229,25 @@ class PMKIDSniperView:
                 try:
                     data = os.read(self.master_fd, 4096).decode("utf-8", "replace")
                     if data:
-                        # Strip ANSI escape codes
                         clean_data = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', data)
                         for line in clean_data.splitlines():
                             line = line.strip()
                             if not line: continue
                             self.history.append(line)
                             
-                            # Parse status from hcxdumptool
-                            # Example lines often contain [PMKID: 5] or [EAPOL: 2]
-                            m_pmkid = re.search(r'PMKID:?\s*(\d+)', line)
-                            if m_pmkid: self.pmkid_count = int(m_pmkid.group(1))
+                            m_pmkid = re.search(r'PMKID:?\s*(\d+)', line, re.I)
+                            if m_pmkid: 
+                                new_count = int(m_pmkid.group(1))
+                                if new_count > self.pmkid_count:
+                                    self.pmkid_count = new_count
+                                    self.last_capture_time = time.time()
                             
-                            m_eapol = re.search(r'EAPOL:?\s*(\d+)', line)
-                            if m_eapol: self.eapol_count = int(m_eapol.group(1))
+                            m_eapol = re.search(r'EAPOL:?\s*(\d+)', line, re.I)
+                            if m_eapol: 
+                                new_e = int(m_eapol.group(1))
+                                if new_e > self.eapol_count:
+                                    self.eapol_count = new_e
+                                    self.last_capture_time = time.time()
                 except OSError: break
 
     def _stop_snipe(self) -> None:
@@ -167,66 +266,128 @@ class PMKIDSniperView:
             try: os.close(self.slave_fd)
             except: pass
         self.master_fd = self.slave_fd = self.process = None
+        hardware.ensure_wifi_managed(self.mon_iface)
         from bigbox import background as _bg
         _bg.unregister("pmkid_sniper")
-        self.phase = PHASE_RESULT
-
-    def update(self) -> None:
-        pass
+        if self.phase == PHASE_SNIPING:
+            self.phase = PHASE_RESULT
 
     def render(self, surf: pygame.Surface) -> None:
-        # Fonts here use the standard pygame.font.Font(None, N) form so
-        # the bigbox._font_cache monkey-patch can dedupe instances —
-        # don't reach back into App for a shared dict.
-        f = pygame.font.Font(None, theme.FS_BODY)
-        f_bold = pygame.font.Font(None, theme.FS_TITLE)
-        f_small = pygame.font.Font(None, theme.FS_SMALL)
-        f_tiny = f_small
-        
-        head_h, foot_h = 40, 32
+        self._frame_count += 1
         surf.fill(theme.BG)
+        self._draw_hud_frame(surf)
         
-        # Header
-        pygame.draw.rect(surf, theme.FG, (0, 0, surf.get_width(), head_h))
-        title = f_bold.render("PMKID SNIPER", True, theme.BG)
-        surf.blit(title, (10, (head_h - title.get_height()) // 2))
+        head_h = 65
+        surf.blit(self.f_title.render("PMKID // NEURAL_SNIPER_v3", True, theme.FG), (theme.PADDING + 10, 15))
         
-        # Status Bar
-        stat_surf = f_small.render(self.status_msg, True, theme.FG)
-        surf.blit(stat_surf, (surf.get_width() - stat_surf.get_width() - 10, (head_h - stat_surf.get_height()) // 2))
+        if self.phase == PHASE_LANDING: self._render_landing(surf, head_h)
+        elif self.phase == PHASE_CONFIG: self._render_config(surf, head_h)
+        elif self.phase == PHASE_SNIPING: self._render_sniping(surf, head_h)
+        elif self.phase == PHASE_RESULT: self._render_result(surf, head_h)
 
-        if self.phase == PHASE_PICK_IFACE:
-            y = head_h + 20
-            surf.blit(f.render("SELECT INTERFACE:", True, theme.ACCENT), (20, y))
-            y += 30
-            for i, iface in enumerate(self.ifaces):
-                color = theme.FG if i == self.iface_idx else theme.FG_DIM
-                txt = f"{'> ' if i == self.iface_idx else '  '}{iface.name} {'(mon)' if iface.is_monitor else ''}"
-                surf.blit(f.render(txt, True, color), (20, y + i*30))
-        
-        elif self.phase == PHASE_SNIPING:
-            # Stats Bar
-            stats_y = head_h + 5
-            elapsed = int(time.time() - self.start_time)
-            stats_txt = f"T: {elapsed}s | PMKIDs: {self.pmkid_count} | EAPOLs: {self.eapol_count}"
-            surf.blit(f.render(stats_txt, True, theme.ACCENT), (20, stats_y))
-            
-            # Terminal Area
-            term_rect = pygame.Rect(10, head_h + 30, surf.get_width() - 20, surf.get_height() - head_h - foot_h - 40)
-            pygame.draw.rect(surf, (5, 5, 5), term_rect)
-            pygame.draw.rect(surf, theme.DIVIDER, term_rect, 1)
-            
-            visible_lines = list(self.history)[-(term_rect.height // 16):]
-            for i, line in enumerate(visible_lines):
-                surf.blit(f_tiny.render(line[:80], True, theme.FG), (term_rect.x + 5, term_rect.y + 5 + i * 16))
-            
-            # Hints
-            hint_txt = "A: Stop  X: Hashopolis Upload  B: Back"
-            surf.blit(f_small.render(hint_txt, True, theme.FG_DIM), (20, surf.get_height() - 25))
+        # Footer
+        foot_h = 32
+        pygame.draw.line(surf, theme.DIVIDER, (20, theme.SCREEN_H - foot_h), (theme.SCREEN_W - 20, theme.SCREEN_H - foot_h))
+        status_col = theme.ACCENT if self.process else theme.WARN
+        surf.blit(self.f_small.render(f"STATION_STATUS: {self.status_msg}", True, status_col), (25, theme.SCREEN_H - 25))
+        h_surf = self.f_small.render(self._get_hint(), True, theme.FG_DIM)
+        surf.blit(h_surf, (theme.SCREEN_W - h_surf.get_width() - 25, theme.SCREEN_H - 25))
 
-        elif self.phase == PHASE_RESULT:
-            surf.blit(f.render("SNIPING COMPLETE", True, theme.FG), (20, head_h + 20))
-            if self.pcapng_path:
-                surf.blit(f_small.render(f"Saved: {self.pcapng_path.name}", True, theme.FG_DIM), (20, head_h + 50))
-                surf.blit(f.render(f"Total PMKIDs: {self.pmkid_count}", True, theme.ACCENT), (20, head_h + 80))
-            surf.blit(f.render("A: Back", True, theme.FG), (20, head_h + 120))
+    def _get_hint(self) -> str:
+        if self.phase == PHASE_LANDING: return "A: SELECT_IFACE  X: REFRESH  B: EXIT"
+        if self.phase == PHASE_CONFIG: return "UP/DN: NAV  A: TOGGLE  START: INITIATE"
+        if self.phase == PHASE_SNIPING: return "A: TERMINATE  X: UPLOAD  B: ABORT"
+        if self.phase == PHASE_RESULT: return "A: RETURN  B: EXIT"
+        return "B: BACK"
+
+    def _draw_hud_frame(self, surf: pygame.Surface):
+        color = theme.ACCENT
+        bw, bh = 30, 30
+        pygame.draw.lines(surf, color, False, [(0, bh), (0, 0), (bw, 0)], 2)
+        pygame.draw.lines(surf, color, False, [(theme.SCREEN_W-bw, 0), (theme.SCREEN_W-1, 0), (theme.SCREEN_W-1, bh)], 2)
+        pygame.draw.lines(surf, color, False, [(0, theme.SCREEN_H-bh), (0, theme.SCREEN_H-1), (bw, theme.SCREEN_H-1)], 2)
+        pygame.draw.lines(surf, color, False, [(theme.SCREEN_W-bw, theme.SCREEN_H-1), (theme.SCREEN_W-1, theme.SCREEN_H-1), (theme.SCREEN_W-1, theme.SCREEN_H-bh)], 2)
+
+    def _render_landing(self, surf: pygame.Surface, head_h: int):
+        y = head_h + 20
+        surf.blit(self.f_bold.render("AVAILABLE_TRANSCEIVERS", True, theme.ACCENT), (50, y))
+        for i, iface in enumerate(self.ifaces):
+            sel = i == self.iface_idx
+            rect = pygame.Rect(50, y + 40 + i*45, 400, 40)
+            if sel:
+                pygame.draw.rect(surf, theme.SELECTION_BG, rect, border_radius=4)
+                pygame.draw.rect(surf, theme.ACCENT, rect, 2, border_radius=4)
+            color = theme.ACCENT if sel else theme.FG
+            txt = f"{iface.name} {'(monitor_mode_active)' if iface.is_monitor else ''}"
+            surf.blit(self.f_main.render(txt, True, color), (rect.x + 15, rect.y + 8))
+
+    def _render_config(self, surf: pygame.Surface, head_h: int):
+        y = head_h + 15
+        surf.blit(self.f_bold.render("ENGAGEMENT_PARAMETERS", True, theme.ACCENT), (50, y))
+        opts = [
+            ("CHANNEL_HOPPING", "YES" if self.opt_hop else "NO"),
+            ("FIXED_CHANNEL", str(self.opt_channel)),
+            ("AGGRESSIVE_MODE", "YES" if self.opt_aggressive else "NO"),
+            ("DWELL_TIME", f"{self.opt_wait}s"),
+            ("BPF_FILTER", self.opt_bpf or "NONE"),
+            (">> INITIALIZE SNIPER", "")
+        ]
+        for i, (lbl, val) in enumerate(opts):
+            sel = i == self.config_cursor
+            rect = pygame.Rect(50, y + 45 + i*38, 450, 32)
+            if sel:
+                pygame.draw.rect(surf, theme.SELECTION_BG, rect, border_radius=2)
+                pygame.draw.rect(surf, theme.ACCENT, rect, 1, border_radius=2)
+            surf.blit(self.f_main.render(f"{lbl}:", True, theme.FG_DIM), (70, rect.y + 5))
+            surf.blit(self.f_main.render(str(val), True, theme.ACCENT if sel else theme.FG), (280, rect.y + 5))
+
+    def _render_sniping(self, surf: pygame.Surface, head_h: int):
+        # Scan animation
+        scan_y = (self._frame_count * 5) % (theme.SCREEN_H - head_h - 60)
+        line_surf = pygame.Surface((theme.SCREEN_W - 40, 2), pygame.SRCALPHA)
+        line_surf.fill((0, 255, 100, 100))
+        surf.blit(line_surf, (20, head_h + 20 + scan_y))
+        
+        # Stats HUD
+        stats_rect = pygame.Rect(20, head_h + 10, theme.SCREEN_W - 40, 90)
+        pygame.draw.rect(surf, theme.BG_ALT, stats_rect, border_radius=5)
+        pygame.draw.rect(surf, theme.ACCENT, stats_rect, 1, border_radius=5)
+        
+        elapsed = int(time.time() - self.start_time)
+        surf.blit(self.f_bold.render(f"UPTIME: {elapsed}s", True, theme.FG), (stats_rect.x + 20, stats_rect.y + 15))
+        
+        # Capture counts with pulse effect
+        pulse = abs(math.sin(time.time() * 5)) if (time.time() - self.last_capture_time < 2) else 0
+        p_col = (0, 255, 0) if pulse > 0 else theme.ACCENT
+        
+        surf.blit(self.f_main.render(f"PMKIDs: {self.pmkid_count}", True, p_col), (stats_rect.x + 20, stats_rect.y + 50))
+        surf.blit(self.f_main.render(f"EAPOLs: {self.eapol_count}", True, theme.WARN), (stats_rect.x + 200, stats_rect.y + 50))
+        
+        # Terminal log
+        term_rect = pygame.Rect(20, stats_rect.bottom + 15, theme.SCREEN_W - 40, theme.SCREEN_H - stats_rect.bottom - 65)
+        pygame.draw.rect(surf, (5, 5, 10), term_rect, border_radius=2)
+        pygame.draw.rect(surf, theme.DIVIDER, term_rect, 1)
+        
+        lines = list(self.history)[-(term_rect.height // 18 - 1):]
+        for i, line in enumerate(lines):
+            col = theme.ACCENT if "PMKID" in line or "EAPOL" in line else theme.FG
+            surf.blit(self.f_tiny.render(line[:120], True, col), (term_rect.x + 10, term_rect.y + 8 + i * 18))
+
+    def _render_result(self, surf: pygame.Surface, head_h: int):
+        box_w, box_h = 500, 260
+        bx = (theme.SCREEN_W - box_w) // 2
+        by = (theme.SCREEN_H - box_h) // 2
+        pygame.draw.rect(surf, theme.BG_ALT, (bx, by, box_w, box_h), border_radius=10)
+        pygame.draw.rect(surf, theme.DIVIDER, (bx, by, box_w, box_h), 1, border_radius=10)
+        
+        surf.blit(self.f_bold.render("MISSION_COMPLETE", True, theme.ACCENT), (bx + 30, by + 30))
+        lines = [
+            f"FILE:    {self.pcapng_path.name if self.pcapng_path else 'NONE'}",
+            f"SIZE:    {os.path.getsize(self.pcapng_path)//1024 if self.pcapng_path and self.pcapng_path.exists() else 0} KB",
+            f"PMKIDs:  {self.pmkid_count}",
+            f"EAPOLs:  {self.eapol_count}",
+            "---------------------------",
+            "DATA SECURED IN loot/handshakes/"
+        ]
+        for i, ln in enumerate(lines):
+            surf.blit(self.f_main.render(ln, True, theme.FG), (bx + 30, by + 75 + i * 28))
