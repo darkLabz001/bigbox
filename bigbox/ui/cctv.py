@@ -350,6 +350,8 @@ class CCTVView:
         if ev.button is Button.B:
             self._stop_thread = True
             self.dismissed = True
+        elif ev.button is Button.Y:
+            self._snapshot()
         elif ev.button in (Button.UP, Button.DOWN) and not ev.repeat:
             if ev.button is Button.UP:
                 self.zoom = 2 if self.zoom == 1 else (4 if self.zoom == 2 else 1)
@@ -363,6 +365,33 @@ class CCTVView:
             self._frame_buffer.clear()
             self.fps = 0.0
             self.zoom = 1
+
+    def _snapshot(self) -> None:
+        """Y-press: grab the latest stream frame to media/captures/.
+        Same dir + naming convention as the rest of bigbox so the
+        CapturesView picks it up automatically and the webhook bundle
+        sweeps it on Send Loot."""
+        from datetime import datetime
+        from pathlib import Path
+        if not self._frame_buffer:
+            return
+        try:
+            frame, _cam_ip = self._frame_buffer[-1]
+        except (IndexError, ValueError):
+            return
+        out_dir = Path("media/captures")
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            out = out_dir / f"cctv_{ts}.png"
+            pygame.image.save(frame, str(out))
+            try:
+                from bigbox import activity
+                activity.record(f"CCTV snapshot: {out.name}")
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[cctv] snapshot failed: {e}")
 
     def render(self, surf: pygame.Surface) -> None:
         surf.fill((5, 5, 10)) 
@@ -428,5 +457,5 @@ class CCTVView:
             err = f_small.render(f"ERR: {self.error_msg[:30]}", True, theme.ERR)
             surf.blit(err, (view.centerx - err.get_width()//2, view.centery))
         
-        hint = f_small.render("L/R: Cam  UP: Zoom  DOWN: Cycle  B: Back", True, theme.FG_DIM)
+        hint = f_small.render("L/R: Cam  UP: Zoom  DOWN: Cycle  Y: Snapshot  B: Back", True, theme.FG_DIM)
         surf.blit(hint, (view.x, view.bottom + 10))

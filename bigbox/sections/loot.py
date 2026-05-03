@@ -6,6 +6,10 @@ from bigbox.sections._icons import load as load_icon, load_background
 from bigbox.ui import Action, Section, SectionContext
 
 
+def _loot_gallery(ctx: SectionContext) -> None:
+    ctx.show_loot_gallery()
+
+
 def _vault(ctx: SectionContext) -> None:
     ctx.show_vault()
 
@@ -75,6 +79,7 @@ def build() -> Section:
         icon_img=load_icon("recon"), # Fallback to recon icon for now
         background_img=load_background("recon"),
         actions=[
+            Action("Loot Gallery", _loot_gallery, "Integrated visualizer for all captured intel"),
             Action("Secure Vault", _vault, "Password-protected encrypted storage"),
             Action("Scan History", _scan_history, "Saved ARP and probe-request scans"),
             Action("Tracker History", _tracker_history, "Long-term 'is anything following me' analysis"),

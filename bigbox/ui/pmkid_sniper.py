@@ -187,11 +187,12 @@ class PMKIDSniperView:
         self.pcapng_path = self.LOOT_DIR / f"sniper_{ts}.pcapng"
         
         # Build command (hcxdumptool v6.x uses -w instead of -o)
-        cmd = ["sudo", "hcxdumptool", "-i", active_iface, "-w", str(self.pcapng_path)]
-        
+        # bigbox runs as root; drop the sudo prefix.
+        cmd = ["hcxdumptool", "-i", active_iface, "-w", str(self.pcapng_path)]
+
         if not self.opt_hop:
             # Try to set channel via iw
-            subprocess.run(["sudo", "iw", "dev", active_iface, "set", "channel", str(self.opt_channel)], 
+            subprocess.run(["iw", "dev", active_iface, "set", "channel", str(self.opt_channel)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         self.phase = PHASE_SNIPING
@@ -271,6 +272,22 @@ class PMKIDSniperView:
         _bg.unregister("pmkid_sniper")
         if self.phase == PHASE_SNIPING:
             self.phase = PHASE_RESULT
+            # Parse the .pcapng into a list of (kind, BSSID, ESSID)
+            # rows so the result screen shows what was actually
+            # captured, not just counters. Runs in a background thread
+            # because hcxpcapngtool can take a few seconds on large
+            # captures and we don't want to block the UI.
+            self.parsed_captures = []
+            if self.pcapng_path and self.pcapng_path.is_file():
+                threading.Thread(target=self._parse_captures, daemon=True).start()
+
+    def _parse_captures(self) -> None:
+        try:
+            from bigbox import pcap_parse
+            self.parsed_captures = pcap_parse.parse_pcapng(self.pcapng_path)
+        except Exception as e:
+            print(f"[pmkid] parse failed: {e}")
+            self.parsed_captures = []
 
     def render(self, surf: pygame.Surface) -> None:
         self._frame_count += 1
@@ -374,20 +391,58 @@ class PMKIDSniperView:
             surf.blit(self.f_tiny.render(line[:120], True, col), (term_rect.x + 10, term_rect.y + 8 + i * 18))
 
     def _render_result(self, surf: pygame.Surface, head_h: int):
-        box_w, box_h = 500, 260
+        box_w, box_h = 720, 360
         bx = (theme.SCREEN_W - box_w) // 2
-        by = (theme.SCREEN_H - box_h) // 2
+        by = head_h + 20
         pygame.draw.rect(surf, theme.BG_ALT, (bx, by, box_w, box_h), border_radius=10)
         pygame.draw.rect(surf, theme.DIVIDER, (bx, by, box_w, box_h), 1, border_radius=10)
-        
-        surf.blit(self.f_bold.render("MISSION_COMPLETE", True, theme.ACCENT), (bx + 30, by + 30))
-        lines = [
-            f"FILE:    {self.pcapng_path.name if self.pcapng_path else 'NONE'}",
-            f"SIZE:    {os.path.getsize(self.pcapng_path)//1024 if self.pcapng_path and self.pcapng_path.exists() else 0} KB",
-            f"PMKIDs:  {self.pmkid_count}",
-            f"EAPOLs:  {self.eapol_count}",
-            "---------------------------",
-            "DATA SECURED IN loot/handshakes/"
-        ]
-        for i, ln in enumerate(lines):
-            surf.blit(self.f_main.render(ln, True, theme.FG), (bx + 30, by + 75 + i * 28))
+
+        surf.blit(self.f_bold.render("MISSION_COMPLETE", True, theme.ACCENT),
+                  (bx + 30, by + 18))
+
+        # Summary line — file + counters in one row.
+        size_kb = (os.path.getsize(self.pcapng_path) // 1024
+                   if self.pcapng_path and self.pcapng_path.exists() else 0)
+        summary = (
+            f"{self.pcapng_path.name if self.pcapng_path else 'NONE'}  ·  "
+            f"{size_kb} KB  ·  PMKIDs: {self.pmkid_count}  EAPOLs: {self.eapol_count}"
+        )
+        surf.blit(self.f_small.render(summary, True, theme.FG_DIM),
+                  (bx + 30, by + 50))
+
+        # Inline capture list — populated by _parse_captures off the
+        # main thread. Until it lands the user sees "parsing..."; once
+        # parsed we list every (kind, BSSID, ESSID) row.
+        rows = getattr(self, "parsed_captures", None)
+        list_y = by + 80
+        list_h = box_h - 100
+        pygame.draw.rect(surf, (5, 5, 10),
+                         (bx + 20, list_y, box_w - 40, list_h))
+        pygame.draw.rect(surf, theme.DIVIDER,
+                         (bx + 20, list_y, box_w - 40, list_h), 1)
+
+        if rows is None:
+            msg = self.f_small.render("Parsing pcapng...", True, theme.FG_DIM)
+            surf.blit(msg, (bx + 30, list_y + 12))
+        elif not rows:
+            msg = self.f_small.render(
+                "No PMKIDs / handshakes found in capture.",
+                True, theme.FG_DIM)
+            surf.blit(msg, (bx + 30, list_y + 12))
+        else:
+            header = self.f_small.render(
+                f"{len(rows)} unique capture(s):", True, theme.ACCENT)
+            surf.blit(header, (bx + 30, list_y + 8))
+            row_h = 22
+            visible = (list_h - 38) // row_h
+            for i, cap in enumerate(rows[:visible]):
+                color = theme.ACCENT if cap.kind == "PMKID" else theme.WARN
+                line = (f"[{cap.kind:5}] {cap.bssid}  "
+                        f"{cap.essid[:36]}")
+                ls = self.f_small.render(line, True, color)
+                surf.blit(ls, (bx + 30, list_y + 32 + i * row_h))
+            if len(rows) > visible:
+                more = self.f_small.render(
+                    f"+ {len(rows) - visible} more in {self.pcapng_path.name}",
+                    True, theme.FG_DIM)
+                surf.blit(more, (bx + 30, list_y + 32 + visible * row_h))

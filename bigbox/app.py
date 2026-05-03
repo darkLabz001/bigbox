@@ -91,6 +91,7 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("diagnostics_view", 2),
     ("bg_tasks_view", 2),
     ("tracker_history_view", 2),
+    ("loot_gallery_view", 2),
     ("games_view", 0),
     ("tracker_view", 2),
     ("probe_view", 2),
@@ -409,6 +410,10 @@ class App:
         from bigbox.ui.tracker_history import TrackerHistoryView
         self.tracker_history_view = TrackerHistoryView()
 
+    def show_loot_gallery(self) -> None:
+        from bigbox.ui.loot import LootGalleryView
+        self.loot_gallery_view = LootGalleryView()
+
     def show_honeypot(self) -> None:
         from bigbox.ui.honeypot import HoneypotView
         self.honeypot_view = HoneypotView()
@@ -506,6 +511,7 @@ class App:
         self.eviltwin_view = None
         self.games_view = None
         self.captures_view = None
+        self.loot_gallery_view = None
         self.tracker_view = None
         self.probe_view = None
         self.beacon_view = None

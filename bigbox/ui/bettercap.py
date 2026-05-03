@@ -49,9 +49,10 @@ class BettercapView:
         self._start_engine()
 
     def _start_engine(self):
-        # Interactive session with ticker for updates
+        # bigbox.service runs as root; calling `sudo bettercap` is a
+        # pointless round-trip and hangs on a missing sudoers entry.
         cmd = [
-            "sudo", "bettercap",
+            "bettercap",
             "-iface", "wlan0",
             "-no-colors",
             "-eval", "net.probe on; ticker on; set ticker.commands 'net.show; events.show 5'; set ticker.period 2"

@@ -195,7 +195,9 @@ class WifiteView:
                 return
             active_iface = new_mon
 
-        cmd = ["sudo", "wifite", "-i", active_iface] + self._get_full_args()
+        # bigbox.service runs as root; the `sudo` prefix is a pointless
+        # round-trip and breaks if sudoers isn't configured.
+        cmd = ["wifite", "-i", active_iface] + self._get_full_args()
         self.history.append(f"[INIT] EXECUTING: {' '.join(cmd)}")
         
         self.master_fd, self.slave_fd = pty.openpty()

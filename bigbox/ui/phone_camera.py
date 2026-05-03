@@ -85,6 +85,8 @@ class PhoneCameraView:
             if ev.button is Button.B:
                 self._stop_stream()
                 self.phase = PHASE_CONFIG
+            elif ev.button is Button.Y:
+                self._snapshot()
             return
 
         # PHASE_CONFIG
@@ -142,6 +144,31 @@ class PhoneCameraView:
         self.phase = PHASE_STREAMING
         self._stream_thread = threading.Thread(target=self._loop, daemon=True)
         self._stream_thread.start()
+
+    def _snapshot(self) -> None:
+        """Y-press during streaming: dump the latest decoded frame to
+        media/captures/. CapturesView + the loot bundler pick it up
+        automatically."""
+        from datetime import datetime
+        if not self._frame_buffer:
+            return
+        try:
+            frame = self._frame_buffer[-1]
+        except IndexError:
+            return
+        out_dir = Path("media/captures")
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            out = out_dir / f"phonecam_{ts}.png"
+            pygame.image.save(frame, str(out))
+            try:
+                from bigbox import activity
+                activity.record(f"phone-cam snapshot: {out.name}")
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[phone_camera] snapshot failed: {e}")
 
     def _stop_stream(self) -> None:
         self._stop_thread = True
@@ -228,7 +255,7 @@ class PhoneCameraView:
                             theme.SCREEN_H // 2))
 
         foot = (self.error_msg + "   B: Back" if self.error_msg
-                else f"FPS {self.fps}   {self.url[:60]}   B: Back")
+                else f"FPS {self.fps}   Y: Snapshot   B: Back")
         f = self.hint_font.render(foot, True, theme.FG_DIM)
         surf.blit(f, (theme.PADDING, theme.SCREEN_H - 28))
 
