@@ -7,18 +7,48 @@ from bigbox.ui import Action, Section, SectionContext
 
 
 def _vol_up(ctx: SectionContext) -> None:
-    out = run_capture(["amixer", "-c", "1", "set", "PCM", "5%+"])
-    ctx.show_result("volume +", out)
+    from bigbox import audio
+    new = audio.nudge_volume(5)
+    ctx.toast(f"volume {new}%" if new is not None else "vol +: no audio backend")
 
 
 def _vol_down(ctx: SectionContext) -> None:
-    out = run_capture(["amixer", "-c", "1", "set", "PCM", "5%-"])
-    ctx.show_result("volume -", out)
+    from bigbox import audio
+    new = audio.nudge_volume(-5)
+    ctx.toast(f"volume {new}%" if new is not None else "vol -: no audio backend")
 
 
 def _vol_mute(ctx: SectionContext) -> None:
-    out = run_capture(["amixer", "-c", "1", "set", "PCM", "toggle"])
-    ctx.show_result("mute toggle", out)
+    from bigbox import audio
+    state = audio.toggle_mute()
+    if state is None:
+        ctx.toast("mute toggle: no audio backend")
+    else:
+        ctx.toast("muted" if state else "unmuted")
+
+
+def _audio_output(ctx: SectionContext) -> None:
+    from bigbox import audio
+    sinks = audio.list_sinks()
+    if not sinks:
+        ctx.show_result("Audio Output",
+                        "No pulse/pipewire sinks found.\n\n"
+                        "Either pipewire-pulse isn't running, or "
+                        "pulseaudio-utils isn't installed (Toolbox → "
+                        "Verify Core Tools).")
+        return
+    actions = []
+    for s in sinks:
+        marker = " ●" if s.is_default else ""
+        label = f"{s.description}{marker}"
+        def make_handler(name=s.name, desc=s.description):
+            def _set():
+                ok = audio.set_default_sink(name)
+                ctx.toast(f"output → {desc}" if ok else "set sink failed")
+                ctx.go_back()
+            return _set
+        actions.append((label, make_handler()))
+    ctx.show_menu("Audio Output", actions)
 
 
 def _reboot(ctx: SectionContext) -> None:
@@ -156,11 +186,12 @@ def _send_loot_bundle(ctx: SectionContext) -> None:
 
 def _power_menu(ctx: SectionContext) -> None:
     ctx.show_menu("Power & Audio", [
-        ("Volume up",   lambda: _vol_up(ctx)),
-        ("Volume down", lambda: _vol_down(ctx)),
-        ("Mute toggle", lambda: _vol_mute(ctx)),
-        ("Reboot",      lambda: _reboot(ctx)),
-        ("Power off",   lambda: _poweroff(ctx)),
+        ("Volume up",     lambda: _vol_up(ctx)),
+        ("Volume down",   lambda: _vol_down(ctx)),
+        ("Mute toggle",   lambda: _vol_mute(ctx)),
+        ("Audio Output",  lambda: _audio_output(ctx)),
+        ("Reboot",        lambda: _reboot(ctx)),
+        ("Power off",     lambda: _poweroff(ctx)),
     ])
 
 
