@@ -150,8 +150,38 @@ class SystemDef:
         if not d.is_dir():
             return []
         try:
-            return sorted(p.name for p in d.iterdir()
-                          if p.is_file() and p.suffix.lower() in self.extensions)
+            items: list[Path] = []
+            # Look in the main dir
+            for p in d.iterdir():
+                if p.is_file():
+                    items.append(p)
+                elif p.is_dir() and self.key == "ps1":
+                    # For PS1, also look one level deep (common for bin/cue folders)
+                    for sub_p in p.iterdir():
+                        if sub_p.is_file():
+                            items.append(sub_p)
+
+            # Filter by extension
+            valid = [p for p in items if p.suffix.lower() in self.extensions]
+            
+            if self.key == "ps1":
+                # For PS1, if we have a .cue and a .bin with the same name, hide the .bin
+                cues = {p.stem for p in valid if p.suffix.lower() == ".cue"}
+                filtered = []
+                for p in valid:
+                    if p.suffix.lower() == ".bin" and p.stem in cues:
+                        continue
+                    filtered.append(p)
+                valid = filtered
+
+            # Return just the names (or relative paths if in subdirs)
+            results = []
+            for p in valid:
+                try:
+                    results.append(str(p.relative_to(d)))
+                except ValueError:
+                    results.append(p.name)
+            return sorted(results)
         except OSError:
             return []
 
@@ -298,7 +328,7 @@ def _configure_mednafen_psx_bios() -> None:
 
     Also disables psx.bios_sanity so older BIOS dumps with non-canonical
     SHA1s still work."""
-    bios_dir = Path("/opt/bigbox/bios/ps1")
+    bios_dir = BIOS_ROOT / "ps1"
     if not bios_dir.is_dir():
         return
     candidates = [p for p in bios_dir.iterdir()
@@ -309,9 +339,10 @@ def _configure_mednafen_psx_bios() -> None:
     chosen = next(
         (p for p in candidates if p.name.lower() in _MEDNAFEN_BIOS_NAMES),
         candidates[0],
-    )
+    ).resolve()
 
-    cfg_path = Path("/root/.mednafen/mednafen.cfg")
+    home = Path(os.environ.get("HOME", "/root"))
+    cfg_path = home / ".mednafen" / "mednafen.cfg"
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Audio: pin mednafen to direct ALSA on the Headphones card
