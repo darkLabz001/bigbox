@@ -47,7 +47,7 @@ ensure_kv disable_splash 1
 read -r CMDLINE < "$CMDLINE_TXT"
 
 # Drop any of our managed flags first so we can re-add deterministically.
-for k in quiet splash logo.nologo loglevel vt.global_cursor_default fbcon plymouth.ignore-serial-consoles; do
+for k in quiet splash logo.nologo loglevel vt.global_cursor_default fbcon consoleblank plymouth.ignore-serial-consoles; do
     CMDLINE=$(echo "$CMDLINE" | sed -E "s/(^| )${k}([= ][^ ]*)?/ /g")
 done
 
@@ -61,7 +61,8 @@ CMDLINE=$(echo "$CMDLINE" | tr -s ' ' | sed -E 's/^ //; s/ $//')
 #   logo.nologo - hides the framebuffer tux
 #   vt.global_cursor_default=0 - kills the blinking _ on tty1
 #   fbcon=map:10 - moves fbcon off all VTs (no console text on screen)
-NEW_CMDLINE="$CMDLINE quiet splash logo.nologo loglevel=0 vt.global_cursor_default=0 fbcon=map:10"
+#   consoleblank=0 - disables the built-in kernel console blanking timer
+NEW_CMDLINE="$CMDLINE quiet splash logo.nologo loglevel=0 vt.global_cursor_default=0 fbcon=map:10 consoleblank=0"
 
 # cmdline.txt must end with newline; preserve that.
 echo "$NEW_CMDLINE" > "$CMDLINE_TXT"

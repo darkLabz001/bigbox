@@ -112,21 +112,38 @@ _STOP_METHODS = ("_stop_run", "_stop_crack", "_stop_capture",
                  "_stop_stream", "_stop_snipe", "_stop", "_shutdown")
 
 
-_IDLE_CFG = Path("/etc/bigbox/idle.json")
-_IDLE_DEFAULT_DIM_SECS = 120        # 2 min → screensaver
-_IDLE_DEFAULT_OFF_SECS = 30 * 60    # 30 min → poweroff
+_IDLE_CFG_ETC = Path("/etc/bigbox/idle.json")
+_IDLE_CFG_LOCAL = Path(__file__).resolve().parents[1] / "config" / "idle.json"
+_IDLE_DEFAULT_DIM_SECS = 0         # Disabled by default
+_IDLE_DEFAULT_OFF_SECS = 0         # Disabled by default
 
 
 def _load_idle_thresholds() -> tuple[int, int]:
     """Returns (dim_seconds, off_seconds). 0 disables that step."""
+    for cfg_path in (_IDLE_CFG_ETC, _IDLE_CFG_LOCAL):
+        if cfg_path.exists():
+            try:
+                import json
+                with cfg_path.open() as f:
+                    data = json.load(f)
+                return (int(data.get("dim_secs", _IDLE_DEFAULT_DIM_SECS)),
+                        int(data.get("off_secs", _IDLE_DEFAULT_OFF_SECS)))
+            except Exception:
+                continue
+    return _IDLE_DEFAULT_DIM_SECS, _IDLE_DEFAULT_OFF_SECS
+
+
+def save_idle_thresholds(dim_secs: int, off_secs: int) -> bool:
+    """Save idle thresholds to the local config file. Returns True on success."""
     try:
         import json
-        with _IDLE_CFG.open() as f:
-            data = json.load(f)
-        return (int(data.get("dim_secs", _IDLE_DEFAULT_DIM_SECS)),
-                int(data.get("off_secs", _IDLE_DEFAULT_OFF_SECS)))
-    except Exception:
-        return _IDLE_DEFAULT_DIM_SECS, _IDLE_DEFAULT_OFF_SECS
+        _IDLE_CFG_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+        with _IDLE_CFG_LOCAL.open("w") as f:
+            json.dump({"dim_secs": dim_secs, "off_secs": off_secs}, f, indent=4)
+        return True
+    except Exception as e:
+        print(f"[idle] failed to save: {e}")
+        return False
 
 
 class App:

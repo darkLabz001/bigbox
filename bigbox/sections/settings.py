@@ -262,11 +262,55 @@ def _power_menu(ctx: SectionContext) -> None:
         ("Volume up",     lambda: _vol_up(ctx)),
         ("Volume down",   lambda: _vol_down(ctx)),
         ("Mute toggle",   lambda: _vol_mute(ctx)),
+        ("Idle Behavior",       lambda: _idle_menu(ctx)),
         ("Audio Output",        lambda: _audio_output(ctx)),
         ("Audio Test",          lambda: _audio_test(ctx)),
         ("Emulator Audio Card", lambda: _emulator_audio_card(ctx)),
         ("Reboot",        lambda: _reboot(ctx)),
         ("Power off",     lambda: _poweroff(ctx)),
+    ])
+
+
+def _idle_menu(ctx: SectionContext) -> None:
+    """Configure screensaver and auto-shutdown timeouts."""
+    from bigbox import app as _app
+    dim, off = _app._load_idle_thresholds()
+
+    def set_dim(secs, label):
+        def _set():
+            if _app.save_idle_thresholds(secs, off):
+                ctx.toast(f"Screensaver → {label}")
+                # Force immediate reload in the running app instance
+                if hasattr(ctx, "_idle_dim_secs"):
+                    ctx._idle_dim_secs = secs
+            ctx.go_back()
+        return _set
+
+    def set_off(secs, label):
+        def _set():
+            if _app.save_idle_thresholds(dim, secs):
+                ctx.toast(f"Auto-shutdown → {label}")
+                # Force immediate reload in the running app instance
+                if hasattr(ctx, "_idle_off_secs"):
+                    ctx._idle_off_secs = secs
+            ctx.go_back()
+        return _set
+
+    ctx.show_menu("Idle Behavior", [
+        ("Screensaver: OFF" if dim == 0 else f"Screensaver: {dim}s", lambda: ctx.show_menu("Screensaver Timeout", [
+            ("Disabled", set_dim(0, "Disabled")),
+            ("1 Minute", set_dim(60, "1m")),
+            ("2 Minutes", set_dim(120, "2m")),
+            ("5 Minutes", set_dim(300, "5m")),
+            ("10 Minutes", set_dim(600, "10m")),
+        ])),
+        ("Auto-shutdown: OFF" if off == 0 else f"Auto-shutdown: {off}s", lambda: ctx.show_menu("Auto-shutdown Timeout", [
+            ("Disabled", set_off(0, "Disabled")),
+            ("15 Minutes", set_off(900, "15m")),
+            ("30 Minutes", set_off(1800, "30m")),
+            ("1 Hour", set_off(3600, "1h")),
+            ("2 Hours", set_off(7200, "2h")),
+        ])),
     ])
 
 
