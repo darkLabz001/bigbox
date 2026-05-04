@@ -124,13 +124,13 @@ class SignalScraperView:
         except Exception: pass
 
         try:
-            # Ensure adapters are up and scanning (hci0 is prioritized in hardware.py)
+            # Ensure adapters are up and scanning
             hardware.ensure_bluetooth_on()
-            # Trigger scanning on both to be sure
-            for hci in ["hci0", "hci1"]:
-                subprocess.run(["bluetoothctl", "select", hci], capture_output=True)
-                subprocess.run(["bluetoothctl", "scan", "le", "on"], 
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+            # Trigger scanning on all available controllers
+            for hci in hardware.list_bluetooth_controllers():
+                _ = subprocess.run(["bluetoothctl", "select", hci], capture_output=True)
+                _ = subprocess.run(["bluetoothctl", "scan", "le", "on"], 
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
 
             self._btmon = subprocess.Popen(
                 ["btmon"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,

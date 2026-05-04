@@ -196,6 +196,9 @@ def _toolbox_menu(ctx: SectionContext) -> None:
     def install_ragnar():
         ctx.show_update("Installing Ragnar", [str(script_dir / "install_ragnar.sh")])
 
+    def install_ub500():
+        ctx.show_update("Installing UB500 Drivers", [str(script_dir / "install-ub500-drivers.sh")])
+
     def setup_webhook():
         from bigbox import webhooks
         current = webhooks.load_webhook_url() or ""
@@ -210,6 +213,7 @@ def _toolbox_menu(ctx: SectionContext) -> None:
         ("Verify Core Tools", fix_deps),
         ("Install OSINT Suite", install_osint),
         ("Install Ragnar", install_ragnar),
+        ("Install UB500 BT Drivers", install_ub500),
         ("Webhook Setup", setup_webhook),
     ]
     ctx.show_menu("Toolbox", actions)

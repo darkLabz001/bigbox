@@ -36,13 +36,14 @@ PROFILES = [
 
 class BLESpamView:
     def __init__(self) -> None:
+        from bigbox import hardware
         self.dismissed = False
         self.running = False
         self.cursor = 0
         self.error_msg = ""
         self.packets_sent = 0
         self.iface_idx = 0
-        self.interfaces = ["hci0", "hci1"]
+        self.interfaces = hardware.list_bluetooth_controllers() or ["hci0"]
         
         self._stop_event = threading.Event()
         self._spam_thread: threading.Thread | None = None

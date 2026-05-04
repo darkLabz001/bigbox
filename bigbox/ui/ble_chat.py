@@ -44,9 +44,13 @@ class BLEChatView:
         self.scanning = False
 
     def _scan_loop(self):
+        from bigbox import hardware
+        controllers = hardware.list_bluetooth_controllers()
+        iface = controllers[0] if controllers else "hci0"
+        
         try:
             # Enable BLE
-            subprocess.run(["sudo", "hciconfig", "hci0", "up"], timeout=2)
+            subprocess.run(["sudo", "hciconfig", iface, "up"], timeout=2)
             # Scan using hcitool
             proc = subprocess.Popen(["sudo", "hcitool", "lescan", "--duplicates", "--passive"], 
                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -61,7 +65,7 @@ class BLEChatView:
                 time.sleep(0.1)
             
             proc.terminate()
-            subprocess.run(["sudo", "hciconfig", "hci0", "down"], timeout=2)
+            subprocess.run(["sudo", "hciconfig", iface, "down"], timeout=2)
         except Exception as e:
             self.error_msg = str(e)
 

@@ -85,11 +85,11 @@ class FlockScannerView:
         from bigbox import hardware
         print("[flock] bt_worker: started")
         try:
-            # Ensure adapters are up and scanning (hci0 is prioritized in hardware.py)
+            # Ensure adapters are up and scanning
             hardware.ensure_bluetooth_on()
             
-            # Start LE scan on both to ensure coverage
-            for hci in ["hci0", "hci1"]:
+            # Start LE scan on all to ensure coverage
+            for hci in hardware.list_bluetooth_controllers():
                 subprocess.run(["bluetoothctl", "select", hci], capture_output=True)
                 subprocess.Popen(["bluetoothctl", "scan", "on"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

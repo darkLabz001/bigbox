@@ -94,22 +94,45 @@ def ensure_wifi_managed(iface: str | None = None) -> None:
                  timeout=5)
 
 
+def list_bluetooth_controllers() -> list[str]:
+    """Returns a list of available hciX controller names."""
+    if not shutil.which("bluetoothctl"):
+        return []
+    rc, out = _run(["bluetoothctl", "list"], timeout=3)
+    if rc != 0:
+        return []
+    # Lines look like: Controller 00:1A:7D:DA:71:15 bigbox [default]
+    # We want to find the corresponding hciX names.
+    # bluetoothctl show usually shows the 'Name' or 'Alias'.
+    # Actually, bluetoothctl doesn't directly show hciX in 'list'.
+    # We can use 'hcitool dev' or look in /sys/class/bluetooth
+    import os
+    if os.path.exists("/sys/class/bluetooth"):
+        try:
+            return sorted([d for d in os.listdir("/sys/class/bluetooth") if d.startswith("hci")])
+        except:
+            pass
+    return ["hci0", "hci1"]  # Fallback
+
+
 def ensure_bluetooth_on() -> None:
-    """Ensure the BT controller is unblocked and powered.
-    Prioritizes hci0 (usually USB) over hci1 (onboard).
+    """Ensure all BT controllers are unblocked and powered.
+    Prioritizes USB adapters (usually hci0 or higher) over onboard.
     """
     kill_by_name("btmon", "hcidump")
     if shutil.which("rfkill"):
         _run(["rfkill", "unblock", "bluetooth"], timeout=3)
     
     if shutil.which("bluetoothctl"):
-        # Explicitly power on both, but try to select hci0 as default
-        _run(["bluetoothctl", "select", "hci0"], timeout=3)
-        _run(["bluetoothctl", "power", "on"], timeout=5)
-        _run(["bluetoothctl", "select", "hci1"], timeout=3)
-        _run(["bluetoothctl", "power", "on"], timeout=5)
-        # Re-select hci0 to make it the active context
-        _run(["bluetoothctl", "select", "hci0"], timeout=3)
+        controllers = list_bluetooth_controllers()
+        for hci in controllers:
+            _run(["bluetoothctl", "select", hci], timeout=3)
+            _run(["bluetoothctl", "power", "on"], timeout=5)
+        
+        # Prefer hci0 as the default if it exists, otherwise use the first one
+        if controllers:
+            default_hci = "hci0" if "hci0" in controllers else controllers[0]
+            _run(["bluetoothctl", "select", default_hci], timeout=3)
 
 
 def stop_bluetooth_scan() -> None:
