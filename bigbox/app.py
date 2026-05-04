@@ -92,6 +92,10 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("bg_tasks_view", 2),
     ("tracker_history_view", 2),
     ("loot_gallery_view", 2),
+    ("breach_check_view", 2),
+    ("subdomain_enum_view", 2),
+    ("user_pivot_view", 2),
+    ("exif_inspector_view", 2),
     ("games_view", 0),
     ("tracker_view", 2),
     ("probe_view", 2),
@@ -425,6 +429,22 @@ class App:
     def show_loot_gallery(self) -> None:
         from bigbox.ui.loot import LootGalleryView
         self.loot_gallery_view = LootGalleryView()
+
+    def show_breach_check(self) -> None:
+        from bigbox.ui.breach_check import BreachCheckView
+        self.breach_check_view = BreachCheckView()
+
+    def show_subdomain_enum(self) -> None:
+        from bigbox.ui.subdomain_enum import SubdomainEnumView
+        self.subdomain_enum_view = SubdomainEnumView()
+
+    def show_user_pivot(self) -> None:
+        from bigbox.ui.user_pivot import UserPivotView
+        self.user_pivot_view = UserPivotView()
+
+    def show_exif_inspector(self) -> None:
+        from bigbox.ui.exif_inspector import ExifInspectorView
+        self.exif_inspector_view = ExifInspectorView()
 
     def show_honeypot(self) -> None:
         from bigbox.ui.honeypot import HoneypotView
