@@ -214,12 +214,17 @@ class App:
         # Web UI state.
         # last_frame: most recent JPEG of the screen for /video_feed.
         # last_web_view_request: monotonic-ish timestamp updated by the
-        # web server every time /video_feed is hit. We use it to skip the
+        # web server every time /video_feed hit. We use it to skip the
         # screen-capture JPEG encode entirely when nobody's watching —
         # default state on a handheld used standalone.
         self.last_frame: bytes | None = None
         self.last_web_view_request: float = 0.0
         self._frame_counter = 0
+        try:
+            from turbojpeg import TurboJPEG
+            self._tj = TurboJPEG()
+        except Exception:
+            self._tj = None
 
     # ---------- lifecycle ----------
     def _init_display(self) -> pygame.Surface:
@@ -304,8 +309,9 @@ class App:
             t = threading.Thread(target=run_server, daemon=True)
             t.start()
             print("[bigbox] Web UI started at http://0.0.0.0:8080")
-        except ImportError:
-            print("[bigbox] uvicorn not found; Web UI disabled")
+        except Exception as e:
+            # Capture more specific errors (missing fastapi, etc)
+            print(f"[bigbox] Web UI disabled: {type(e).__name__}: {e}")
 
     # ---------- SectionContext implementation ----------
     def show_result(self, title: str, text: str) -> None:
@@ -701,13 +707,18 @@ class App:
                 self._frame_counter = 0
                 if time.time() - self.last_web_view_request < 5.0:
                     try:
-                        # pygame.image.save accepts the display surface
-                        # directly — drop the old tostring/fromstring
-                        # round-trip that copied a full RGB buffer.
-                        import io
-                        buf = io.BytesIO()
-                        pygame.image.save(screen, buf, "jpg")
-                        self.last_frame = buf.getvalue()
+                        if self._tj:
+                            # TurboJPEG is MUCH faster than pygame.image.save.
+                            # pygame surf is (W, H), array3d is (W, H, 3).
+                            # TurboJPEG expects (H, W, 3) for RGB.
+                            import pygame.surfarray as surfarray
+                            arr = surfarray.array3d(screen).transpose(1, 0, 2)
+                            self.last_frame = self._tj.encode(arr, quality=70)
+                        else:
+                            import io
+                            buf = io.BytesIO()
+                            pygame.image.save(screen, buf, "jpg")
+                            self.last_frame = buf.getvalue()
                     except Exception:
                         pass
 
