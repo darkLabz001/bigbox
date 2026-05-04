@@ -41,6 +41,7 @@ from bigbox.ui.terminal import TerminalView
 from bigbox.ui.theme_manager import ThemeManagerView
 from bigbox.ui.update import UpdateView
 from bigbox.ui.wardrive import WardriveView
+from bigbox.ui.shop import ShopView
 from bigbox.ui.loot import LootGalleryView
 from bigbox.ui.wifi_lite import (
     ProbeSnifferView, BeaconFloodView, KarmaLiteView,
@@ -94,6 +95,7 @@ __all__ = [
     "ThemeManagerView",
     "UpdateView",
     "WardriveView",
+    "ShopView",
     "LootGalleryView",
     "ProbeSnifferView",
     "BeaconFloodView",

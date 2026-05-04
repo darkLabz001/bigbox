@@ -30,7 +30,7 @@ from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.update_checker import UpdateChecker
-from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Carousel, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, ShopView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 
 
 # Foreground-view registry. Render and input both walk this in order;
@@ -81,6 +81,7 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("ble_spam_view", 2),
     ("terminal_view", 2),
     ("theme_manager_view", 2),
+    ("shop_view", 2),
     ("wardrive_view", 2),
     ("eviltwin_view", 2),
     ("honeypot_view", 2),
@@ -505,6 +506,9 @@ class App:
     def show_theme_manager(self) -> None:
         self.theme_manager_view = ThemeManagerView()
 
+    def show_shop(self) -> None:
+        self.shop_view = ShopView()
+
     def show_update(self, title: str, argv: list[str]) -> None:
         view = UpdateView(title, "")
         self.update_view = view
@@ -552,6 +556,7 @@ class App:
         self.ble_spam_view = None
         self.terminal_view = None
         self.theme_manager_view = None
+        self.shop_view = None
         self.wardrive_view = None
         self.eviltwin_view = None
         self.games_view = None

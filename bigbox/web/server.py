@@ -21,6 +21,7 @@ from bigbox.events import Button, ButtonEvent
 from bigbox import wigle as wigle_mod
 from bigbox import emulator as emu_mod
 from bigbox import retroachievements as ra_mod
+from bigbox import shop as shop_mod
 from bigbox import webhooks as webhook_mod
 from bigbox.gps import GPSReader
 
@@ -340,6 +341,43 @@ async def roms_delete(system: str, name: str):
         except Exception:
             pass
     return {"status": "deleted", "system": system, "filename": safe}
+
+
+# ---------------- BoxShop --------------------------------------------------
+
+@app.get("/shop")
+async def shop_list():
+    """Cached catalog + per-item installed flag."""
+    items = []
+    for it in shop_mod.list_items():
+        entry = dict(it)
+        entry["installed"] = shop_mod.is_installed(it["id"])
+        items.append(entry)
+    return {"items": items}
+
+
+@app.post("/shop/refresh")
+async def shop_refresh():
+    ok, msg = shop_mod.refresh()
+    if not ok:
+        raise HTTPException(status_code=502, detail=msg)
+    return {"status": "ok", "message": msg}
+
+
+@app.post("/shop/install/{item_id}")
+async def shop_install(item_id: str):
+    ok, msg = shop_mod.install(item_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"status": "installed", "message": msg}
+
+
+@app.delete("/shop/install/{item_id}")
+async def shop_uninstall(item_id: str):
+    ok, msg = shop_mod.uninstall(item_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=msg)
+    return {"status": "removed", "message": msg}
 
 
 # ---------------- RetroAchievements ----------------------------------------
