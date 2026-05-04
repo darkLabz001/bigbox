@@ -284,6 +284,7 @@ class App:
             set_app(self)
             
             def run_server():
+                import asyncio
                 # Use SSL for secure context (required for GPS on iOS)
                 cert_path = Path("config/ssl/cert.pem")
                 key_path = Path("config/ssl/key.pem")
@@ -295,16 +296,22 @@ class App:
                         "ssl_keyfile": str(key_path)
                     }
 
-                # Increase timeouts for large movie uploads
-                uvicorn.run(
-                    app, 
-                    host="0.0.0.0", 
-                    port=8080, 
-                    log_level="error",
-                    timeout_keep_alive=60,
-                    loop="asyncio",
-                    **ssl_args
-                )
+                try:
+                    config = uvicorn.Config(
+                        app, 
+                        host="0.0.0.0", 
+                        port=8080, 
+                        log_level="info",
+                        timeout_keep_alive=60,
+                        **ssl_args
+                    )
+                    server = uvicorn.Server(config)
+                    # When running in a thread, we must manage the loop ourselves
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(server.serve())
+                except Exception as ex:
+                    print(f"[web] server failed: {ex}")
             
             t = threading.Thread(target=run_server, daemon=True)
             t.start()
