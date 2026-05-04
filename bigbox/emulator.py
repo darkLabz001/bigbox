@@ -257,6 +257,16 @@ def upload_target_dir(system_key: str) -> Path | None:
     return None
 
 
+def allowed_extensions(system_key: str) -> tuple[str, ...]:
+    """Extensions accepted by the upload endpoint for a given system key.
+    PS1 BIOS is its own bucket (.bin only)."""
+    if system_key in SYSTEMS:
+        return SYSTEMS[system_key].extensions
+    if system_key == "ps1-bios":
+        return (".bin",)
+    return ()
+
+
 def list_all_roms() -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for key, sd in SYSTEMS.items():

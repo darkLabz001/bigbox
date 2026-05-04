@@ -290,6 +290,15 @@ async def roms_upload(
     if not safe_name:
         raise HTTPException(status_code=400, detail="missing filename")
 
+    allowed = emu_mod.allowed_extensions(system)
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{safe_name!r} has extension {ext or '(none)'}; "
+                   f"{system} accepts {', '.join(allowed)}",
+        )
+
     target_dir.mkdir(parents=True, exist_ok=True)
     file_path = target_dir / safe_name
     try:
