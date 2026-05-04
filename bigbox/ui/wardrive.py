@@ -159,7 +159,7 @@ class WardriveView:
 
         # Recover from previous tools (monitor mode, btmon, etc.)
         hardware.ensure_wifi_managed()
-        hardware.ensure_bluetooth_on()
+        self.bt_hci: str | None = hardware.ensure_bluetooth_on()
 
         # Split interfaces: one for scanning, one for capture (if available)
         all_ifaces = hardware.list_wifi_clients()
@@ -426,6 +426,9 @@ class WardriveView:
 
     def _bt_loop(self) -> None:
         # Start a persistent `scan le on` so the controller keeps probing.
+        # `select <hci>` over stdin pins this session to the chosen
+        # controller (UB500 if present); one-shot `bluetoothctl devices`
+        # below picks up the same default that ensure_bluetooth_on() set.
         try:
             self._bt_proc = subprocess.Popen(
                 ["bluetoothctl"],
@@ -435,6 +438,8 @@ class WardriveView:
                 text=True,
             )
             assert self._bt_proc.stdin is not None
+            if self.bt_hci:
+                self._bt_proc.stdin.write(f"select {self.bt_hci}\n")
             self._bt_proc.stdin.write("scan le on\n")
             self._bt_proc.stdin.flush()
         except Exception:
@@ -591,8 +596,11 @@ class WardriveView:
                         head_h + 140))
         
         ifaces_str = ", ".join(self.ifaces)
+        bt_label = self.bt_hci or "none"
+        if self.bt_hci and hardware.is_usb_bluetooth(self.bt_hci):
+            bt_label += " (USB)"
         sub2 = f_med.render(
-            f"Scan ifaces: {ifaces_str}   Output: loot/wardrive/",
+            f"Wi-Fi: {ifaces_str}   BT: {bt_label}   Output: loot/wardrive/",
             True, theme.FG_DIM)
         surf.blit(sub2, (theme.SCREEN_W // 2 - sub2.get_width() // 2,
                          head_h + 180))

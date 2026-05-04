@@ -96,43 +96,61 @@ def ensure_wifi_managed(iface: str | None = None) -> None:
 
 def list_bluetooth_controllers() -> list[str]:
     """Returns a list of available hciX controller names."""
-    if not shutil.which("bluetoothctl"):
-        return []
-    rc, out = _run(["bluetoothctl", "list"], timeout=3)
-    if rc != 0:
-        return []
-    # Lines look like: Controller 00:1A:7D:DA:71:15 bigbox [default]
-    # We want to find the corresponding hciX names.
-    # bluetoothctl show usually shows the 'Name' or 'Alias'.
-    # Actually, bluetoothctl doesn't directly show hciX in 'list'.
-    # We can use 'hcitool dev' or look in /sys/class/bluetooth
     import os
     if os.path.exists("/sys/class/bluetooth"):
         try:
             return sorted([d for d in os.listdir("/sys/class/bluetooth") if d.startswith("hci")])
-        except:
+        except OSError:
             pass
-    return ["hci0", "hci1"]  # Fallback
+    return []
 
 
-def ensure_bluetooth_on() -> None:
-    """Ensure all BT controllers are unblocked and powered.
-    Prioritizes USB adapters (usually hci0 or higher) over onboard.
-    """
+def is_usb_bluetooth(hci: str) -> bool:
+    """True if hciX is backed by a USB device (e.g. TP-Link UB500),
+    False for the Pi's onboard SoC controller."""
+    import os
+    try:
+        target = os.readlink(f"/sys/class/bluetooth/{hci}")
+    except OSError:
+        return False
+    # Onboard Pi BT resolves under .../platform/soc/...; USB dongles
+    # under .../usb<N>/<bus>-<port>/...  The string "/usb" only appears
+    # for USB-attached controllers.
+    return "/usb" in target
+
+
+def preferred_bluetooth_controller() -> str | None:
+    """Pick the best controller for scanning. Prefers a USB adapter
+    (the UB500 has a stronger receiver and external antenna than the
+    Pi's onboard) and falls back to whatever's first."""
+    controllers = list_bluetooth_controllers()
+    if not controllers:
+        return None
+    for hci in controllers:
+        if is_usb_bluetooth(hci):
+            return hci
+    return controllers[0]
+
+
+def ensure_bluetooth_on() -> str | None:
+    """Power on every BT controller and select the preferred one as
+    bluetoothctl's default. Returns the chosen hciX name (or None)."""
     kill_by_name("btmon", "hcidump")
     if shutil.which("rfkill"):
         _run(["rfkill", "unblock", "bluetooth"], timeout=3)
-    
-    if shutil.which("bluetoothctl"):
-        controllers = list_bluetooth_controllers()
-        for hci in controllers:
-            _run(["bluetoothctl", "select", hci], timeout=3)
-            _run(["bluetoothctl", "power", "on"], timeout=5)
-        
-        # Prefer hci0 as the default if it exists, otherwise use the first one
-        if controllers:
-            default_hci = "hci0" if "hci0" in controllers else controllers[0]
-            _run(["bluetoothctl", "select", default_hci], timeout=3)
+
+    if not shutil.which("bluetoothctl"):
+        return None
+
+    controllers = list_bluetooth_controllers()
+    for hci in controllers:
+        _run(["bluetoothctl", "select", hci], timeout=3)
+        _run(["bluetoothctl", "power", "on"], timeout=5)
+
+    chosen = preferred_bluetooth_controller()
+    if chosen:
+        _run(["bluetoothctl", "select", chosen], timeout=3)
+    return chosen
 
 
 def stop_bluetooth_scan() -> None:
