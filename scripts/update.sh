@@ -60,6 +60,34 @@ echo "STATUS: Initializing..."
 echo "PROGRESS: 2"
 cd "$REPO_DIR" || fail "cannot cd to $REPO_DIR"
 
+# Pre-flight: on Raspberry Pi installs whose bootloader does *not* load an
+# initramfs (the default — `cmdline.txt` boots the kernel directly), the
+# `initramfs-tools` postinst hook periodically fails on apt upgrades with
+#     mkinitramfs: failed to determine device for /
+# That single failed trigger then poisons every subsequent apt run because
+# dpkg reports the broken state at the end of each transaction. Since the
+# generated initrd is never read by the bootloader anyway, disable its
+# regeneration here. Idempotent; only flips when both:
+#   1. the conf is currently `yes`
+#   2. no `initramfs ... followkernel` line exists in any config.txt
+# To re-enable later: sed -i 's/^update_initramfs=no/update_initramfs=yes/' \
+#                          /etc/initramfs-tools/update-initramfs.conf
+preflight_initramfs() {
+    local cfg=/etc/initramfs-tools/update-initramfs.conf
+    [ -f "$cfg" ] || return 0
+    grep -qE '^update_initramfs=no' "$cfg" && return 0
+    if grep -hE '^[[:space:]]*initramfs[[:space:]]+[^#[:space:]]' \
+            /boot/firmware/config.txt /boot/config.txt 2>/dev/null \
+            | grep -q .; then
+        return 0   # bootloader is actually using initramfs — don't touch
+    fi
+    if sudo sed -i 's/^update_initramfs=yes/update_initramfs=no/' "$cfg" \
+            >>"$LOG" 2>&1; then
+        echo "Disabled update-initramfs regeneration (bootloader does not use it)" >>"$LOG"
+    fi
+}
+preflight_initramfs
+
 # Ensure system time is roughly correct. Raspberry Pis without RTC often drift,
 # which breaks HTTPS and Git (SSL certificate validation fails).
 if command -v timedatectl >/dev/null 2>&1; then
@@ -170,27 +198,71 @@ echo "PROGRESS: 25"
 #   (a) skip apt entirely when nothing is missing
 #   (b) run a single apt install instead of one per package
 #   (c) skip the slow apt-get update too
+# True if `$pkg` is installed *or* a virtual package whose providers are
+# installed. The virtual-package fallback is what stops dnsutils (which
+# resolves to bind9-dnsutils on Debian 13) from being flagged "missing"
+# on every single OTA, which used to drag the apt step into every run.
+is_pkg_installed() {
+    local pkg="$1"
+    if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "ok installed"; then
+        return 0
+    fi
+    local providers prov
+    providers=$(apt-cache showpkg "$pkg" 2>/dev/null \
+        | awk '/^Reverse Provides:/{p=1;next} /^[A-Z][a-z]+ [A-Z]/{p=0} p && NF {print $1}')
+    for prov in $providers; do
+        if dpkg-query -W -f='${Status}' "$prov" 2>/dev/null \
+                | grep -q "ok installed"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 NEEDED=()
 for pkg in libturbojpeg0 vlc mpv mgba-sdl mednafen pcsxr python3-serial rfkill hcxdumptool hcxtools dnsmasq hostapd sherlock tcpdump mdk4 wifite reaver bully pixiewps tshark hashcat macchanger cryptsetup bettercap traceroute dnsutils iputils-ping sqlite3 build-essential pkg-config rustc cargo libffi-dev libssl-dev libcap-dev libjpeg-dev zlib1g-dev libopenjp2-7-dev libtiff-dev; do
-    if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "ok installed"; then
-        NEEDED+=("$pkg")
-    fi
+    is_pkg_installed "$pkg" || NEEDED+=("$pkg")
 done
+
+# When apt fails, the last 50 lines of dpkg's term.log usually identify the
+# real problem (broken postinst, missing dependency, conffile conflict, etc).
+# The OTA-only log isn't useful otherwise — it just sees apt's exit code.
+dump_apt_log() {
+    {
+        echo "--- /var/log/apt/term.log (tail) ---"
+        tail -n 50 /var/log/apt/term.log 2>/dev/null
+        echo "--- /var/log/apt/history.log (tail) ---"
+        tail -n 30 /var/log/apt/history.log 2>/dev/null
+    } >>"$LOG" 2>&1
+}
+
+apt_install() {
+    bounded 600 env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        --no-install-recommends \
+        -o Dpkg::Options::=--force-confdef \
+        -o Dpkg::Options::=--force-confold \
+        "$@"
+}
 
 if [ "${#NEEDED[@]}" -gt 0 ]; then
     echo "STATUS: Installing ${NEEDED[*]}..."
     # 120s for apt-get update, 600s for install. Both run with stdin closed
     # and conffile prompts pinned, so dpkg can't trip us into SIGTTIN.
     if ! bounded 120 apt-get update; then
-        fail "apt-get update failed (network?)"
+        dump_apt_log
+        fail "apt-get update failed (network? see $LOG)"
     fi
     echo "PROGRESS: 40"
-    if ! bounded 600 env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            --no-install-recommends \
-            -o Dpkg::Options::=--force-confdef \
-            -o Dpkg::Options::=--force-confold \
-            "${NEEDED[@]}"; then
-        fail "apt install failed"
+    if ! apt_install "${NEEDED[@]}"; then
+        # Clear any half-configured packages and retry once. This handles
+        # transient breakage like a postinst that failed on the previous
+        # run; without it, every future OTA inherits the broken state.
+        echo "STATUS: Recovering dpkg state and retrying..."
+        silent dpkg --configure -a
+        if ! apt_install "${NEEDED[@]}"; then
+            dump_apt_log
+            fail "apt install failed (see $LOG for dpkg output)"
+        fi
     fi
     echo "PROGRESS: 70"
 else
