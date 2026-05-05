@@ -116,8 +116,8 @@ _STOP_METHODS = ("_stop_run", "_stop_crack", "_stop_capture",
 
 _IDLE_CFG_ETC = Path("/etc/bigbox/idle.json")
 _IDLE_CFG_LOCAL = Path(__file__).resolve().parents[1] / "config" / "idle.json"
-_IDLE_DEFAULT_DIM_SECS = 0         # Disabled by default
-_IDLE_DEFAULT_OFF_SECS = 0         # Disabled by default
+_IDLE_DEFAULT_DIM_SECS = 120        # 2 min → screensaver
+_IDLE_DEFAULT_OFF_SECS = 0          # Disabled by default
 
 
 def _load_idle_thresholds() -> tuple[int, int]:
@@ -274,8 +274,23 @@ class App:
         pygame.display.init()
         pygame.font.init()
 
-        flags = 0 if self.dev_mode else pygame.FULLSCREEN
+        # flags = 0 if self.dev_mode else pygame.FULLSCREEN
+        flags = pygame.FULLSCREEN if not self.dev_mode else 0
         screen = pygame.display.set_mode((theme.SCREEN_W, theme.SCREEN_H), flags)
+        
+        # Disable screen blanking for the current session.
+        try:
+            # For virtual consoles / fbdev
+            subprocess.run(["setterm", "-blank", "0", "-powersave", "off", "-powerdown", "0"], 
+                           check=False, stderr=subprocess.DEVNULL)
+            # For X11 (if DISPLAY is set)
+            if os.environ.get("DISPLAY"):
+                subprocess.run(["xset", "s", "off"], check=False, stderr=subprocess.DEVNULL)
+                subprocess.run(["xset", "-dpms"], check=False, stderr=subprocess.DEVNULL)
+                subprocess.run(["xset", "s", "noblank"], check=False, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
         try:
             pygame.mouse.set_visible(False)
         except pygame.error:
@@ -712,8 +727,12 @@ class App:
                 and idle >= self._idle_dim_secs
             )
             if screensaver_active:
+                if not getattr(self, "_ss_active_logged", False):
+                    print(f"[idle] screensaver activated after {int(idle)}s")
+                    self._ss_active_logged = True
                 self._render_screensaver(screen, idle)
             else:
+                self._ss_active_logged = False
                 if self._dispatch_view_render(screen):
                     pass
                 else:
