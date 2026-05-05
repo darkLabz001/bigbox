@@ -8,7 +8,9 @@
 """
 from __future__ import annotations
 
+import calendar
 import os
+import random
 import subprocess
 import threading
 import time
@@ -185,6 +187,10 @@ class App:
         # the soft threshold. See bigbox/disk.py.
         from bigbox import disk as _disk
         _disk.start_sweeper()
+
+        # Screensaver state
+        self._ss_drops: list[dict] | None = None
+        self._ss_last_tick = 0.0
 
         # Pipewire's default sink is often auto_null (a virtual no-
         # output fallback) when bigbox boots before the ALSA cards
@@ -786,22 +792,107 @@ class App:
         return True
 
     def _render_screensaver(self, screen: pygame.Surface, idle_secs: float) -> None:
-        """Dim the panel and show a small status face — uptime, tasks,
-        last activity. Wakes on any GPIO press (handled in _dispatch
-        which bumps _last_input_ts)."""
+        """Enhanced 'lofi hacker' screensaver. Falling rain, calendar, and system stats."""
         screen.fill((0, 0, 0))
+        now = time.time()
         from datetime import datetime
-        f_big = pygame.font.Font(None, 48)
-        f = pygame.font.Font(None, 24)
-        f_small = pygame.font.Font(None, 18)
+        dt = datetime.now()
 
-        # Clock — center
-        clock_str = datetime.now().strftime("%H:%M")
-        ct = f_big.render(clock_str, True, theme.FG_DIM)
+        # 1. Initialize / Update Falling Rain (Matrix-style)
+        font_rain = pygame.font.Font(None, 20)
+        char_w, char_h = font_rain.size("W")
+        cols = theme.SCREEN_W // char_w
+        
+        if self._ss_drops is None:
+            # Initialize drops: x (column index), y (pixel offset), speed, length
+            self._ss_drops = []
+            for i in range(cols):
+                self._ss_drops.append({
+                    "x": i * char_w,
+                    "y": random.randint(-theme.SCREEN_H, 0),
+                    "speed": random.uniform(2.0, 5.0),
+                    "len": random.randint(5, 15),
+                    "chars": [chr(random.randint(33, 126)) for _ in range(20)]
+                })
+
+        # Update and draw rain
+        for drop in self._ss_drops:
+            drop["y"] += drop["speed"]
+            if drop["y"] > theme.SCREEN_H:
+                drop["y"] = random.randint(-200, 0)
+                drop["speed"] = random.uniform(2.0, 5.0)
+
+            # Draw a trail of characters
+            for i in range(drop["len"]):
+                char_y = drop["y"] - (i * char_h)
+                if char_y < 0 or char_y > theme.SCREEN_H:
+                    continue
+                
+                # Fade color as it goes up the trail
+                alpha = 255 - (i * (255 // drop["len"]))
+                color = list(theme.ACCENT_DIM)
+                if i == 0: # Bright head
+                    color = list(theme.ACCENT)
+                
+                # Apply "dimming" for hacker feel
+                c = tuple(int(x * (alpha / 255)) for x in color)
+                
+                # Flickering: occasionally change a char
+                if random.random() < 0.05:
+                    drop["chars"][i % 20] = chr(random.randint(33, 126))
+                
+                txt = font_rain.render(drop["chars"][i % 20], True, c)
+                screen.blit(txt, (drop["x"], char_y))
+
+        # 2. Draw Calendar Overlay (Top Right)
+        cal_x = theme.SCREEN_W - 180
+        cal_y = 40
+        f_cal = pygame.font.Font(None, 18)
+        month_name = dt.strftime("%B %Y").upper()
+        mn = f_cal.render(month_name, True, theme.ACCENT)
+        screen.blit(mn, (cal_x + (160 - mn.get_width()) // 2, cal_y))
+        
+        days = ["M", "T", "W", "T", "F", "S", "S"]
+        for i, d in enumerate(days):
+            ds = f_cal.render(d, True, theme.FG_DIM)
+            screen.blit(ds, (cal_x + i * 22 + 5, cal_y + 20))
+            
+        cal = calendar.monthcalendar(dt.year, dt.month)
+        for row_idx, week in enumerate(cal):
+            for col_idx, day in enumerate(week):
+                if day == 0: continue
+                color = theme.FG
+                if day == dt.day:
+                    color = theme.ACCENT
+                    # Draw a small box around today
+                    pygame.draw.rect(screen, theme.ACCENT_DIM, 
+                                     (cal_x + col_idx * 22, cal_y + 40 + row_idx * 18, 20, 16), 1)
+                
+                ds = f_cal.render(str(day), True, color)
+                screen.blit(ds, (cal_x + col_idx * 22 + (20 - ds.get_width()) // 2, 
+                                 cal_y + 40 + row_idx * 18))
+
+        # 3. Clock and Stats (Center)
+        f_big = pygame.font.Font(None, 80)
+        f_small = pygame.font.Font(None, 20)
+
+        # Main Clock
+        clock_str = dt.strftime("%H:%M:%S")
+        ct = f_big.render(clock_str, True, theme.FG)
+        # Glow effect: draw shifted dim versions
+        for offset in [(-2,-2), (2,2)]:
+            screen.blit(f_big.render(clock_str, True, theme.ACCENT_DIM),
+                        (theme.SCREEN_W // 2 - ct.get_width() // 2 + offset[0],
+                         theme.SCREEN_H // 2 - ct.get_height() // 2 - 40 + offset[1]))
         screen.blit(ct, (theme.SCREEN_W // 2 - ct.get_width() // 2,
-                         theme.SCREEN_H // 2 - ct.get_height() // 2 - 30))
+                         theme.SCREEN_H // 2 - ct.get_height() // 2 - 40))
 
-        # Idle stats — small, beneath
+        date_str = dt.strftime("%A, %d %B %Y").upper()
+        ds = f_small.render(date_str, True, theme.FG_DIM)
+        screen.blit(ds, (theme.SCREEN_W // 2 - ds.get_width() // 2,
+                         theme.SCREEN_H // 2 + 10))
+
+        # 4. Idle stats (Bottom Left)
         try:
             from bigbox import activity, background as _bg
             tasks = _bg.count()
@@ -809,17 +900,21 @@ class App:
         except Exception:
             tasks = 0
             ev = None
-        sub_lines = [f"idle {int(idle_secs)}s"]
-        if tasks:
-            sub_lines.append(f"{tasks} task{'s' if tasks != 1 else ''} live")
+            
+        sub_lines = [
+            f"SYSTEM IDLE: {int(idle_secs)}S",
+            f"ACTIVE TASKS: {tasks}",
+        ]
         if ev is not None:
             age = int(time.time() - ev.ts)
-            sub_lines.append(f"last: {ev.message[:40]} ({age}s)")
-        sub_lines.append("any button to wake")
+            sub_lines.append(f"LAST EVENT: {ev.message[:35].upper()} ({age}S AGO)")
+        
         for i, line in enumerate(sub_lines):
-            ls = f_small.render(line, True, (60, 60, 60))
-            screen.blit(ls, (theme.SCREEN_W // 2 - ls.get_width() // 2,
-                             theme.SCREEN_H // 2 + 20 + i * 22))
+            ls = f_small.render(f"> {line}", True, theme.ACCENT_DIM)
+            screen.blit(ls, (theme.PADDING, theme.SCREEN_H - 80 + i * 20))
+        
+        hint = f_small.render("PRESS ANY BUTTON TO RESUME", True, (60, 60, 60))
+        screen.blit(hint, (theme.SCREEN_W // 2 - hint.get_width() // 2, theme.SCREEN_H - 30))
 
     # ---------- cheat sheet --------------------------------------------------
     def _render_cheat_sheet(self, screen: pygame.Surface) -> None:
