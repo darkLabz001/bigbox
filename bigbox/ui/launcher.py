@@ -108,21 +108,36 @@ class Launcher:
         else:
             surf.fill(theme.BG)
         
-        # Matrix/Cyberpunk scanlines
+        # 1. Cyberpunk scanlines & Vignette
         for y in range(0, theme.SCREEN_H, 4):
-            pygame.draw.line(surf, (15, 18, 25), (0, y), (theme.SCREEN_W, y))
+            color = (15, 18, 25) if (y // 4) % 2 == 0 else (10, 12, 18)
+            pygame.draw.line(surf, color, (0, y), (theme.SCREEN_W, y))
+        
+        # 2. Decorative HUD Elements (Corners)
+        c_len = 40
+        c_thick = 2
+        # Top Left
+        pygame.draw.lines(surf, theme.ACCENT_DIM, False, [(10, 10+c_len), (10, 10), (10+c_len, 10)], c_thick)
+        # Top Right
+        pygame.draw.lines(surf, theme.ACCENT_DIM, False, [(theme.SCREEN_W-10-c_len, 10), (theme.SCREEN_W-10, 10), (theme.SCREEN_W-10, 10+c_len)], c_thick)
+        # Bottom Left
+        pygame.draw.lines(surf, theme.ACCENT_DIM, False, [(10, theme.SCREEN_H-10-c_len), (10, theme.SCREEN_H-10), (10+c_len, theme.SCREEN_H-10)], c_thick)
+        # Bottom Right
+        pygame.draw.lines(surf, theme.ACCENT_DIM, False, [(theme.SCREEN_W-10-c_len, theme.SCREEN_H-10), (theme.SCREEN_W-10, theme.SCREEN_H-10), (theme.SCREEN_W-10, theme.SCREEN_H-10-c_len)], c_thick)
 
-        margin_x = 60
-        margin_y = 40
-        top_offset = theme.STATUS_BAR_H + 40
+        # 3. Grid Layout
+        margin_x = 80
+        margin_y = 50
+        top_offset = theme.STATUS_BAR_H + 30
         
         available_w = theme.SCREEN_W - 2 * margin_x
-        available_h = theme.SCREEN_H - top_offset - margin_y
+        available_h = theme.SCREEN_H - top_offset - margin_y - 60 # Leave room for description
         
         cell_w = available_w // self.cols
         cell_h = available_h // self.rows
         
-        label_font = pygame.font.Font(None, 22)
+        label_font = pygame.font.Font(None, 24)
+        desc_font = pygame.font.Font(None, 20)
 
         for i, section in enumerate(self.sections):
             row = i // self.cols
@@ -135,33 +150,36 @@ class Launcher:
             
             # Selection Highlight
             if selected:
-                rect = pygame.Rect(x + 10, y + 5, cell_w - 20, cell_h - 10)
-                # Multi-layer glow
-                for grow in range(4):
-                    alpha = 100 // (grow + 1)
-                    s = pygame.Surface((rect.width + grow*2, rect.height + grow*2), pygame.SRCALPHA)
-                    pygame.draw.rect(s, (*theme.ACCENT, alpha), (0, 0, s.get_width(), s.get_height()), width=1, border_radius=10)
-                    surf.blit(s, (rect.x - grow, rect.y - grow))
+                rect = pygame.Rect(x + 5, y + 2, cell_w - 10, cell_h - 4)
+                # Outer glow
+                import math
+                import time
+                glow_pulse = int(100 + 50 * math.sin(time.time() * 8))
                 
-                pygame.draw.rect(surf, theme.SELECTION_BG, rect, border_radius=8)
-                pygame.draw.rect(surf, theme.ACCENT, rect, width=2, border_radius=8)
+                s = pygame.Surface((rect.width + 10, rect.height + 10), pygame.SRCALPHA)
+                for g in range(5):
+                    alpha = glow_pulse // (g + 1)
+                    pygame.draw.rect(s, (*theme.ACCENT, alpha), (5-g, 5-g, rect.width+g*2, rect.height+g*2), width=1, border_radius=12)
+                surf.blit(s, (rect.x - 5, rect.y - 5))
+                
+                pygame.draw.rect(surf, theme.SELECTION_BG, rect, border_radius=10)
+                pygame.draw.rect(surf, theme.ACCENT, rect, width=2, border_radius=10)
             
             # Icon
             icon_draw_size = self.icon_size
             if selected:
-                import math
-                import time
-                pulse = int(4 * math.sin(time.time() * 5))
-                icon_draw_size += pulse
+                icon_draw_size += 6
                 
             icon_x = x + (cell_w - icon_draw_size) // 2
-            icon_y = y + 15
+            icon_y = y + 10
             
             if section.icon_img:
                 scaled = pygame.transform.smoothscale(section.icon_img, (icon_draw_size, icon_draw_size))
+                # Add a subtle frame to the icon
+                if selected:
+                    pygame.draw.rect(surf, theme.ACCENT, (icon_x-2, icon_y-2, icon_draw_size+4, icon_draw_size+4), 1, border_radius=4)
                 surf.blit(scaled, (icon_x, icon_y))
             else:
-                # Fallback text icon
                 char = section.icon.strip("[]") if section.icon else "?"
                 txt = title_font.render(char, True, theme.ACCENT if selected else theme.FG_DIM)
                 surf.blit(txt, (x + (cell_w - txt.get_width()) // 2, icon_y + 10))
@@ -169,7 +187,37 @@ class Launcher:
             # Label
             color = theme.ACCENT if selected else theme.FG_DIM
             label = label_font.render(section.title.upper(), True, color)
-            surf.blit(label, (x + (cell_w - label.get_width()) // 2, y + cell_h - 25))
+            surf.blit(label, (x + (cell_w - label.get_width()) // 2, y + cell_h - 22))
+
+        # 4. Active Section Info (Bottom)
+        cur = self.current
+        info_rect = pygame.Rect(margin_x, theme.SCREEN_H - 85, available_w, 60)
+        # Background for info
+        s_info = pygame.Surface((info_rect.width, info_rect.height), pygame.SRCALPHA)
+        s_info.fill((10, 12, 18, 180))
+        surf.blit(s_info, (info_rect.x, info_rect.y))
+        pygame.draw.rect(surf, theme.ACCENT_DIM, info_rect, width=1, border_radius=4)
+        
+        # Title in info box
+        info_title = label_font.render(cur.title, True, theme.ACCENT)
+        surf.blit(info_title, (info_rect.x + 15, info_rect.y + 10))
+        
+        # Subtitle/Description (using the description of the first action or a summary)
+        desc_text = f"DEPLOY {cur.title.upper()} MODULES"
+        if cur.actions:
+            desc_text = cur.actions[0].description if len(cur.actions) == 1 else f"{len(cur.actions)} modules available"
+        
+        desc_surf = desc_font.render(desc_text, True, theme.FG_DIM)
+        surf.blit(desc_surf, (info_rect.x + 15, info_rect.y + 35))
+        
+        # 5. Live Activity Ticker (Bottom Right)
+        from bigbox import activity
+        ev = activity.latest()
+        if ev:
+            ticker_font = pygame.font.Font(None, 18)
+            tick_text = f"SYS_LOG: {ev.message.upper()}"
+            tick_surf = ticker_font.render(tick_text, True, theme.WARN)
+            surf.blit(tick_surf, (theme.SCREEN_W - tick_surf.get_width() - 20, theme.SCREEN_H - 25))
 
     def _render_section(self, surf: pygame.Surface, font: pygame.font.Font, title_font: pygame.font.Font) -> None:
         rect = pygame.Rect(0, theme.STATUS_BAR_H, theme.SCREEN_W, theme.SCREEN_H - theme.STATUS_BAR_H)
