@@ -33,6 +33,7 @@ from bigbox.ui.section import SectionContext
 
 PHASE_PICK_IFACE = "iface"
 PHASE_PICK_TARGET = "target"
+PHASE_PICK_CAMPAIGN = "campaign"
 PHASE_CONFIRM = "confirm"
 PHASE_RUNNING = "running"
 PHASE_STOPPED = "stopped"
@@ -141,6 +142,7 @@ class EvilTwinView:
         self.selected_iface: str | None = None
         self.selected_ssid: str | None = None
         self.selected_channel: int = 6
+        self.selected_campaign: str = "generic"
 
         # Running session
         self.session: et.EvilTwinSession | None = None
@@ -185,6 +187,7 @@ class EvilTwinView:
             iface=self.selected_iface,
             ssid=self.selected_ssid,
             channel=self.selected_channel or 6,
+            campaign=self.selected_campaign,
         )
 
         def _worker():
@@ -262,7 +265,22 @@ class EvilTwinView:
                 ap = self.aps[self.ap_cursor]
                 self.selected_ssid = ap.ssid
                 self.selected_channel = ap.channel or 6
+                self.phase = PHASE_PICK_CAMPAIGN
+            return
+
+        if self.phase == PHASE_PICK_CAMPAIGN:
+            from bigbox.captive_portal import TEMPLATES
+            campaigns = list(TEMPLATES.keys())
+            idx = campaigns.index(self.selected_campaign) if self.selected_campaign in campaigns else 0
+            
+            if ev.button is Button.UP:
+                self.selected_campaign = campaigns[(idx - 1) % len(campaigns)]
+            elif ev.button is Button.DOWN:
+                self.selected_campaign = campaigns[(idx + 1) % len(campaigns)]
+            elif ev.button is Button.A:
                 self.phase = PHASE_CONFIRM
+            elif ev.button is Button.B:
+                self.phase = PHASE_PICK_TARGET
             return
 
         if self.phase == PHASE_CONFIRM:
@@ -323,6 +341,9 @@ class EvilTwinView:
             self._render_iface(surf, head_h)
         elif self.phase == PHASE_PICK_TARGET:
             self._render_target(surf, head_h, foot_h)
+        elif self.phase == PHASE_PICK_CAMPAIGN:
+            self._render_target(surf, head_h, foot_h)  # backdrop
+            self._render_campaign(surf)
         elif self.phase == PHASE_CONFIRM:
             self._render_target(surf, head_h, foot_h)  # backdrop
             self._render_confirm(surf)
@@ -336,6 +357,8 @@ class EvilTwinView:
             return "A: Use  B: Back"
         if self.phase == PHASE_PICK_TARGET:
             return "A: Target  X: Rescan  Y: Manual  B: Back"
+        if self.phase == PHASE_PICK_CAMPAIGN:
+            return "A: Select Campaign  B: Back"
         if self.phase == PHASE_CONFIRM:
             return "A: I am authorized  B: Cancel"
         if self.phase == PHASE_RUNNING:
@@ -420,6 +443,39 @@ class EvilTwinView:
             thumb_y = list_y + int(list_h * self.ap_scroll / len(self.aps))
             pygame.draw.rect(surf, theme.DIVIDER, (bar_x, list_y, 3, list_h))
             pygame.draw.rect(surf, theme.ACCENT, (bar_x, thumb_y, 3, thumb_h))
+
+    def _render_campaign(self, surf: pygame.Surface) -> None:
+        from bigbox.captive_portal import TEMPLATES
+        box_w, box_h = 500, 300
+        bx = (theme.SCREEN_W - box_w) // 2
+        by = (theme.SCREEN_H - box_h) // 2
+        overlay = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H),
+                                 pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))
+        surf.blit(overlay, (0, 0))
+        pygame.draw.rect(surf, theme.BG, (bx, by, box_w, box_h), border_radius=10)
+        pygame.draw.rect(surf, theme.ACCENT, (bx, by, box_w, box_h), 2, border_radius=10)
+
+        f_title = pygame.font.Font(None, 30)
+        f_body = pygame.font.Font(None, 24)
+        title = f_title.render("SELECT PORTAL CAMPAIGN", True, theme.ACCENT)
+        surf.blit(title, (bx + box_w // 2 - title.get_width() // 2, by + 16))
+
+        campaigns = list(TEMPLATES.keys())
+        for i, camp in enumerate(campaigns):
+            sel = camp == self.selected_campaign
+            rect = pygame.Rect(bx + 20, by + 60 + i * 45, box_w - 40, 40)
+            if sel:
+                pygame.draw.rect(surf, theme.SELECTION_BG, rect, border_radius=5)
+                pygame.draw.rect(surf, theme.ACCENT, rect, 2, border_radius=5)
+            
+            color = theme.ACCENT if sel else theme.FG
+            label = f_body.render(camp.upper(), True, color)
+            surf.blit(label, (rect.x + 12, rect.y + 10))
+            
+            desc = TEMPLATES[camp]["brand"].format(ssid=self.selected_ssid or "AP")
+            ds = pygame.font.Font(None, 18).render(desc, True, theme.FG_DIM)
+            surf.blit(ds, (rect.right - ds.get_width() - 12, rect.y + 12))
 
     def _render_confirm(self, surf: pygame.Surface) -> None:
         box_w, box_h = 600, 240

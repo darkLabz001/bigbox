@@ -72,6 +72,10 @@ def _view_wifi_loot(ctx: SectionContext) -> None:
     ctx.show_result("WiFi Captures", "Listing contents:\n\n" + summary + "\n\n(Use terminal to inspect binary .pcap files)")
 
 
+def _mission_report(ctx: SectionContext) -> None:
+    ctx.show_mission_report()
+
+
 def build() -> Section:
     return Section(
         title="Loot",
@@ -79,6 +83,7 @@ def build() -> Section:
         icon_img=load_icon("loot"),
         background_img=load_background("loot"),
         actions=[
+            Action("Mission Report", _mission_report, "Session summary and loot aggregator"),
             Action("Loot Gallery", _loot_gallery, "Integrated visualizer for all captured intel"),
             Action("Secure Vault", _vault, "Password-protected encrypted storage"),
             Action("Scan History", _scan_history, "Saved ARP and probe-request scans"),

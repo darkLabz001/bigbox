@@ -47,6 +47,15 @@ class ScrapedDevice:
             # Clean up probes list
             p = self.probes.split(",")
             return f"Probing: {p[0][:15]}"
+        
+        # Categorization based on OUI and name patterns
+        m = self.manufacturer.lower()
+        if "apple" in m: return "Apple Device"
+        if "samsung" in m: return "Samsung Galaxy"
+        if "tesla" in m: return "Tesla Vehicle"
+        if "amazon" in m: return "Amazon Echo/IoT"
+        if "esp" in m or "expressif" in m: return "IoT Node (ESP)"
+        
         return self.manufacturer
 
 
@@ -207,6 +216,11 @@ class SignalScraperView:
             elif ev.button is Button.DOWN:
                 self.cursor = (self.cursor + 1) % count
                 self._adjust_scroll()
+            elif ev.button is Button.X:
+                sorted_devs = sorted(self.devices.values(), key=lambda d: d.last_seen, reverse=True)
+                if sorted_devs and self.cursor < len(sorted_devs):
+                    d = sorted_devs[self.cursor]
+                    ctx.show_foxhunter(d.mac, d.type)
 
     def _enable_monitor(self, iface: str):
         self.phase = PHASE_ENABLING

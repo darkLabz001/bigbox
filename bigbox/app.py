@@ -33,6 +33,10 @@ from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.update_checker import UpdateChecker
 from bigbox.ui import Launcher, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, ShopView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui.adsb import ADSBView
+from bigbox.ui.pager import PagerView
+from bigbox.ui.mission_report import MissionReportView
+from bigbox.ui.ghost_mode import GhostModeView
 
 
 # Foreground-view registry. Render and input both walk this in order;
@@ -99,6 +103,11 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("subdomain_enum_view", 2),
     ("user_pivot_view", 2),
     ("exif_inspector_view", 2),
+    ("adsb_view", 2),
+    ("pager_view", 2),
+    ("foxhunter_view", 2),
+    ("mission_report_view", 2),
+    ("ghost_mode_view", 2),
     ("games_view", 0),
     ("tracker_view", 2),
     ("probe_view", 2),
@@ -435,6 +444,22 @@ class App:
     def show_signal_scraper(self) -> None:
         self.scraper_view = SignalScraperView()
 
+    def show_adsb(self) -> None:
+        self.adsb_view = ADSBView()
+
+    def show_pager(self) -> None:
+        self.pager_view = PagerView()
+
+    def show_foxhunter(self, mac: str, device_type: str) -> None:
+        from bigbox.ui.foxhunter import FoxhunterView
+        self.foxhunter_view = FoxhunterView(mac, device_type)
+
+    def show_mission_report(self) -> None:
+        self.mission_report_view = MissionReportView()
+
+    def show_ghost_mode(self) -> None:
+        self.ghost_mode_view = GhostModeView()
+
     def show_traffic_cam(self) -> None:
         self.traffic_cam_view = TrafficCamView()
 
@@ -582,6 +607,11 @@ class App:
         self.messenger_view = None
         self.ragnar_view = None
         self.scraper_view = None
+        self.adsb_view = None
+        self.pager_view = None
+        self.foxhunter_view = None
+        self.mission_report_view = None
+        self.ghost_mode_view = None
         self.traffic_cam_view = None
         self.camera_view = None
         self.wifite_view = None

@@ -194,6 +194,7 @@ class EvilTwinSession:
     ssid: str
     channel: int = 6
     skip_portal: bool = False
+    campaign: str = "generic"
 
     portal: Optional[CaptivePortal] = None
     hostapd_proc: Optional[subprocess.Popen] = None
@@ -272,7 +273,7 @@ class EvilTwinSession:
 
         # 6. Captive portal
         if not self.skip_portal:
-            self.portal = CaptivePortal(ssid=self.ssid)
+            self.portal = CaptivePortal(ssid=self.ssid, campaign=self.campaign)
             ok, msg = self.portal.start()
             if not ok:
                 self.error = msg
