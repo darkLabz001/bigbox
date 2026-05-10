@@ -27,11 +27,34 @@ def upload_hash(pcapng_path: Path) -> bool:
         return False
     
     try:
-        # Note: This is a placeholder for the specific Hashopolis / Hashtopolis API
-        # Typically involves an upload to a task or a pre-configured VOUCHER
-        files = {'file': open(pcapng_path, 'rb')}
-        headers = {'X-API-KEY': config.api_key}
-        response = requests.post(f"{config.api_url}/api/v1/hashes", files=files, headers=headers, timeout=30)
-        return response.status_code == 200
-    except Exception:
+        # Hashtopolis v1 API uses 'hashes' endpoint with specific task IDs or a VOUCHER
+        # If we have a 'task_id' in config, we use that.
+        url = f"{config.api_url}/api/v1/hashes"
+        
+        # Determine hash type based on extension
+        hash_type = 22000 if pcapng_path.suffix == ".hc22000" else 2500
+        
+        data = {
+            "hashTypeId": hash_type,
+            "name": pcapng_path.name,
+        }
+        
+        files = {
+            'file': (pcapng_path.name, pcapng_path.open('rb'), 'application/octet-stream')
+        }
+        
+        headers = {
+            'X-API-KEY': config.api_key,
+            'Accept': 'application/json'
+        }
+        
+        response = requests.post(url, data=data, files=files, headers=headers, timeout=60)
+        
+        if response.status_code == 200:
+            return True
+        else:
+            print(f"[hashopolis] upload failed: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"[hashopolis] error: {e}")
         return False

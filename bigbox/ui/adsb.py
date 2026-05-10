@@ -6,6 +6,7 @@ Displays aircraft hex, flight, altitude, speed, and distance.
 from __future__ import annotations
 
 import time
+import threading
 from dataclasses import dataclass
 
 import pygame
@@ -49,6 +50,8 @@ class ADSBView:
                 if self.sdr.start():
                     self.running = True
                     self.status_msg = "Listening for aircraft..."
+                    # Start reader thread
+                    threading.Thread(target=self._reader, daemon=True).start()
                 else:
                     self.status_msg = "Error: dump1090 not found"
             else:
@@ -56,7 +59,16 @@ class ADSBView:
                 self.running = False
                 self.status_msg = "Stopped"
 
+    def _reader(self) -> None:
+        while self.running and not self.dismissed:
+            line = self.sdr.read_line()
+            if line:
+                self._parse_line(line)
+            else:
+                time.sleep(0.1)
+
     def _shutdown(self) -> None:
+        self.running = False
         self.sdr.stop()
         self.dismissed = True
 

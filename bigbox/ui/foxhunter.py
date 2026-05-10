@@ -6,6 +6,9 @@ high-contrast RSSI display with audio feedback (beeps).
 from __future__ import annotations
 
 import time
+import os
+import signal
+import re
 import subprocess
 import threading
 import array
@@ -26,6 +29,8 @@ class FoxhunterView:
         self.rssi_history = deque(maxlen=50)
         self.current_rssi = -100
         self.last_seen = 0.0
+        self.status_msg = "Starting..."
+        self.mon_iface = "wlan0mon"
         self._stop = False
         self._thread: threading.Thread | None = None
         
@@ -44,21 +49,74 @@ class FoxhunterView:
 
     def _worker(self) -> None:
         if self.type == "WIFI":
-            # Targeted tshark or airodump-ng is best, but let's use a simpler loop
-            # with `iw` or `airodump-ng` if available.
-            # For simplicity, we'll use airodump-ng in a subprocess and parse stdout.
-            iface = "wlan0mon" # Assuming monitor mode is already enabled by caller or hardware helper
-            cmd = ["airodump-ng", "--berlin", "2", iface]
-            # Actually, airodump-ng is hard to parse from stdout. 
-            # Let's use `tcpdump` or `tshark` if possible, or just poll `iw`.
-            while not self._stop:
-                # Mocking logic for now; in reality we'd parse real signal
-                # For Wi-Fi, we'd use:
-                # tcpdump -i wlan0mon -e -s 0 -l type mgt subtype probe-req or type mgt subtype beacon
-                time.sleep(1)
+            # Targeted signal sniffer using tcpdump
+            # -e: show link-level headers (radiotap)
+            # -s 0: capture full packet
+            # -l: line buffered
+            # -n: don't resolve names
+            # Filter: match the target MAC in any address field
+            cmd = [
+                "tcpdump", "-i", self.mon_iface, "-e", "-s", "256", "-l", "-n",
+                f"ether host {self.mac}"
+            ]
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    text=True, preexec_fn=os.setsid
+                )
+                self.status_msg = f"Hunting on {self.mon_iface}..."
+                
+                # Regex to find signal in Radiotap header: " -75dBm signal" or " 75% signal"
+                # Different drivers show it differently. Most show -XXdBm.
+                sig_re = re.compile(r"(-?\d+)dBm")
+                
+                for line in proc.stdout:
+                    if self._stop: break
+                    match = sig_re.search(line)
+                    if match:
+                        val = int(match.group(1))
+                        self.current_rssi = val
+                        self.last_seen = time.time()
+                        self.rssi_history.append(val)
+                
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception as e:
+                self.status_msg = f"Error: {e}"
         else:
-            # Bluetooth: btmon or hcitool rssi
-            pass
+            # Bluetooth hunting: use btmon to watch for ADV packets (passive).
+            cmd = ["btmon"]
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    text=True, preexec_fn=os.setsid
+                )
+                
+                # bluetoothctl scan must be ON for btmon to see things reliably
+                subprocess.run(["bluetoothctl", "scan", "le", "on"], 
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                target_upper = self.mac.upper()
+                rssi_re = re.compile(r"RSSI: (-?\d+)")
+                
+                capture_next_rssi = False
+                for line in proc.stdout:
+                    if self._stop: break
+                    
+                    if target_upper in line:
+                        capture_next_rssi = True
+                        continue
+                        
+                    if capture_next_rssi:
+                        m = rssi_re.search(line)
+                        if m:
+                            val = int(m.group(1))
+                            self.current_rssi = val
+                            self.last_seen = time.time()
+                            self.rssi_history.append(val)
+                            capture_next_rssi = False
+                
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception: pass
 
     def handle(self, ev: ButtonEvent, ctx: SectionContext) -> None:
         if not ev.pressed:
@@ -155,3 +213,7 @@ class FoxhunterView:
         # Hint
         hint = self.f_main.render("B: BACK  (move around to find peak)", True, theme.FG_DIM)
         surf.blit(hint, (theme.SCREEN_W // 2 - hint.get_width() // 2, theme.SCREEN_H - 40))
+
+        # Status
+        status = self.f_main.render(self.status_msg, True, theme.ACCENT)
+        surf.blit(status, (20, theme.SCREEN_H - 40))

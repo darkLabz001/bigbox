@@ -255,8 +255,8 @@ class WardriveView:
 
         # Start one thread per interface
         self._wifi_threads = []
-        for iface in self.ifaces:
-            t = threading.Thread(target=self._wifi_loop, args=(iface,), daemon=True)
+        for i, iface in enumerate(self.ifaces):
+            t = threading.Thread(target=self._wifi_loop, args=(iface, i), daemon=True)
             t.start()
             self._wifi_threads.append(t)
 
@@ -444,14 +444,28 @@ class WardriveView:
             ))
 
     # ---------- scan loops ----------
-    def _wifi_loop(self, iface: str) -> None:
+    def _wifi_loop(self, iface: str, index: int) -> None:
+        # 14 channels in 2.4GHz, ~25 in 5GHz.
+        # If we have 2 adapters, one does 2.4GHz, other does 5GHz.
+        # Frequencies in MHz
+        freqs_24 = [2412, 2417, 2422, 2427, 2432, 2437, 2442, 2447, 2452, 2457, 2462, 2467, 2472, 2484]
+        # 5GHz (Subset of common channels)
+        freqs_5 = [5180, 5200, 5220, 5240, 5260, 5280, 5300, 5320, 5500, 5520, 5540, 5560, 5580, 5600, 5620, 5640, 5660, 5680, 5700, 5745, 5765, 5785, 5805, 5825]
+        
         while not self._stop:
             try:
+                cmd = ["iw", "dev", iface, "scan"]
+                if len(self.ifaces) > 1:
+                    # Split frequencies
+                    target_freqs = freqs_24 if index == 0 else freqs_5
+                    cmd.append("freq")
+                    cmd.extend(map(str, target_freqs))
+                
                 proc = subprocess.run(
-                    ["iw", "dev", iface, "scan"],
+                    cmd,
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                     stdin=subprocess.DEVNULL,
-                    text=True, timeout=15,
+                    text=True, timeout=30,
                 )
                 if proc.returncode == 0:
                     for o in _parse_iw_scan(proc.stdout):
@@ -467,9 +481,6 @@ class WardriveView:
 
     def _bt_loop(self) -> None:
         # Start a persistent `scan le on` so the controller keeps probing.
-        # `select <hci>` over stdin pins this session to the chosen
-        # controller (UB500 if present); one-shot `bluetoothctl devices`
-        # below picks up the same default that ensure_bluetooth_on() set.
         try:
             self._bt_proc = subprocess.Popen(
                 ["bluetoothctl"],
@@ -479,8 +490,8 @@ class WardriveView:
                 text=True,
             )
             assert self._bt_proc.stdin is not None
-            if self.bt_hci:
-                self._bt_proc.stdin.write(f"select {self.bt_hci}\n")
+            if self.locked_hci: # Use the locked controller
+                self._bt_proc.stdin.write(f"select {self.locked_hci}\n")
             self._bt_proc.stdin.write("scan le on\n")
             self._bt_proc.stdin.flush()
         except Exception:
@@ -488,6 +499,13 @@ class WardriveView:
 
         while not self._stop:
             try:
+                # Power efficiency: check battery
+                from bigbox import power
+                bat = power.battery()
+                interval = BT_SCAN_INTERVAL
+                if bat and bat.percent < 15:
+                    interval *= 2 # Slow down BT to save power
+                
                 proc = subprocess.run(
                     ["bluetoothctl", "devices"],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -501,8 +519,9 @@ class WardriveView:
                         self._bt_scan_count += 1
             except Exception:
                 pass
+            # Sleep but stay responsive to stop
             t = time.time()
-            while time.time() - t < BT_SCAN_INTERVAL and not self._stop:
+            while time.time() - t < interval and not self._stop:
                 time.sleep(0.1)
 
     # ---------- input ----------

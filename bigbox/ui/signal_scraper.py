@@ -104,20 +104,8 @@ class SignalScraperView:
         return s
 
     def _get_manufacturer(self, mac: str) -> str:
-        prefix = mac.lower().replace(":", "")[:6]
-        ouis = {
-            "4c7403": "Apple", "002500": "Apple", "f01898": "Apple",
-            "d8bb2c": "Apple", "ac3c0b": "Apple", "64a769": "Apple",
-            "0017f2": "Apple", "24a074": "Apple", "001c23": "Apple",
-            "3c5ab4": "Google", "d8eb97": "Google", "705a0f": "Google",
-            "001a11": "Google", "f4f5d8": "Google/Nest",
-            "24f5a2": "Samsung", "508569": "Samsung", "948bc1": "Samsung",
-            "00234a": "Tesla", "404cc1": "Tesla",
-            "00044b": "NVIDIA", "b827eb": "RaspberryPi", "dca632": "RaspberryPi",
-            "e45f01": "RaspberryPi", "000c29": "VMware", "005056": "VMware",
-            "00155d": "Microsoft", "0003ff": "Microsoft",
-        }
-        return ouis.get(prefix, "Unknown Vendor")
+        vendor, _klass = oui.lookup(mac)
+        return vendor or "Unknown Vendor"
 
     def _start_scanners(self):
         self._stop = False
