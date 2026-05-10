@@ -114,69 +114,97 @@ class Launcher:
             pygame.draw.line(surf, color, (0, y), (theme.SCREEN_W, y))
         
         # 2. Sidebar Background & Telemetry (Left Side)
-        sidebar_w = 200
+        sidebar_w = 170
         pygame.draw.rect(surf, (15, 15, 25), (0, 0, sidebar_w, theme.SCREEN_H))
         pygame.draw.line(surf, theme.ACCENT, (sidebar_w, 0), (sidebar_w, theme.SCREEN_H), 1)
         
         from bigbox import system
         stats = system.get_system_stats()
         
-        sy = 60
-        f_stat = pygame.font.Font(None, 20)
-        f_stat_bold = pygame.font.Font(None, 22)
+        sy = 50
+        f_stat = pygame.font.Font(None, 18)
+        f_stat_bold = pygame.font.Font(None, 20)
         
         # --- System Vitals ---
         surf.blit(f_stat_bold.render("SYSTEM_VITALS", True, theme.ACCENT), (15, sy))
-        sy += 25
+        sy += 22
         
         # IP Address
         from bigbox import qr
         lan_ip = qr.lan_ipv4() or "DISCONNECTED"
         surf.blit(f_stat.render(f"IP: {lan_ip}", True, theme.FG), (15, sy))
-        sy += 20
+        sy += 18
         
         # CPU & Temp
         temp = stats.get("temp_f")
-        temp_str = f"{temp:.1f}F" if temp else "N/A"
+        temp_str = f"{temp:.0f}F" if temp else "N/A"
         surf.blit(f_stat.render(f"CPU: {stats.get('cpu_usage',0)}% | {temp_str}", True, theme.FG), (15, sy))
-        sy += 20
+        sy += 18
         
         # Memory
         surf.blit(f_stat.render(f"MEM: {stats.get('mem_usage',0)}%", True, theme.FG), (15, sy))
-        sy += 30
+        sy += 25
         
         # --- Anonymity HUD ---
         surf.blit(f_stat_bold.render("OPSEC_STATUS", True, theme.ACCENT), (15, sy))
-        sy += 25
+        sy += 22
         
         is_tor = os.path.exists("/run/tor/tor.pid")
         tor_col = (100, 255, 100) if is_tor else theme.FG_DIM
         surf.blit(f_stat.render(f"ANONSURF: {'ACTIVE' if is_tor else 'OFF'}", True, tor_col), (15, sy))
-        sy += 20
+        sy += 18
         
         is_vpn = os.path.exists("/proc/sys/net/ipv4/conf/tun0")
         vpn_col = (100, 255, 100) if is_vpn else theme.FG_DIM
-        surf.blit(f_stat.render(f"VPN_TUN: {'CONNECTED' if is_vpn else 'OFF'}", True, vpn_col), (15, sy))
-        sy += 35
+        surf.blit(f_stat.render(f"VPN_TUN: {'ON' if is_vpn else 'OFF'}", True, vpn_col), (15, sy))
+        sy += 30
 
         # --- Achievements ---
         from bigbox import achievements
         from bigbox.achievements import RANKS
         state = achievements.get_state()
         surf.blit(f_stat_bold.render("OPERATOR_RANK", True, theme.ACCENT), (15, sy))
-        sy += 25
+        sy += 22
         
         rank = state.get_rank()
         surf.blit(f_stat.render(rank, True, theme.FG), (15, sy))
-        sy += 20
+        sy += 18
         
         surf.blit(f_stat.render(f"LEVEL: {state.level}", True, theme.FG_DIM), (15, sy))
-        sy += 22
+        sy += 20
         
         # XP Bar
-        bar_w = 170
-        bar_h = 8
-        pygame.draw.rect(surf, (30, 35, 45), (15, sy, bar_w, bar_h), border_radius=4)
+        bar_w = 140
+        bar_h = 6
+        pygame.draw.rect(surf, (30, 35, 45), (15, sy, bar_w, bar_h), border_radius=3)
+        
+        # XP progress calculation
+        next_xp = state.next_rank_xp()
+        current_rank_xp = 0
+        for r_xp, r_name in reversed(RANKS):
+            if state.xp >= r_xp:
+                current_rank_xp = r_xp
+                break
+        
+        needed = next_xp - current_rank_xp
+        got = state.xp - current_rank_xp
+        if needed > 0:
+            pct = min(1.0, got / needed)
+            pygame.draw.rect(surf, theme.ACCENT, (15, sy, int(bar_w * pct), bar_h), border_radius=3)
+        
+        sy += 12
+        surf.blit(f_stat.render(f"{state.xp} XP", True, theme.FG_DIM), (15, sy))
+
+        # 3. Grid Layout (Shifted Right)
+        margin_x = sidebar_w + 30
+        margin_y = 50
+        top_offset = 60
+        
+        available_w = theme.SCREEN_W - margin_x - 40
+        available_h = theme.SCREEN_H - top_offset - 100
+        
+        cell_w = available_w // self.cols
+        cell_h = available_h // self.rows
         
         # XP progress calculation (simple version for now)
         next_xp = state.next_rank_xp()

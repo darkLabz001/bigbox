@@ -5,13 +5,12 @@ Section, then append its name here.
 """
 from __future__ import annotations
 
-from bigbox.sections import about, bluetooth, games, network, recon, settings, shop, social, wireless, media, loot, waveform, operations
+from bigbox.sections import about, bluetooth, games, network, recon, settings, shop, social, wireless, media, loot, waveform
 from bigbox.ui import Section
 
 
 def build_sections() -> list[Section]:
     return [
-        operations.build(),
         recon.build(),
         loot.build(),
         network.build(),

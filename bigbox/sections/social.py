@@ -40,6 +40,16 @@ def _open_onion_chat(ctx: SectionContext) -> None:
     ctx.show_onion_chat()
 
 
+def _achievements(ctx: SectionContext) -> None:
+    """Operational stats and unlocked medals."""
+    ctx.show_achievements()
+
+
+def _mission_report(ctx: SectionContext) -> None:
+    """Session summary and loot aggregator."""
+    ctx.show_mission_report()
+
+
 def build() -> Section:
     return Section(
         title="Social",
@@ -47,6 +57,8 @@ def build() -> Section:
         icon_img=load_icon("social"),
         background_img=load_background("social"),
         actions=[
+            Action("Operational Rank", _achievements, "Stats and unlocked medals"),
+            Action("Session Debrief", _mission_report, "Current session summary"),
             Action("Global Chat", _open_chat, "darksec.uk in-device chat"),
             Action("Tactical Mail", _open_mail, "IMAP/SMTP email client"),
             Action("Tactical Messenger", _open_messenger, "Free Web/Gateway SMS"),
