@@ -176,11 +176,20 @@ class ChatView:
         # Pre-calculate bubble layouts
         bubbles = []
         max_bubble_w = int(chat_rect.width * 0.75)
+        BUBBLE_SPACING = 25
         
         for msg in self.messages:
             is_self = msg['username'] == self.username
             text = msg['message']
             user = msg['username']
+            
+            # Extract timestamp or use current time
+            ts_str = ""
+            try:
+                # Assuming API might provide 'timestamp' field
+                if 'timestamp' in msg:
+                    ts_str = msg['timestamp'][-8:-3] # HH:MM
+            except: pass
             
             wrapped = self._wrap_text(text, self.f_body, max_bubble_w - 40)
             
@@ -192,19 +201,26 @@ class ChatView:
             bubbles.append({
                 'is_self': is_self,
                 'user': user,
+                'ts': ts_str,
                 'txt_surfs': txt_surfs,
                 'w': b_w,
                 'h': b_h
             })
 
-        total_h = sum(b['h'] + 15 for b in bubbles)
-        self.max_scroll = max(0, total_h - chat_rect.height)
+        # Calculate total height correctly
+        total_h = sum(b['h'] + BUBBLE_SPACING for b in bubbles)
+        self.max_scroll = max(0, total_h - chat_rect.height + 10)
+        
+        # Auto-scroll to bottom if we were hinted
+        if self.scroll_y > 900000:
+            self.scroll_y = self.max_scroll
+            
         self.scroll_y = min(self.scroll_y, self.max_scroll)
         
         # Create a surface for the chat content
-        content_surf = pygame.Surface((chat_rect.width, total_h), pygame.SRCALPHA)
+        content_surf = pygame.Surface((chat_rect.width, total_h + 50), pygame.SRCALPHA)
         
-        curr_y = 0
+        curr_y = 10
         for b in bubbles:
             is_self = b['is_self']
             bx = chat_rect.width - b['w'] - 10 if is_self else 50
@@ -215,20 +231,31 @@ class ChatView:
             avatar_rect = pygame.Rect(avatar_x, by, 30, 30)
             pygame.draw.ellipse(content_surf, theme.ACCENT_DIM if not is_self else theme.SELECTION_BG, avatar_rect)
             char = b['user'][0].upper()
-            av_txt = self.f_meta.render(char, True, theme.ACCENT if not is_self else theme.ACCENT)
+            av_txt = self.f_meta.render(char, True, theme.ACCENT)
             content_surf.blit(av_txt, (avatar_rect.centerx - av_txt.get_width()//2, avatar_rect.centery - av_txt.get_height()//2))
 
-            # Bubble background
+            # Bubble background with glow
             bubble_rect = pygame.Rect(bx, by, b['w'], b['h'])
             bg_col = (30, 35, 50) if is_self else (22, 26, 40)
             border_col = theme.ACCENT if is_self else theme.DIVIDER
+            
+            # Subtle glow for own bubbles
+            if is_self:
+                glow_rect = bubble_rect.inflate(4, 4)
+                pygame.draw.rect(content_surf, (*theme.ACCENT, 40), glow_rect, border_radius=12)
+
             pygame.draw.rect(content_surf, bg_col, bubble_rect, border_radius=10)
             pygame.draw.rect(content_surf, border_col, bubble_rect, 1, border_radius=10)
             
-            # Username (only for others)
+            # Username and Timestamp (only for others)
             if not is_self:
-                u_surf = self.f_meta.render(b['user'], True, theme.ACCENT_DIM)
+                u_str = b['user']
+                if b['ts']: u_str += f"  [{b['ts']}]"
+                u_surf = self.f_meta.render(u_str, True, theme.ACCENT_DIM)
                 content_surf.blit(u_surf, (bx, by - 16))
+            elif b['ts']:
+                t_surf = self.f_meta.render(b['ts'], True, theme.FG_DIM)
+                content_surf.blit(t_surf, (bx + b['w'] - t_surf.get_width(), by - 16))
             
             # Render lines
             ly = by + 10
@@ -236,13 +263,17 @@ class ChatView:
                 content_surf.blit(ts, (bx + 15, ly))
                 ly += 24
                 
-            curr_y += b['h'] + 20
+            curr_y += b['h'] + BUBBLE_SPACING
 
         # Subsurface blit for scrolling
         if total_h > 0:
-            view_rect = pygame.Rect(0, self.scroll_y, chat_rect.width, min(total_h - self.scroll_y, chat_rect.height))
-            if view_rect.height > 0:
-                surf.blit(content_surf.subsurface(view_rect), chat_rect.topleft)
+            try:
+                view_rect = pygame.Rect(0, self.scroll_y, chat_rect.width, min(total_h + 50 - self.scroll_y, chat_rect.height))
+                if view_rect.height > 0:
+                    surf.blit(content_surf.subsurface(view_rect), chat_rect.topleft)
+            except Exception:
+                # Fallback if subsurface fails
+                surf.blit(content_surf, chat_rect.topleft, (0, self.scroll_y, chat_rect.width, chat_rect.height))
 
         # Fancy Scrollbar
         if self.max_scroll > 0:
@@ -252,7 +283,7 @@ class ChatView:
             track_y = chat_rect.y + 5
             pygame.draw.rect(surf, (15, 15, 25), (track_x, track_y, sb_w, track_h), border_radius=3)
             
-            thumb_h = max(30, int(track_h * (chat_rect.height / total_h)))
+            thumb_h = max(30, int(track_h * (chat_rect.height / (total_h + 50))))
             thumb_y = track_y + int((self.scroll_y / self.max_scroll) * (track_h - thumb_h))
             pygame.draw.rect(surf, theme.ACCENT, (track_x, thumb_y, sb_w, thumb_h), border_radius=3)
 
