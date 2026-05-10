@@ -71,6 +71,8 @@ class FlockScannerView:
         self.MANUFACTURER_ID = "09c8"
         
         self.selected_idx = 0
+        self.radar_target: FlockSignal | None = None
+        self.last_beep_time = 0.0
         self._start_scan()
 
     def _start_scan(self):
@@ -290,22 +292,35 @@ class FlockScannerView:
     def handle(self, ev: ButtonEvent, ctx: any = None) -> None:
         if not ev.pressed: return
         if ev.button is Button.B:
-            self._stop_threads = True
-            self.dismissed = True
+            if self.radar_target:
+                self.radar_target = None
+            else:
+                self._stop_threads = True
+                self.dismissed = True
         elif ev.button is Button.UP:
-            self.selected_idx = max(0, self.selected_idx - 1)
+            if not self.radar_target:
+                self.selected_idx = max(0, self.selected_idx - 1)
         elif ev.button is Button.DOWN:
-            num_sigs = len(self.signals)
-            if num_sigs > 0:
-                self.selected_idx = min(num_sigs - 1, self.selected_idx + 1)
+            if not self.radar_target:
+                num_sigs = len(self.signals)
+                if num_sigs > 0:
+                    self.selected_idx = min(num_sigs - 1, self.selected_idx + 1)
         elif ev.button is Button.A:
             sorted_sigs = sorted(self.signals.values(), key=lambda x: x.last_seen, reverse=True)
             if sorted_sigs and self.selected_idx < len(sorted_sigs):
                 self._save_loot(sorted_sigs[self.selected_idx])
                 if hasattr(ctx, "toast"):
                     ctx.toast("SAVED TO LOOT")
+        elif ev.button is Button.X:
+            sorted_sigs = sorted(self.signals.values(), key=lambda x: x.last_seen, reverse=True)
+            if sorted_sigs and self.selected_idx < len(sorted_sigs):
+                self.radar_target = sorted_sigs[self.selected_idx]
 
     def render(self, surf: pygame.Surface) -> None:
+        if self.radar_target:
+            self._render_radar(surf)
+            return
+
         surf.fill(theme.BG)
         head_h = 44
         pygame.draw.rect(surf, theme.BG_ALT, (0, 0, theme.SCREEN_W, head_h))
@@ -352,8 +367,59 @@ class FlockScannerView:
             surf.blit(msg, (detail_x + 20, theme.SCREEN_H // 2))
         pygame.draw.rect(surf, (10, 10, 15), (0, theme.SCREEN_H - 35, theme.SCREEN_W, 35))
         pygame.draw.line(surf, theme.DIVIDER, (0, theme.SCREEN_H - 35), (theme.SCREEN_W, theme.SCREEN_H - 35))
-        hint = f_small.render("UP/DOWN: Navigate  A: SAVE TO LOOT  B: EXIT", True, theme.FG_DIM)
+        hint = f_small.render("UP/DOWN: Navigate  X: RADAR  A: SAVE  B: EXIT", True, theme.FG_DIM)
         surf.blit(hint, (theme.PADDING, theme.SCREEN_H - 26))
+
+    def _render_radar(self, surf: pygame.Surface):
+        sig = self.radar_target
+        if not sig: return
+        
+        surf.fill((0, 10, 0))
+        f_big = pygame.font.Font(None, 60)
+        f_med = pygame.font.Font(None, 34)
+        
+        title = f_med.render(f"PROXIMITY_RADAR :: {sig.id}", True, theme.ACCENT)
+        surf.blit(title, (theme.SCREEN_W//2 - title.get_width()//2, 30))
+        
+        # Giant RSSI Bar
+        bar_w, bar_h = 600, 80
+        bx = (theme.SCREEN_W - bar_w) // 2
+        by = 100
+        pygame.draw.rect(surf, (0, 40, 0), (bx, by, bar_w, bar_h))
+        pygame.draw.rect(surf, theme.ACCENT, (bx, by, bar_w, bar_h), 2)
+        
+        # Intensity 0.0 to 1.0
+        intensity = max(0.0, min(1.0, (sig.rssi + 95) / 60))
+        fill_w = int((bar_w - 10) * intensity)
+        if fill_w > 0:
+            fill_col = theme.ACCENT if intensity < 0.8 else theme.ERR
+            pygame.draw.rect(surf, fill_col, (bx + 5, by + 5, fill_w, bar_h - 10))
+            
+        rssi_txt = f_big.render(f"{sig.rssi} dBm", True, theme.FG)
+        surf.blit(rssi_txt, (theme.SCREEN_W//2 - rssi_txt.get_width()//2, by + bar_h + 20))
+        
+        # Radar Pulse
+        center_x, center_y = theme.SCREEN_W // 2, 320
+        for r in range(5):
+            radius = 30 + r * 30
+            pygame.draw.circle(surf, (0, 100, 0), (center_x, center_y), radius, 1)
+            
+        # Pulsing target
+        pulse = abs(math.sin(time.time() * 8 * intensity))
+        radius = int(20 + 80 * intensity)
+        pygame.draw.circle(surf, theme.ACCENT, (center_x, center_y), radius, 2)
+        if pulse > 0.5:
+             pygame.draw.circle(surf, theme.FG, (center_x, center_y), radius + 10, 2)
+             
+        # Audio beeping based on intensity
+        now = time.time()
+        beep_interval = 1.0 - (intensity * 0.9) # 1.0s to 0.1s
+        if now - self.last_beep_time > beep_interval:
+            self.last_beep_time = now
+            self._play_alert() # Uses the existing _play_alert
+            
+        hint = f_med.render("B: BACK TO LIST", True, theme.FG_DIM)
+        surf.blit(hint, (theme.SCREEN_W//2 - hint.get_width()//2, theme.SCREEN_H - 60))
 
     def _render_detail(self, surf: pygame.Surface, x: int, y: int, w: int, sig: FlockSignal):
         f_med = pygame.font.Font(None, 24)

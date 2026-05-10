@@ -37,6 +37,8 @@ class PingSweepView:
         self._proc: subprocess.Popen | None = None
         self._scan_thread: threading.Thread | None = None
         self._scroll_y = 0
+        self._scroll_idx = 0
+        self.selected_host_idx = 0
 
     def _start_scan(self):
         self.hosts.clear()
@@ -127,10 +129,42 @@ class PingSweepView:
         
         else: # Results mode
             if ev.button is Button.UP:
-                self._scroll_y = max(0, self._scroll_y - 40)
+                if self.hosts:
+                    self.selected_host_idx = (self.selected_host_idx - 1) % len(self.hosts)
+                    self._adjust_scroll()
             elif ev.button is Button.DOWN:
-                max_scroll = max(0, len(self.hosts) * 35 - 300)
-                self._scroll_y = min(max_scroll, self._scroll_y + 40)
+                if self.hosts:
+                    self.selected_host_idx = (self.selected_host_idx + 1) % len(self.hosts)
+                    self._adjust_scroll()
+            elif ev.button is Button.A:
+                if self.hosts and not self.scanning:
+                    self._start_profiling(self.hosts[self.selected_host_idx])
+
+    def _adjust_scroll(self):
+        visible_rows = 8
+        if self.selected_host_idx < self._scroll_idx:
+            self._scroll_idx = self.selected_host_idx
+        elif self.selected_host_idx >= self._scroll_idx + visible_rows:
+            self._scroll_idx = self.selected_host_idx - visible_rows + 1
+        self._scroll_y = self._scroll_idx * 35
+
+    def _start_profiling(self, host: Host):
+        self.status_msg = f"PROFILING {host.ip}..."
+        def _worker():
+            try:
+                # Top 50 ports scan
+                cmd = ["nmap", "-F", "--top-ports", "50", host.ip]
+                res = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+                # Just show a toast or update status with first few open ports
+                open_ports = re.findall(r"(\d+/tcp\s+open\s+\S+)", res)
+                if open_ports:
+                    host.vendor = ", ".join(open_ports[:3]) # Abuse vendor field to show ports
+                    self.status_msg = f"PROFILED {host.ip}: {len(open_ports)} ports"
+                else:
+                    self.status_msg = f"PROFILED {host.ip}: NO OPEN PORTS"
+            except Exception as e:
+                self.status_msg = "PROFILE FAILED"
+        threading.Thread(target=_worker, daemon=True).start()
 
     def render(self, surf: pygame.Surface) -> None:
         surf.fill(theme.BG)
@@ -198,19 +232,28 @@ class PingSweepView:
             if y < list_rect.y - 30: continue
             if y > list_rect.bottom: break
             
+            selected = (i == self.selected_host_idx)
             # Row highlight
-            if i % 2 == 0:
+            if selected:
+                pygame.draw.rect(surf, theme.SELECTION_BG, (list_rect.x, y-5, list_rect.width, 35))
+                pygame.draw.rect(surf, theme.ACCENT, (list_rect.x, y-5, list_rect.width, 35), 1)
+            elif i % 2 == 0:
                 pygame.draw.rect(surf, (15, 20, 30), (list_rect.x, y-5, list_rect.width, 30))
             
             # Host Details
+            color = theme.ACCENT if selected else theme.FG
             idx_txt = f_body.render(f"{i+1:02}", True, theme.FG_DIM)
-            ip_txt = f_body.render(host.ip, True, theme.FG)
-            lat_txt = f_body.render(f"{host.latency}", True, theme.ACCENT)
+            ip_txt = f_body.render(host.ip, True, color)
+            lat_txt = f_body.render(f"{host.latency}", True, theme.ACCENT if not selected else theme.FG)
             
             surf.blit(idx_txt, (list_rect.x + 5, y))
             surf.blit(ip_txt, (list_rect.x + 50, y))
             surf.blit(lat_txt, (list_rect.right - 100, y))
             
+            if host.vendor != "Unknown":
+                v_txt = pygame.font.Font(None, 18).render(host.vendor, True, theme.WARN)
+                surf.blit(v_txt, (list_rect.x + 220, y + 4))
+
             # Status Indicator
             pygame.draw.circle(surf, (0, 255, 100), (list_rect.right - 120, y + 12), 6)
 
@@ -223,7 +266,7 @@ class PingSweepView:
         if self.scanning:
             hint = f_hint.render("PRESS B TO STOP SCAN", True, theme.ERR)
         else:
-            hint = f_hint.render("UP/DOWN: Scroll  B: New Scan / Back", True, theme.FG_DIM)
+            hint = f_hint.render("UP/DOWN: Select  A: PROFILE  B: New Scan", True, theme.FG_DIM)
         surf.blit(hint, (theme.SCREEN_W - hint.get_width() - 20, theme.SCREEN_H - 28))
 
         if self.scanning:

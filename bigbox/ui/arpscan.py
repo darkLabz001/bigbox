@@ -57,6 +57,8 @@ class ARPScanView:
         self._proc: subprocess.Popen | None = None
         self._scan_thread: threading.Thread | None = None
         self._scroll_y = 0
+        self._scroll_idx = 0
+        self.selected_dev_idx = 0
         self._cursor = 0 # for interface selection
         self._scan_start_iso: str = ""
         self._scan_target: str = ""
@@ -162,10 +164,41 @@ class ARPScanView:
         
         else: # Results mode
             if ev.button is Button.UP:
-                self._scroll_y = max(0, self._scroll_y - 40)
+                if self.devices:
+                    self.selected_dev_idx = (self.selected_dev_idx - 1) % len(self.devices)
+                    self._adjust_scroll_results()
             elif ev.button is Button.DOWN:
-                max_scroll = max(0, len(self.devices) * 45 - 300)
-                self._scroll_y = min(max_scroll, self._scroll_y + 40)
+                if self.devices:
+                    self.selected_dev_idx = (self.selected_dev_idx + 1) % len(self.devices)
+                    self._adjust_scroll_results()
+            elif ev.button is Button.A:
+                if self.devices and not self.scanning:
+                    self._start_profiling(self.devices[self.selected_dev_idx])
+
+    def _adjust_scroll_results(self):
+        visible_rows = 6
+        if self.selected_dev_idx < self._scroll_idx:
+            self._scroll_idx = self.selected_dev_idx
+        elif self.selected_dev_idx >= self._scroll_idx + visible_rows:
+            self._scroll_idx = self.selected_dev_idx - visible_rows + 1
+        self._scroll_y = self._scroll_idx * 45
+
+    def _start_profiling(self, dev: ArpDevice):
+        self.status_msg = f"PROFILING {dev.ip}..."
+        def _worker():
+            try:
+                # Top 50 ports scan
+                cmd = ["nmap", "-F", "--top-ports", "50", dev.ip]
+                res = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+                open_ports = re.findall(r"(\d+/tcp\s+open\s+\S+)", res)
+                if open_ports:
+                    dev.device_class = ", ".join(open_ports[:2]) # Reuse field for ports
+                    self.status_msg = f"PROFILED {dev.ip}: {len(open_ports)} ports"
+                else:
+                    self.status_msg = f"PROFILED {dev.ip}: NO OPEN PORTS"
+            except Exception:
+                self.status_msg = "PROFILE FAILED"
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _persist_scan(self) -> None:
         if not self.devices or self._saved_path is not None:
@@ -270,19 +303,24 @@ class ARPScanView:
             if y < list_rect.y - 40: continue
             if y > list_rect.bottom: break
             
-            if i % 2 == 0:
+            selected = (i == self.selected_dev_idx)
+            if selected:
+                pygame.draw.rect(surf, theme.SELECTION_BG, (list_rect.x, y-5, list_rect.width, 45))
+                pygame.draw.rect(surf, theme.ACCENT, (list_rect.x, y-5, list_rect.width, 45), 1)
+            elif i % 2 == 0:
                 pygame.draw.rect(surf, (15, 20, 30), (list_rect.x, y-5, list_rect.width, 40))
             
-            ip_txt = f_body.render(dev.ip, True, theme.FG)
-            mac_txt = f_body.render(dev.mac, True, theme.FG_DIM)
-            vendor_txt = f_vendor.render(dev.vendor[:40], True, theme.ACCENT)
+            color = theme.ACCENT if selected else theme.FG
+            ip_txt = f_body.render(dev.ip, True, color)
+            mac_txt = f_body.render(dev.mac, True, theme.FG_DIM if not selected else theme.FG)
+            vendor_txt = f_vendor.render(dev.vendor[:40], True, theme.ACCENT if not selected else theme.FG)
 
             surf.blit(ip_txt, (list_rect.x + 5, y))
             surf.blit(mac_txt, (list_rect.x + 180, y))
             surf.blit(vendor_txt, (list_rect.x + 5, y + 20))
 
             if dev.device_class:
-                klass_txt = f_vendor.render(f"[{dev.device_class}]", True, theme.WARN)
+                klass_txt = f_vendor.render(f"[{dev.device_class}]", True, theme.WARN if not selected else theme.FG)
                 surf.blit(klass_txt, (list_rect.x + 12 + vendor_txt.get_width(), y + 20))
 
             pygame.draw.circle(surf, (0, 255, 100), (list_rect.right - 20, y + 10), 6)
@@ -292,6 +330,10 @@ class ARPScanView:
             pygame.draw.line(surf, (0, 255, 0, 150), (res_rect.left, scan_y), (res_rect.right, scan_y), 3)
 
         f_hint = pygame.font.Font(None, 20)
-        hint_text = "PRESS B TO STOP SCAN" if self.scanning else "UP/DOWN: Scroll  B: BACK"
+        if self.scanning:
+            hint_text = "PRESS B TO STOP SCAN"
+        else:
+            hint_text = "UP/DOWN: Select  A: PROFILE  B: BACK"
+        
         hint = f_hint.render(hint_text, True, theme.ERR if self.scanning else theme.FG_DIM)
         surf.blit(hint, (theme.SCREEN_W - hint.get_width() - 20, theme.SCREEN_H - 28))

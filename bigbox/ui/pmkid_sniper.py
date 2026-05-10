@@ -144,6 +144,25 @@ class PMKIDSniperView:
         elif self.phase == PHASE_RESULT:
             if ev.button in (Button.A, Button.B, Button.START):
                 self.phase = PHASE_LANDING
+            elif ev.button is Button.X:
+                self._start_cracker(ctx)
+
+    def _start_cracker(self, app: App):
+        if not self.pcapng_path or not self.pcapng_path.exists():
+            return
+            
+        from bigbox.ui.cracker import OfflineCrackerView, CapFile
+        cracker = OfflineCrackerView()
+        
+        # We need to find the .cap file that aircrack wants, or use the pcapng if supported
+        # airodump/hcxdumptool usually writes .cap or .pcapng. Cracker prefers .cap
+        cap_path = self.pcapng_path
+        st = cap_path.stat()
+        cracker.selected_cap = CapFile(cap_path, st.st_size, st.st_mtime)
+        cracker.phase = "wordlist" # Skip to wordlist selection
+        cracker.status_msg = f"Redir from Sniper: {cap_path.name}"
+        
+        app.view = cracker
 
     def _toggle_config(self, ctx: App):
         if self.config_cursor == 0:
@@ -314,7 +333,7 @@ class PMKIDSniperView:
         if self.phase == PHASE_LANDING: return "A: SELECT_IFACE  X: REFRESH  B: EXIT"
         if self.phase == PHASE_CONFIG: return "UP/DN: NAV  A: TOGGLE  START: INITIATE"
         if self.phase == PHASE_SNIPING: return "A: TERMINATE  X: UPLOAD  B: ABORT"
-        if self.phase == PHASE_RESULT: return "A: RETURN  B: EXIT"
+        if self.phase == PHASE_RESULT: return "X: CRACK  A: RETURN  B: EXIT"
         return "B: BACK"
 
     def _draw_hud_frame(self, surf: pygame.Surface):

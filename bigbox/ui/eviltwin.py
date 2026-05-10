@@ -145,6 +145,11 @@ class EvilTwinView:
         # Running session
         self.session: et.EvilTwinSession | None = None
         self.error_msg: str = ""
+        
+        # Live Alert State
+        self.last_creds_seen = 0
+        self.new_creds_alert_timer = 0.0
+        self.alert_chime_played = False
 
     # ---------- helpers ----------
     def _start_scan(self) -> None:
@@ -462,6 +467,13 @@ class EvilTwinView:
         f_med = pygame.font.Font(None, 26)
         f_small = pygame.font.Font(None, 20)
 
+        # Monitor for new creds to trigger alert
+        current_creds_count = sess.creds_captured()
+        if current_creds_count > self.last_creds_seen:
+            self.last_creds_seen = current_creds_count
+            self.new_creds_alert_timer = time.time() + 5.0 # Show alert for 5s
+            self._play_alert_chime()
+
         # SSID banner
         banner = f_med.render(
             f"AP: {sess.ssid}  iface {sess.iface}  ch{sess.channel}",
@@ -494,6 +506,15 @@ class EvilTwinView:
             ps = f_small.render(preview[:90], True, theme.WARN)
             surf.blit(ps, (theme.PADDING, theme.SCREEN_H - foot_h - 56))
 
+        # NEW CREDENTIALS ALERT OVERLAY
+        if time.time() < self.new_creds_alert_timer:
+            overlay = pygame.Surface((theme.SCREEN_W, 80), pygame.SRCALPHA)
+            overlay.fill((255, 100, 0, 180)) # Translucent Orange
+            surf.blit(overlay, (0, theme.SCREEN_H // 2 - 40))
+            alert_f = pygame.font.Font(None, 42)
+            alert_t = alert_f.render("!!! NEW CREDENTIALS CAPTURED !!!", True, (255, 255, 255))
+            surf.blit(alert_t, (theme.SCREEN_W // 2 - alert_t.get_width() // 2, theme.SCREEN_H // 2 - 20))
+
         # Uptime + portal path
         info = f"uptime {sess.uptime_s()}s   portal: 192.168.45.1:80"
         info_s = f_small.render(info, True, theme.FG_DIM)
@@ -504,6 +525,26 @@ class EvilTwinView:
                                 True, theme.ERR)
             surf.blit(warn, (theme.SCREEN_W // 2 - warn.get_width() // 2,
                              theme.SCREEN_H - foot_h - 88))
+
+    def _play_alert_chime(self):
+        try:
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+            import array
+            sample_rate = 44100
+            # A more pleasant "success" chime
+            for freq in [440, 880]:
+                duration = 0.1
+                n_samples = int(sample_rate * duration)
+                buf = array.array('h', [0] * n_samples)
+                for i in range(n_samples):
+                    t = i / sample_rate
+                    buf[i] = 10000 if (int(t * freq * 2) % 2) else -10000
+                sound = pygame.mixer.Sound(buffer=buf)
+                sound.set_volume(0.3)
+                sound.play()
+        except Exception:
+            pass
 
     def _render_stopped(self, surf: pygame.Surface,
                         head_h: int, foot_h: int) -> None:
