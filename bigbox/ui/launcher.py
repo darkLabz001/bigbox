@@ -6,6 +6,8 @@ feel.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
 import pygame
 
 from bigbox import theme
@@ -27,6 +29,27 @@ class Launcher:
         self.cols = 4
         self.rows = 3
         self.icon_size = 64
+
+        # Home background
+        self._home_bg = None
+        try:
+            bg_path = Path(__file__).resolve().parents[2] / "assets" / "home_bg.png"
+            if bg_path.exists():
+                img = pygame.image.load(str(bg_path)).convert()
+                # Cover-fit to screen
+                iw, ih = img.get_size()
+                scale = max(theme.SCREEN_W / iw, theme.SCREEN_H / ih)
+                new_w, new_h = max(1, int(iw * scale)), max(1, int(ih * scale))
+                img = pygame.transform.smoothscale(img, (new_w, new_h))
+                self._home_bg = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H)).convert()
+                self._home_bg.blit(img, ((theme.SCREEN_W - new_w) // 2, (theme.SCREEN_H - new_h) // 2))
+                # Add a darkening overlay so icons stay readable
+                overlay = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H)).convert()
+                overlay.fill((0, 0, 0))
+                overlay.set_alpha(160)
+                self._home_bg.blit(overlay, (0, 0))
+        except Exception as e:
+            print(f"[launcher] Failed to load home background: {e}")
 
     @property
     def current(self) -> Section:
@@ -80,7 +103,10 @@ class Launcher:
             self._render_section(surf, font, title_font)
 
     def _render_grid(self, surf: pygame.Surface, title_font: pygame.font.Font) -> None:
-        surf.fill(theme.BG)
+        if self._home_bg:
+            surf.blit(self._home_bg, (0, 0))
+        else:
+            surf.fill(theme.BG)
         
         # Matrix/Cyberpunk scanlines
         for y in range(0, theme.SCREEN_H, 4):
