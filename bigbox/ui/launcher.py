@@ -113,30 +113,65 @@ class Launcher:
             color = (15, 18, 25) if (y // 4) % 2 == 0 else (10, 12, 18)
             pygame.draw.line(surf, color, (0, y), (theme.SCREEN_W, y))
         
-        # 2. Decorative HUD Elements (Corners)
-        c_len = 40
-        c_thick = 2
-        # Top Left
-        pygame.draw.lines(surf, theme.ACCENT_DIM, False, [(10, 10+c_len), (10, 10), (10+c_len, 10)], c_thick)
-        # Top Right
-        pygame.draw.lines(surf, theme.ACCENT_DIM, False, [(theme.SCREEN_W-10-c_len, 10), (theme.SCREEN_W-10, 10), (theme.SCREEN_W-10, 10+c_len)], c_thick)
-        # Bottom Left
-        pygame.draw.lines(surf, theme.ACCENT_DIM, False, [(10, theme.SCREEN_H-10-c_len), (10, theme.SCREEN_H-10), (10+c_len, theme.SCREEN_H-10)], c_thick)
-        # Bottom Right
-        pygame.draw.lines(surf, theme.ACCENT_DIM, False, [(theme.SCREEN_W-10-c_len, theme.SCREEN_H-10), (theme.SCREEN_W-10, theme.SCREEN_H-10), (theme.SCREEN_W-10, theme.SCREEN_H-10-c_len)], c_thick)
-
-        # 3. Grid Layout
-        margin_x = 80
-        margin_y = 50
-        top_offset = theme.STATUS_BAR_H + 30
+        # 2. Sidebar Background & Telemetry (Left Side)
+        sidebar_w = 200
+        pygame.draw.rect(surf, (15, 15, 25), (0, 0, sidebar_w, theme.SCREEN_H))
+        pygame.draw.line(surf, theme.ACCENT, (sidebar_w, 0), (sidebar_w, theme.SCREEN_H), 1)
         
-        available_w = theme.SCREEN_W - 2 * margin_x
-        available_h = theme.SCREEN_H - top_offset - margin_y - 60 # Leave room for description
+        from bigbox import system
+        stats = system.get_system_stats()
+        
+        sy = 60
+        f_stat = pygame.font.Font(None, 20)
+        f_stat_bold = pygame.font.Font(None, 22)
+        
+        # --- System Vitals ---
+        surf.blit(f_stat_bold.render("SYSTEM_VITALS", True, theme.ACCENT), (15, sy))
+        sy += 25
+        
+        # IP Address
+        from bigbox import qr
+        lan_ip = qr.lan_ipv4() or "DISCONNECTED"
+        surf.blit(f_stat.render(f"IP: {lan_ip}", True, theme.FG), (15, sy))
+        sy += 20
+        
+        # CPU & Temp
+        temp = stats.get("temp_f")
+        temp_str = f"{temp:.1f}F" if temp else "N/A"
+        surf.blit(f_stat.render(f"CPU: {stats.get('cpu_usage',0)}% | {temp_str}", True, theme.FG), (15, sy))
+        sy += 20
+        
+        # Memory
+        surf.blit(f_stat.render(f"MEM: {stats.get('mem_usage',0)}%", True, theme.FG), (15, sy))
+        sy += 30
+        
+        # --- Anonymity HUD ---
+        surf.blit(f_stat_bold.render("OPSEC_STATUS", True, theme.ACCENT), (15, sy))
+        sy += 25
+        
+        # Check for Tor / VPN (Mock for now, will connect to real state soon)
+        is_tor = os.path.exists("/run/tor/tor.pid")
+        tor_col = (100, 255, 100) if is_tor else theme.FG_DIM
+        surf.blit(f_stat.render(f"ANONSURF: {'ACTIVE' if is_tor else 'OFF'}", True, tor_col), (15, sy))
+        sy += 20
+        
+        is_vpn = os.path.exists("/proc/sys/net/ipv4/conf/tun0")
+        vpn_col = (100, 255, 100) if is_vpn else theme.FG_DIM
+        surf.blit(f_stat.render(f"VPN_TUN: {'CONNECTED' if is_vpn else 'OFF'}", True, vpn_col), (15, sy))
+        sy += 30
+
+        # 3. Grid Layout (Shifted Right)
+        margin_x = sidebar_w + 30
+        margin_y = 50
+        top_offset = 60
+        
+        available_w = theme.SCREEN_W - margin_x - 30
+        available_h = theme.SCREEN_H - top_offset - 100
         
         cell_w = available_w // self.cols
         cell_h = available_h // self.rows
         
-        label_font = pygame.font.Font(None, 24)
+        label_font = pygame.font.Font(None, 22)
         desc_font = pygame.font.Font(None, 20)
 
         for i, section in enumerate(self.sections):
@@ -191,10 +226,10 @@ class Launcher:
 
         # 4. Active Section Info (Bottom)
         cur = self.current
-        info_rect = pygame.Rect(margin_x, theme.SCREEN_H - 85, available_w, 60)
+        info_rect = pygame.Rect(margin_x, theme.SCREEN_H - 110, available_w, 60)
         # Background for info
         s_info = pygame.Surface((info_rect.width, info_rect.height), pygame.SRCALPHA)
-        s_info.fill((10, 12, 18, 180))
+        s_info.fill((10, 12, 18, 200))
         surf.blit(s_info, (info_rect.x, info_rect.y))
         pygame.draw.rect(surf, theme.ACCENT_DIM, info_rect, width=1, border_radius=4)
         
@@ -202,7 +237,7 @@ class Launcher:
         info_title = label_font.render(cur.title, True, theme.ACCENT)
         surf.blit(info_title, (info_rect.x + 15, info_rect.y + 10))
         
-        # Subtitle/Description (using the description of the first action or a summary)
+        # Subtitle/Description
         desc_text = f"DEPLOY {cur.title.upper()} MODULES"
         if cur.actions:
             desc_text = cur.actions[0].description if len(cur.actions) == 1 else f"{len(cur.actions)} modules available"
@@ -218,6 +253,19 @@ class Launcher:
             tick_text = f"SYS_LOG: {ev.message.upper()}"
             tick_surf = ticker_font.render(tick_text, True, theme.WARN)
             surf.blit(tick_surf, (theme.SCREEN_W - tick_surf.get_width() - 20, theme.SCREEN_H - 25))
+
+        # 6. System Clock (Top Right)
+        import datetime
+        now = datetime.datetime.now()
+        clock_str = now.strftime("%H:%M:%S")
+        date_str = now.strftime("%Y-%m-%d")
+        f_clock = pygame.font.Font(None, 24)
+        f_date = pygame.font.Font(None, 16)
+        
+        cw = f_clock.size(clock_str)[0]
+        surf.blit(f_clock.render(clock_str, True, theme.ACCENT), (theme.SCREEN_W - cw - 20, 15))
+        dw = f_date.size(date_str)[0]
+        surf.blit(f_date.render(date_str, True, theme.FG_DIM), (theme.SCREEN_W - dw - 20, 35))
 
     def _render_section(self, surf: pygame.Surface, font: pygame.font.Font, title_font: pygame.font.Font) -> None:
         rect = pygame.Rect(0, theme.STATUS_BAR_H, theme.SCREEN_W, theme.SCREEN_H - theme.STATUS_BAR_H)
