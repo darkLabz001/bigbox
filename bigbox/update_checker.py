@@ -52,15 +52,20 @@ class UpdateChecker:
 
     def _run(self) -> None:
         # Initial wait to let system boot and network stabilize
+        print("[update_checker] waiting 10s for network...")
         time.sleep(10)
 
         while not self._stop.is_set():
             try:
+                print("[update_checker] checking for updates...")
                 if self._check_now():
                     if not self.update_ready:
                         self.update_ready = True
+                        print("[update_checker] update found, triggering toast and notification")
                         self.app.toast("SYSTEM UPDATE AVAILABLE")
                         self.app.play_notification()
+                else:
+                    print("[update_checker] system up to date")
             except Exception:
                 # Whole-iteration safety net: a surprise from
                 # _check_now (it has its own try/except, but bugs

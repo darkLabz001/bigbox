@@ -46,6 +46,7 @@ class ChatView:
         self._poll_thread.start()
 
     def _poll_loop(self):
+        print(f"[chat] polling started for {self.username}")
         while not self._stop_event.is_set():
             try:
                 url = f"{API_URL}?after={self.last_id}" if self.last_id > 0 else API_URL
@@ -53,9 +54,11 @@ class ChatView:
                 if res.status_code == 200:
                     new_msgs = res.json()
                     if new_msgs:
+                        print(f"[chat] received {len(new_msgs)} messages")
                         was_at_bottom = self.scroll_y >= self.max_scroll - 10 or self.max_scroll == 0
                         # Only play sound if this isn't the first load
                         if self.last_id > 0:
+                            print("[chat] triggering notification")
                             self.app.play_notification()
                         
                         for m in new_msgs:

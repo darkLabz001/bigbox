@@ -283,12 +283,6 @@ class App:
                     os.environ["SDL_VIDEODRIVER"] = "fbcon"
                     os.environ.setdefault("SDL_FBDEV", "/dev/fb0")
 
-        # Don't try to open ALSA — most handheld builds have no configured
-        # sound card on first boot, and pygame's audio init is noisy when it
-        # fails. Sound is opt-in via SDL_AUDIODRIVER if/when we add it.
-        os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
-
-        # Init only the subsystems we use, so a missing audio device or
         # joystick doesn't sink the whole startup.
         pygame.display.init()
         pygame.font.init()
@@ -661,16 +655,30 @@ class App:
         """Plays the system notification sound (assets/chat_notify.mp3)."""
         try:
             if not pygame.mixer.get_init():
-                pygame.mixer.init()
+                # Ensure we have the pulse environment if available
+                from bigbox import audio as _audio
+                env = _audio._pulse_env()
+                for k, v in env.items():
+                    os.environ[k] = v
+                
+                try:
+                    pygame.mixer.init()
+                except Exception:
+                    # Fallback to ALSA if pulse fails
+                    os.environ["SDL_AUDIODRIVER"] = "alsa"
+                    pygame.mixer.init()
             
             if self._notif_sound is None:
                 p = Path(__file__).resolve().parents[1] / "assets" / "chat_notify.mp3"
                 if p.exists():
                     self._notif_sound = pygame.mixer.Sound(str(p))
-                    self._notif_sound.set_volume(0.5)
+                    self._notif_sound.set_volume(0.7)
             
             if self._notif_sound:
+                # Stop any currently playing notification before starting new one
+                self._notif_sound.stop()
                 self._notif_sound.play()
+                print("[app] notification played")
         except Exception as e:
             print(f"[app] play_notification failed: {e}")
 
