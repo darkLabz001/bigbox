@@ -259,6 +259,8 @@ class App:
         except Exception:
             self._tj = None
 
+        self._notif_sound: pygame.mixer.Sound | None = None
+
     # ---------- lifecycle ----------
     def _init_display(self) -> pygame.Surface:
         # Pick a video driver. Prefer KMS DRM if /dev/dri exists; fall back to
@@ -543,7 +545,7 @@ class App:
         self.karma_view = KarmaLiteView()
 
     def show_chat(self) -> None:
-        self.chat_view = ChatView()
+        self.chat_view = ChatView(self)
 
     def show_sherlock(self, username: str) -> None:
         self.sherlock_view = SherlockView(username)
@@ -638,6 +640,23 @@ class App:
     def toast(self, msg: str) -> None:
         # Lightweight: just print for now; could become an on-screen toast widget.
         print(f"[toast] {msg}")
+
+    def play_notification(self) -> None:
+        """Plays the system notification sound (assets/chat_notify.mp3)."""
+        try:
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+            
+            if self._notif_sound is None:
+                p = Path(__file__).resolve().parents[1] / "assets" / "chat_notify.mp3"
+                if p.exists():
+                    self._notif_sound = pygame.mixer.Sound(str(p))
+                    self._notif_sound.set_volume(0.5)
+            
+            if self._notif_sound:
+                self._notif_sound.play()
+        except Exception as e:
+            print(f"[app] play_notification failed: {e}")
 
     # ---------- target FPS ----------
     def _target_fps(self) -> int:

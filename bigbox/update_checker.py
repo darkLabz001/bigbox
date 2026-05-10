@@ -56,6 +56,7 @@ class UpdateChecker:
                     if not self.update_ready:
                         self.update_ready = True
                         self.app.toast("SYSTEM UPDATE AVAILABLE")
+                        self.app.play_notification()
             except Exception:
                 # Whole-iteration safety net: a surprise from
                 # _check_now (it has its own try/except, but bugs

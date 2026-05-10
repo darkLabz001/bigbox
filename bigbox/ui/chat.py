@@ -21,7 +21,8 @@ POLL_INTERVAL = 3.0
 
 
 class ChatView:
-    def __init__(self) -> None:
+    def __init__(self, app: App) -> None:
+        self.app = app
         self.messages: List[Dict] = []
         self.last_id = 0
         self.username = "anon"
@@ -39,18 +40,6 @@ class ChatView:
         self.f_meta = pygame.font.Font(None, 18)
         self.f_hint = pygame.font.Font(None, 22)
         
-        # Audio
-        self.notify_sound: Optional[pygame.mixer.Sound] = None
-        try:
-            if not pygame.mixer.get_init():
-                pygame.mixer.init()
-            asset_path = "assets/chat_notify.mp3"
-            if os.path.exists(asset_path):
-                self.notify_sound = pygame.mixer.Sound(asset_path)
-                self.notify_sound.set_volume(0.4)
-        except Exception as e:
-            print(f"[chat] audio init failed: {e}")
-
         # Threading
         self._stop_event = threading.Event()
         self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
@@ -66,8 +55,8 @@ class ChatView:
                     if new_msgs:
                         was_at_bottom = self.scroll_y >= self.max_scroll - 10 or self.max_scroll == 0
                         # Only play sound if this isn't the first load
-                        if self.last_id > 0 and self.notify_sound:
-                            self.notify_sound.play()
+                        if self.last_id > 0:
+                            self.app.play_notification()
                         
                         for m in new_msgs:
                             self.messages.append(m)
