@@ -793,53 +793,60 @@ class WardriveView:
             last = self.last_found
 
         elapsed = int(time.time() - self._capture_started)
-        
-        # Calculate NPM (Nodes Per Minute)
         total_nodes = wifi_count + bt_count
         npm = (total_nodes / (elapsed / 60.0)) if elapsed > 10 else 0
-        
-        # Geiger audio
         self._play_geiger(npm)
 
         f_huge = pygame.font.Font(None, 80)
         f_med = pygame.font.Font(None, 26)
         f_small = pygame.font.Font(None, 20)
 
-        # Big counter row
-        cy = head_h + 80
-        col_w = theme.SCREEN_W // 3
-        
-        # NPM HUD (Top Right during capture)
-        nx, ny = theme.SCREEN_W - 120, head_h + 40
-        npm_surf = f_small.render(f"{npm:.1f} NPM", True, theme.ACCENT if npm > 5 else theme.FG_DIM)
-        surf.blit(npm_surf, (nx, ny))
-        pygame.draw.line(surf, theme.ACCENT, (nx, ny + 18), (nx + 60, ny + 18), 1)
+        if self.show_map:
+            # Map takes the main area
+            self.map.render(surf, theme.PADDING, head_h + 40)
+            
+            # Small HUD on top of map
+            hx, hy = theme.PADDING + 10, head_h + 50
+            # Dark overlay for HUD text
+            hud_surf = pygame.Surface((120, 85), pygame.SRCALPHA)
+            hud_surf.fill((0, 0, 0, 160))
+            surf.blit(hud_surf, (hx-5, hy-5))
 
-        wifi_n = f_huge.render(str(wifi_count), True, theme.ACCENT)
-        surf.blit(wifi_n, (col_w // 2 - wifi_n.get_width() // 2, cy))
-        wifi_l = f_med.render("WI-FI", True, theme.FG_DIM)
-        surf.blit(wifi_l, (col_w // 2 - wifi_l.get_width() // 2,
-                           cy + wifi_n.get_height() + 4))
+            surf.blit(f_small.render(f"WIFI: {wifi_count}", True, theme.ACCENT), (hx, hy))
+            surf.blit(f_small.render(f"BT:   {bt_count}", True, theme.ACCENT), (hx, hy + 20))
+            surf.blit(f_small.render(f"HAND: {hand_count}", True, theme.ACCENT), (hx, hy + 40))
+            surf.blit(f_small.render(f"ZOOM: {self.map.zoom}", True, theme.FG_DIM), (hx, hy + 60))
+            
+            # NPM HUD (Top Right)
+            nx, ny = theme.SCREEN_W - 120, head_h + 40
+            npm_surf = f_small.render(f"{npm:.1f} NPM", True, theme.ACCENT if npm > 5 else theme.FG_DIM)
+            surf.blit(npm_surf, (nx, ny))
+        else:
+            # Stats view
+            cy = head_h + 80
+            col_w = theme.SCREEN_W // 3
+            
+            wifi_n = f_huge.render(str(wifi_count), True, theme.ACCENT)
+            surf.blit(wifi_n, (col_w // 2 - wifi_n.get_width() // 2, cy))
+            wifi_l = f_med.render("WI-FI", True, theme.FG_DIM)
+            surf.blit(wifi_l, (col_w // 2 - wifi_l.get_width() // 2, cy + wifi_n.get_height() + 4))
 
-        bt_n = f_huge.render(str(bt_count), True, theme.ACCENT)
-        surf.blit(bt_n, (col_w + col_w // 2 - bt_n.get_width() // 2, cy))
-        bt_l = f_med.render("BLUETOOTH", True, theme.FG_DIM)
-        surf.blit(bt_l, (col_w + col_w // 2 - bt_l.get_width() // 2,
-                         cy + bt_n.get_height() + 4))
-        
-        # Handshake counter (only show if we have a capture iface)
-        hand_n = f_huge.render(str(hand_count), True, theme.ACCENT if hand_count > 0 else theme.FG_DIM)
-        surf.blit(hand_n, (2 * col_w + col_w // 2 - hand_n.get_width() // 2, cy))
-        hand_l = f_med.render("HANDSHAKES", True, theme.FG_DIM)
-        surf.blit(hand_l, (2 * col_w + col_w // 2 - hand_l.get_width() // 2,
-                           cy + hand_n.get_height() + 4))
+            bt_n = f_huge.render(str(bt_count), True, theme.ACCENT)
+            surf.blit(bt_n, (col_w + col_w // 2 - bt_n.get_width() // 2, cy))
+            bt_l = f_med.render("BLUETOOTH", True, theme.FG_DIM)
+            surf.blit(bt_l, (col_w + col_w // 2 - bt_l.get_width() // 2, cy + bt_n.get_height() + 4))
+            
+            hand_n = f_huge.render(str(hand_count), True, theme.ACCENT if hand_count > 0 else theme.FG_DIM)
+            surf.blit(hand_n, (2 * col_w + col_w // 2 - hand_n.get_width() // 2, cy))
+            hand_l = f_med.render("HANDSHAKES", True, theme.FG_DIM)
+            surf.blit(hand_l, (2 * col_w + col_w // 2 - hand_l.get_width() // 2, cy + hand_n.get_height() + 4))
 
         # Last found box
+        ly = head_h + 290 if self.show_map else head_h + 210
+        pygame.draw.rect(surf, theme.BG_ALT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), border_radius=5)
+        pygame.draw.rect(surf, theme.ACCENT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), 1, border_radius=5)
+        
         if last:
-            ly = cy + 130
-            pygame.draw.rect(surf, theme.BG_ALT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), border_radius=5)
-            pygame.draw.rect(surf, theme.ACCENT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), 1, border_radius=5)
-            
             l_title = f_small.render(f"LAST DISCOVERY: {last.type}", True, theme.ACCENT)
             surf.blit(l_title, (theme.PADDING + 10, ly + 8))
             
@@ -850,6 +857,9 @@ class WardriveView:
             info = f"{ssid} [{last.mac}] {vendor_str}  {last.rssi}dBm  {last.authmode}"
             l_info = f_med.render(info, True, theme.FG)
             surf.blit(l_info, (theme.PADDING + 10, ly + 30))
+        else:
+            l_info = f_med.render("WAITING FOR DISCOVERY...", True, theme.FG_DIM)
+            surf.blit(l_info, (theme.PADDING + 10, ly + 20))
 
         # Bottom strip: elapsed, file, scan counts
         sy = theme.SCREEN_H - foot_h - 60
