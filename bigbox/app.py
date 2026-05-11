@@ -272,6 +272,9 @@ class App:
             self._tj = None
 
         self._notif_sound: pygame.mixer.Sound | None = None
+        
+        from bigbox.ui.monster import Monster
+        self.monster = Monster()
 
     # ---------- lifecycle ----------
     def _init_display(self) -> pygame.Surface:
@@ -775,6 +778,10 @@ class App:
             # 2. Drain logical button events; route to the foreground screen.
             for bev in self.bus.drain():
                 self._dispatch(bev, launcher)
+                if bev.pressed:
+                    self.monster.set_state("WALK")
+
+            self.monster.update(self)
 
             # 3. Render.
             now = time.time()

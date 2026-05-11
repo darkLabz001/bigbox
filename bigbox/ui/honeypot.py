@@ -44,6 +44,7 @@ class HoneypotView:
         self.body_font = pygame.font.Font(None, theme.FS_BODY)
         self.small_font = pygame.font.Font(None, theme.FS_SMALL)
         self.mono_font = pygame.font.Font(None, 16)
+        self._reported_clients: set[str] = set()
 
     # ---------- input ------------------------------------------------------
     def handle(self, ev: ButtonEvent, ctx: "App") -> None:
@@ -226,6 +227,22 @@ class HoneypotView:
             line_h = 16
             visible = (log_h - 24) // line_h
             lines = honeypot.tail_log(log_path, n=visible)
+            
+            # Simple heuristic: if dnsmasq log shows a DHCPACK, it's a "cred" (connection)
+            if i == 1: # DNSMASQ column
+                for line in lines:
+                    if "DHCPACK" in line:
+                        parts = line.split()
+                        # dnsmasq log: ... DHCPACK(wlan0) 10.99.99.231 00:11:22:33:44:55 hostname
+                        try:
+                            client_mac = parts[parts.index("DHCPACK(wlan0)") + 2]
+                            if client_mac not in self._reported_clients:
+                                self._reported_clients.add(client_mac)
+                                from bigbox import achievements
+                                achievements.report_honeypot_cred()
+                        except (ValueError, IndexError):
+                            pass
+
             for li, line in enumerate(lines):
                 ls = self.mono_font.render(line[:60], True, theme.FG_DIM)
                 surf.blit(ls, (x + 6, log_top + 22 + li * line_h))

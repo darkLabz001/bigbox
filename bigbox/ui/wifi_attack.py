@@ -364,6 +364,8 @@ class WifiAttackView:
                     
                 self.deauth_count += 1
                 self.status_msg = f"Deauth burst sent ({self.deauth_count})"
+                from bigbox import achievements
+                achievements.report_deauth()
             except FileNotFoundError:
                 self.status_msg = "aireplay-ng not installed"
             except Exception as e:

@@ -66,39 +66,48 @@ class AchievementView:
             ("HANDSHAKES", str(self.state.total_handshakes)),
             ("WI-FI NODES", str(self.state.total_nodes)),
             ("BT TRACKERS", str(self.state.total_bt)),
+            ("DEAUTHS", str(self.state.total_deauths)),
+            ("HONEYPOT", str(self.state.total_honeypot_creds)),
             ("DRIVE TIME", f"{int(self.state.total_wardrive_s / 60)}m"),
         ]
         
         for i, (lbl, val) in enumerate(stats):
-            y = 110 + i * 40
+            y = 110 + i * 32
             surf.blit(self.f_main.render(lbl, True, theme.FG), (sx, y))
-            surf.blit(self.f_main.render(val, True, theme.ACCENT), (sx + 150, y))
+            val_surf = self.f_main.render(val, True, theme.ACCENT)
+            surf.blit(val_surf, (sx + 200 - val_surf.get_width(), y))
 
-        # 3. Medals (Bottom Row)
+        # 3. Milestones (Bottom Section)
         mx = 20
-        my = 340
-        surf.blit(self.f_small.render("UNLOCKED_MEDALS", True, theme.FG_DIM), (mx, my))
+        my = 310
+        surf.blit(self.f_small.render("OPERATIONAL_MILESTONES", True, theme.FG_DIM), (mx, my))
         
-        medals = [
-            ("HANDSHAKE_HUNTER", "10 PCAPS"),
-            ("WI-FI_WARRIOR", "1K NODES"),
-            ("BT_STALKER", "100 BLE"),
-            ("ROAD_TRIP", "1HR DRIVE"),
-        ]
+        milestones = achievements.get_milestones(self.state)
         
-        for i, (key, desc) in enumerate(medals):
-            unlocked = key in self.state.unlocked_milestones
-            color = theme.ACCENT if unlocked else (40, 40, 50)
-            rect = pygame.Rect(mx + i * 190, my + 25, 180, 60)
-            pygame.draw.rect(surf, (20, 25, 35) if unlocked else (15, 15, 20), rect, border_radius=8)
-            pygame.draw.rect(surf, color, rect, 1, border_radius=8)
+        for i, (key, prog, desc, unlocked) in enumerate(milestones):
+            row = i // 2
+            col = i % 2
+            color = theme.ACCENT if unlocked else theme.FG_DIM
             
-            # Icon (Star)
-            if unlocked:
-                pygame.draw.circle(surf, theme.ACCENT, (rect.x + 25, rect.y + 30), 10, 2)
+            rx = mx + col * 380
+            ry = my + 25 + row * 50
             
-            surf.blit(self.f_small.render(key.replace("_"," "), True, theme.FG if unlocked else theme.FG_DIM), (rect.x + 45, rect.y + 10))
-            surf.blit(self.f_small.render(desc, True, theme.FG_DIM), (rect.x + 45, rect.y + 30))
+            # Progress bar background
+            bw, bh = 360, 40
+            pygame.draw.rect(surf, (20, 25, 35), (rx, ry, bw, bh), border_radius=5)
+            if prog > 0:
+                pygame.draw.rect(surf, theme.ACCENT if unlocked else (60, 60, 80), (rx, ry, int(bw * prog), bh), border_radius=5)
+            pygame.draw.rect(surf, color, (rx, ry, bw, bh), 1, border_radius=5)
+
+            # Text
+            label = key.replace("_", " ")
+            surf.blit(self.f_small.render(label, True, theme.FG if unlocked else theme.FG_DIM), (rx + 10, ry + 5))
+            surf.blit(self.f_small.render(desc, True, (200, 200, 200) if unlocked else theme.FG_DIM), (rx + 10, ry + 22))
+            
+            # Pct
+            pct_text = "COMPLETE" if unlocked else f"{int(prog * 100)}%"
+            pct_surf = self.f_small.render(pct_text, True, theme.ACCENT if unlocked else theme.FG_DIM)
+            surf.blit(pct_surf, (rx + bw - pct_surf.get_width() - 10, ry + 12))
 
         # Hint
         hint = self.f_small.render("B: BACK", True, theme.FG_DIM)

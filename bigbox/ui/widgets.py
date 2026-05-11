@@ -130,6 +130,10 @@ class StatusBar:
                         ticker = font.render(f"· {ev.message[:30]}... ({age_label})", True, theme.FG_DIM)
                     surf.blit(ticker, (theme.SCREEN_W // 2 - ticker.get_width() // 2, (bar.height - ticker.get_height()) // 2))
 
+        # --- CENTER: Monster ---
+        if app and hasattr(app, "monster"):
+            app.monster.render(surf)
+
         # --- RIGHT: Clock, Temp, Disk, Battery ---
         curr_right_x = bar.right - theme.PADDING
         

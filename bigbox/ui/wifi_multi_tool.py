@@ -250,8 +250,11 @@ class WifiMultiToolView:
                 cmd = ["aireplay-ng", "--deauth", "5", "-a", self.targeted_ap.bssid]
                 if mac: cmd += ["-c", mac]
                 cmd.append(self.mon_iface)
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
                 self.deauth_count += 5
+                from bigbox import achievements
+                achievements.report_deauth()
+
             if not self.handshake_captured:
                 self.status_msg = "Waiting for handshake..."
 

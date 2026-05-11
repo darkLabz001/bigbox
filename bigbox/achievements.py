@@ -28,6 +28,9 @@ class UserState:
     total_nodes: int = 0
     total_bt: int = 0
     total_wardrive_s: float = 0.0
+    total_deauths: int = 0
+    total_honeypot_creds: int = 0
+    max_uptime_s: float = 0.0
     unlocked_milestones: list[str] = None
 
     def __post_init__(self):
@@ -60,7 +63,11 @@ def _load() -> UserState:
         if STATE_PATH.exists():
             with STATE_PATH.open(encoding="utf-8") as f:
                 data = json.load(f)
-            return UserState(**data)
+            # Filter out keys that aren't in UserState
+            from dataclasses import fields
+            valid_keys = {field.name for field in fields(UserState)}
+            filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+            return UserState(**filtered_data)
     except Exception:
         pass
     return UserState()
@@ -69,16 +76,8 @@ def _save(state: UserState) -> None:
     try:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with STATE_PATH.open("w", encoding="utf-8") as f:
-            data = {
-                "xp": state.xp,
-                "level": state.level,
-                "total_handshakes": state.total_handshakes,
-                "total_nodes": state.total_nodes,
-                "total_bt": state.total_bt,
-                "total_wardrive_s": state.total_wardrive_s,
-                "unlocked_milestones": state.unlocked_milestones
-            }
-            json.dump(data, f, indent=2)
+            from dataclasses import asdict
+            json.dump(asdict(state), f, indent=2)
     except Exception as e:
         print(f"[achievements] save failed: {e}")
 
@@ -95,29 +94,47 @@ def add_xp(amount: int):
         if _APP_REF:
             _APP_REF.toast(f"LEVEL UP: {new_level} !!")
             _APP_REF.play_notification()
+            if hasattr(_APP_REF, "monster"):
+                _APP_REF.monster.set_state("HAPPY")
     
     _check_milestones(state)
     _save(state)
 
-def _check_milestones(state: UserState):
-    milestones = [
-        ("HANDSHAKE_HUNTER", state.total_handshakes >= 10, "Captured 10 handshakes"),
-        ("WI-FI_WARRIOR", state.total_nodes >= 1000, "Found 1,000 nodes"),
-        ("BT_STALKER", state.total_bt >= 100, "Tracked 100 BT devices"),
-        ("ROAD_TRIP", state.total_wardrive_s >= 3600, "1 hour of wardriving"),
+def get_milestones(state: UserState):
+    """Returns a list of (key, progress_pct, description, unlocked)"""
+    defs = [
+        ("HANDSHAKE_HUNTER", min(1.0, state.total_handshakes / 10), "Capture 10 handshakes", 10),
+        ("WI-FI_WARRIOR", min(1.0, state.total_nodes / 1000), "Find 1,000 nodes", 1000),
+        ("BT_STALKER", min(1.0, state.total_bt / 100), "Track 100 BT devices", 100),
+        ("ROAD_TRIP", min(1.0, state.total_wardrive_s / 3600), "1 hour of wardriving", 3600),
+        ("SHADOW", min(1.0, state.total_deauths / 50), "Perform 50 deauths", 50),
+        ("HONEY_POT_MASTER", min(1.0, state.total_honeypot_creds / 10), "Capture 10 credentials", 10),
+        ("UPTIME_JUNKIE", min(1.0, state.max_uptime_s / 86400), "24 hours uptime", 86400),
     ]
+    out = []
+    for key, prog, desc, goal in defs:
+        unlocked = key in state.unlocked_milestones
+        out.append((key, prog, desc, unlocked))
+    return out
+
+def _check_milestones(state: UserState):
+    milestones = get_milestones(state)
     
-    for key, condition, msg in milestones:
-        if condition and key not in state.unlocked_milestones:
+    for key, prog, desc, unlocked in milestones:
+        if prog >= 1.0 and not unlocked:
             state.unlocked_milestones.append(key)
             if _APP_REF:
                 _APP_REF.toast(f"ACHIEVEMENT: {key}")
                 _APP_REF.play_notification()
+                if hasattr(_APP_REF, "monster"):
+                    _APP_REF.monster.set_state("HAPPY")
 
 def report_handshake():
     state = _load()
     state.total_handshakes += 1
     _save(state)
+    if _APP_REF and hasattr(_APP_REF, "monster"):
+        _APP_REF.monster.set_state("HAPPY")
     add_xp(100)
 
 def report_node(is_bt: bool = False):
@@ -131,6 +148,24 @@ def report_node(is_bt: bool = False):
     _save(state)
     add_xp(xp)
 
+def report_deauth():
+    state = _load()
+    state.total_deauths += 1
+    _save(state)
+    add_xp(20)
+
+def report_honeypot_cred():
+    state = _load()
+    state.total_honeypot_creds += 1
+    _save(state)
+    add_xp(150)
+
+def report_uptime(seconds: float):
+    state = _load()
+    if seconds > state.max_uptime_s:
+        state.max_uptime_s = seconds
+    _save(state)
+
 def report_wardrive_time(seconds: float):
     state = _load()
     state.total_wardrive_s += seconds
@@ -138,3 +173,4 @@ def report_wardrive_time(seconds: float):
     # 1 XP per minute
     if seconds > 60:
         add_xp(int(seconds / 60))
+
