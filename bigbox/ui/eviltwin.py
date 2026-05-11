@@ -6,6 +6,8 @@ Wraps `bigbox/eviltwin.py` (orchestrator) and `bigbox/captive_portal.py`
   PICK_IFACE     — list AP-capable wlan ifaces (filtered via iw list)
   PICK_TARGET    — start passive scan; A picks an SSID, X opens the
                    on-screen keyboard for a manual SSID
+  PICK_MODE      — select "Captive Portal" or "Transparent Proxy"
+  PICK_CAMPAIGN  — for Captive Portal mode, select the login page theme
   CONFIRM        — red modal warning that authorized targets only
   RUNNING        — clients connected, creds captured, uptime, hostapd
                    liveness
@@ -33,6 +35,7 @@ from bigbox.ui.section import SectionContext
 
 PHASE_PICK_IFACE = "iface"
 PHASE_PICK_TARGET = "target"
+PHASE_PICK_MODE = "mode"
 PHASE_PICK_CAMPAIGN = "campaign"
 PHASE_CONFIRM = "confirm"
 PHASE_RUNNING = "running"
@@ -143,6 +146,8 @@ class EvilTwinView:
         self.selected_ssid: str | None = None
         self.selected_channel: int = 6
         self.selected_campaign: str = "generic"
+        self.is_proxy_mode = False
+        self.mode_cursor = 0
 
         # Running session
         self.session: et.EvilTwinSession | None = None
@@ -152,6 +157,7 @@ class EvilTwinView:
         self.last_creds_seen = 0
         self.new_creds_alert_timer = 0.0
         self.alert_chime_played = False
+        self.last_clients_seen = 0
 
     # ---------- helpers ----------
     def _start_scan(self) -> None:
@@ -176,7 +182,7 @@ class EvilTwinView:
             if val:
                 self.selected_ssid = val.strip()
                 self.selected_channel = 6
-                self.phase = PHASE_CONFIRM
+                self.phase = PHASE_PICK_MODE
         ctx.get_input("Target SSID (manual)", _on_input)
 
     def _start_session(self) -> None:
@@ -187,6 +193,7 @@ class EvilTwinView:
             iface=self.selected_iface,
             ssid=self.selected_ssid,
             channel=self.selected_channel or 6,
+            is_proxy=self.is_proxy_mode,
             campaign=self.selected_campaign,
         )
 
@@ -196,8 +203,9 @@ class EvilTwinView:
                 self.status_msg = msg
                 self.phase = PHASE_RUNNING
                 from bigbox import background as _bg
+                mode_label = "PROXY" if self.is_proxy_mode else "PORTAL"
                 _bg.register("eviltwin",
-                             f"EvilTwin AP '{self.selected_ssid}' "
+                             f"EvilTwin {mode_label} '{self.selected_ssid}' "
                              f"({self.selected_iface})",
                              "Wireless", stop=self._stop_session)
             else:
@@ -250,7 +258,6 @@ class EvilTwinView:
                 self._start_scan()
                 return
             if ev.button is Button.Y:
-                # Manual SSID via on-screen keyboard
                 self._open_manual_ssid(ctx)
                 return
             if not self.aps:
@@ -265,7 +272,22 @@ class EvilTwinView:
                 ap = self.aps[self.ap_cursor]
                 self.selected_ssid = ap.ssid
                 self.selected_channel = ap.channel or 6
-                self.phase = PHASE_PICK_CAMPAIGN
+                self.phase = PHASE_PICK_MODE
+            return
+
+        if self.phase == PHASE_PICK_MODE:
+            if ev.button is Button.UP:
+                self.mode_cursor = (self.mode_cursor - 1) % 2
+            elif ev.button is Button.DOWN:
+                self.mode_cursor = (self.mode_cursor + 1) % 2
+            elif ev.button is Button.A:
+                self.is_proxy_mode = (self.mode_cursor == 1)
+                if self.is_proxy_mode:
+                    self.phase = PHASE_CONFIRM
+                else:
+                    self.phase = PHASE_PICK_CAMPAIGN
+            elif ev.button is Button.B:
+                self.phase = PHASE_PICK_TARGET
             return
 
         if self.phase == PHASE_PICK_CAMPAIGN:
@@ -280,14 +302,14 @@ class EvilTwinView:
             elif ev.button is Button.A:
                 self.phase = PHASE_CONFIRM
             elif ev.button is Button.B:
-                self.phase = PHASE_PICK_TARGET
+                self.phase = PHASE_PICK_MODE
             return
 
         if self.phase == PHASE_CONFIRM:
             if ev.button is Button.A:
                 self._start_session()
             elif ev.button is Button.B:
-                self.phase = PHASE_PICK_TARGET
+                self.phase = PHASE_PICK_MODE
             return
 
         if self.phase == PHASE_RUNNING:
@@ -299,7 +321,6 @@ class EvilTwinView:
             if ev.button is Button.B:
                 self.dismissed = True
             elif ev.button is Button.A:
-                # Spin up another session against the same target
                 self.error_msg = ""
                 if self.selected_ssid and self.selected_iface:
                     self._start_session()
@@ -341,6 +362,9 @@ class EvilTwinView:
             self._render_iface(surf, head_h)
         elif self.phase == PHASE_PICK_TARGET:
             self._render_target(surf, head_h, foot_h)
+        elif self.phase == PHASE_PICK_MODE:
+            self._render_target(surf, head_h, foot_h) # backdrop
+            self._render_mode(surf)
         elif self.phase == PHASE_PICK_CAMPAIGN:
             self._render_target(surf, head_h, foot_h)  # backdrop
             self._render_campaign(surf)
@@ -357,6 +381,8 @@ class EvilTwinView:
             return "A: Use  B: Back"
         if self.phase == PHASE_PICK_TARGET:
             return "A: Target  X: Rescan  Y: Manual  B: Back"
+        if self.phase == PHASE_PICK_MODE:
+            return "A: Select  B: Back"
         if self.phase == PHASE_PICK_CAMPAIGN:
             return "A: Select Campaign  B: Back"
         if self.phase == PHASE_CONFIRM:
@@ -444,6 +470,39 @@ class EvilTwinView:
             pygame.draw.rect(surf, theme.DIVIDER, (bar_x, list_y, 3, list_h))
             pygame.draw.rect(surf, theme.ACCENT, (bar_x, thumb_y, 3, thumb_h))
 
+    def _render_mode(self, surf: pygame.Surface) -> None:
+        box_w, box_h = 500, 200
+        bx = (theme.SCREEN_W - box_w) // 2
+        by = (theme.SCREEN_H - box_h) // 2
+        overlay = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))
+        surf.blit(overlay, (0, 0))
+        pygame.draw.rect(surf, theme.BG, (bx, by, box_w, box_h), border_radius=10)
+        pygame.draw.rect(surf, theme.ACCENT, (bx, by, box_w, box_h), 2, border_radius=10)
+
+        f_title = pygame.font.Font(None, 30)
+        f_body = pygame.font.Font(None, 24)
+        f_small = pygame.font.Font(None, 18)
+        
+        title = f_title.render("SELECT OPERATION MODE", True, theme.ACCENT)
+        surf.blit(title, (bx + box_w // 2 - title.get_width() // 2, by + 16))
+
+        modes = [
+            ("Captive Portal", "Phish for credentials (no internet)"),
+            ("Transparent Proxy", "Sniff traffic (internet forwarding)")
+        ]
+        
+        for i, (name, desc) in enumerate(modes):
+            sel = (i == self.mode_cursor)
+            rect = pygame.Rect(bx + 30, by + 60 + i * 55, box_w - 60, 45)
+            if sel:
+                pygame.draw.rect(surf, theme.SELECTION_BG, rect, border_radius=5)
+                pygame.draw.rect(surf, theme.ACCENT, rect, 2, border_radius=5)
+            
+            color = theme.ACCENT if sel else theme.FG
+            surf.blit(f_body.render(name, True, color), (rect.x + 15, rect.y + 5))
+            surf.blit(f_small.render(desc, True, theme.FG_DIM), (rect.x + 15, rect.y + 25))
+
     def _render_campaign(self, surf: pygame.Surface) -> None:
         from bigbox.captive_portal import TEMPLATES
         box_w, box_h = 500, 300
@@ -498,12 +557,21 @@ class EvilTwinView:
             True, theme.FG)
         surf.blit(target, (bx + box_w // 2 - target.get_width() // 2, by + 56))
 
-        msgs = [
-            "This will impersonate the target SSID, capture connecting",
-            "clients via DHCP, and present a fake login page that logs",
-            "credentials to loot/captive/. Authorized targets only —",
-            "running this against networks you don't own is illegal.",
-        ]
+        if self.is_proxy_mode:
+            msgs = [
+                "Mode: TRANSPARENT PROXY (Sniffing + Internet)",
+                "This will route victim traffic to the real internet via",
+                "your default gateway. All unencrypted traffic will be",
+                "logged to bettercap logs. Authorized targets only.",
+            ]
+        else:
+            msgs = [
+                "Mode: CAPTIVE PORTAL (Credential Phishing)",
+                "This will capture connecting clients via DHCP and",
+                "present a fake login page that logs credentials to",
+                "loot/captive/. Authorized targets only.",
+            ]
+            
         for i, msg in enumerate(msgs):
             ms = f_body.render(msg, True, theme.FG_DIM)
             surf.blit(ms, (bx + 24, by + 96 + i * 24))
@@ -524,22 +592,25 @@ class EvilTwinView:
         f_small = pygame.font.Font(None, 20)
         f_tiny = pygame.font.Font(None, 16)
 
-        # 1. NEW CREDENTIALS ALERT
-        current_creds_count = sess.creds_captured()
-        if current_creds_count > self.last_creds_seen:
-            self.last_creds_seen = current_creds_count
-            self.new_creds_alert_timer = time.time() + 5.0 # Show alert for 5s
-            self._play_alert_chime(is_creds=True)
+        # Alerts only for portal mode
+        if not self.is_proxy_mode:
+            # 1. NEW CREDENTIALS ALERT
+            current_creds_count = sess.creds_captured()
+            if current_creds_count > self.last_creds_seen:
+                self.last_creds_seen = current_creds_count
+                self.new_creds_alert_timer = time.time() + 5.0 # Show alert for 5s
+                self._play_alert_chime(is_creds=True)
 
         # 2. NEW CLIENT ALERT
         current_clients = sess.clients_connected()
-        if current_clients > getattr(self, "last_clients_seen", 0):
+        if current_clients > self.last_clients_seen:
             self.last_clients_seen = current_clients
             self._play_alert_chime(is_creds=False)
 
         # SSID banner
+        mode_str = "PROXY" if self.is_proxy_mode else "PORTAL"
         banner = f_med.render(
-            f"AP: {sess.ssid}  iface {sess.iface}  ch{sess.channel}",
+            f"{mode_str} AP: {sess.ssid}  iface {sess.iface}  ch{sess.channel}",
             True, theme.ACCENT if running else theme.ERR)
         surf.blit(banner, (theme.PADDING, head_h + 12))
 
@@ -554,37 +625,57 @@ class EvilTwinView:
         surf.blit(clients_l, (col_w // 2 - clients_l.get_width() // 2,
                               cy + clients_n.get_height() + 4))
 
-        creds_n = f_huge.render(str(current_creds_count), True, theme.WARN)
-        surf.blit(creds_n, (col_w + col_w // 2 - creds_n.get_width() // 2, cy))
-        creds_l = f_med.render("CREDS", True, theme.FG_DIM)
-        surf.blit(creds_l, (col_w + col_w // 2 - creds_l.get_width() // 2,
-                            cy + creds_n.get_height() + 4))
+        if not self.is_proxy_mode:
+            creds_n = f_huge.render(str(sess.creds_captured()), True, theme.WARN)
+            surf.blit(creds_n, (col_w + col_w // 2 - creds_n.get_width() // 2, cy))
+            creds_l = f_med.render("CREDS", True, theme.FG_DIM)
+            surf.blit(creds_l, (col_w + col_w // 2 - creds_l.get_width() // 2,
+                                cy + creds_n.get_height() + 4))
+        else:
+            # Proxy Stats from Bettercap? For now just show "SNIFFING"
+            status_t = f_huge.render("LIVE", True, theme.WARN)
+            surf.blit(status_t, (col_w + col_w // 2 - status_t.get_width() // 2, cy))
+            status_l = f_med.render("INTERCEPT", True, theme.FG_DIM)
+            surf.blit(status_l, (col_w + col_w // 2 - status_l.get_width() // 2,
+                                 cy + status_t.get_height() + 4))
 
-        # VICTIM HUD (Scrolling Ticker)
+        # VICTIM HUD / PROXY HUD
         hy = cy + 130
         pygame.draw.rect(surf, (15, 15, 25), (theme.PADDING, hy, theme.SCREEN_W - 2*theme.PADDING, 160), border_radius=5)
         pygame.draw.rect(surf, theme.DIVIDER, (theme.PADDING, hy, theme.SCREEN_W - 2*theme.PADDING, 160), 1, border_radius=5)
         
-        surf.blit(f_small.render("LIVE VICTIM LOG (HISTORY)", True, theme.ACCENT), (theme.PADDING + 10, hy + 8))
+        log_title = "BETTERCAP SNIFFER LOG" if self.is_proxy_mode else "LIVE VICTIM LOG (HISTORY)"
+        surf.blit(f_small.render(log_title, True, theme.ACCENT), (theme.PADDING + 10, hy + 8))
         
-        if sess.portal and (sess.portal.history_creds or sess.portal.history_clients):
-            log_y = hy + 35
-            # Combine and sort events
-            events = []
-            for c in sess.portal.history_creds:
-                events.append((c["ts"], f"[CRED] {c['ip']} -> {c['creds'].get('email','?')}", theme.WARN))
-            for ip in sess.portal.history_clients:
-                events.append(("", f"[CONN] {ip} joined network", theme.ACCENT))
-            
-            # Show last 5 events
-            for _, msg, col in sorted(events, reverse=True)[:5]:
-                surf.blit(f_small.render(msg[:80], True, col), (theme.PADDING + 15, log_y))
-                log_y += 22
+        log_y = hy + 35
+        if self.is_proxy_mode:
+            # Read bettercap log tail
+            try:
+                if et.BETTERCAP_LOG.exists():
+                    lines = et.BETTERCAP_LOG.read_text().splitlines()[-6:]
+                    for ln in lines:
+                        # Clean ansi escapes from bettercap
+                        clean = re.sub(r'\x1b\[[0-9;]*m', '', ln)
+                        surf.blit(f_tiny.render(clean[:110], True, theme.FG), (theme.PADDING + 15, log_y))
+                        log_y += 20
+                else:
+                    surf.blit(f_small.render("Bettercap starting...", True, theme.FG_DIM), (theme.PADDING + 20, hy + 60))
+            except: pass
         else:
-            surf.blit(f_small.render("Waiting for victims...", True, theme.FG_DIM), (theme.PADDING + 20, hy + 60))
+            if sess.portal and (sess.portal.history_creds or sess.portal.history_clients):
+                events = []
+                for c in sess.portal.history_creds:
+                    events.append((c["ts"], f"[CRED] {c['ip']} -> {c['creds'].get('email','?')}", theme.WARN))
+                for ip in sess.portal.history_clients:
+                    events.append(("", f"[CONN] {ip} joined network", theme.ACCENT))
+                for _, msg, col in sorted(events, reverse=True)[:5]:
+                    surf.blit(f_small.render(msg[:80], True, col), (theme.PADDING + 15, log_y))
+                    log_y += 22
+            else:
+                surf.blit(f_small.render("Waiting for victims...", True, theme.FG_DIM), (theme.PADDING + 20, hy + 60))
 
-        # NEW CREDENTIALS ALERT OVERLAY
-        if time.time() < self.new_creds_alert_timer:
+        # NEW CREDENTIALS ALERT OVERLAY (Portal mode only)
+        if not self.is_proxy_mode and time.time() < self.new_creds_alert_timer:
             overlay = pygame.Surface((theme.SCREEN_W, 60), pygame.SRCALPHA)
             overlay.fill((255, 100, 0, 200))
             surf.blit(overlay, (0, theme.SCREEN_H // 2 - 30))
@@ -592,8 +683,9 @@ class EvilTwinView:
             alert_t = alert_f.render("!!! NEW CREDENTIALS CAPTURED !!!", True, (255, 255, 255))
             surf.blit(alert_t, (theme.SCREEN_W // 2 - alert_t.get_width() // 2, theme.SCREEN_H // 2 - 15))
 
-        # Uptime + portal path
-        info = f"uptime {sess.uptime_s()}s   portal: 192.168.45.1:80   campaign: {sess.campaign}"
+        # Uptime info
+        upstream = f" -> {sess.internet_iface}" if sess.internet_iface else ""
+        info = f"uptime {sess.uptime_s()}s   clients: {current_clients}{upstream}"
         info_s = f_small.render(info, True, theme.FG_DIM)
         surf.blit(info_s, (theme.PADDING, theme.SCREEN_H - foot_h - 32))
 
@@ -627,14 +719,16 @@ class EvilTwinView:
         surf.blit(ts, (theme.SCREEN_W // 2 - ts.get_width() // 2, head_h + 30))
 
         if self.session:
-            wifi_count = self.session.creds_captured()
+            wifi_count = self.session.creds_captured() if not self.is_proxy_mode else 0
             client_count = self.session.clients_connected()
             lines = [
                 f"SSID:    {self.session.ssid}",
                 f"Iface:   {self.session.iface}",
+                f"Mode:    {'Transparent Proxy' if self.is_proxy_mode else 'Captive Portal'}",
                 f"Clients: {client_count}",
-                f"Creds:   {wifi_count}",
             ]
+            if not self.is_proxy_mode:
+                lines.append(f"Creds:   {wifi_count}")
         else:
             lines = []
 
