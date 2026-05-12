@@ -15,15 +15,15 @@ class Monster:
     """A highly detailed evil demon companion for the Operator."""
 
     # 10752 x 2048 sheet with 256x256 frames (42 frames per row)
-    # Row 0: Frames 0-41
-    # Row 1: Frames 42-83
-    # Row 2: Frames 84-125
-    # Row 3: Frames 126-167 (This row usually has the best side-profile)
+    # Row 0: Frames 0-41 (Direct Front View / South)
+    # Row 1: Frames 42-83 (South-West)
+    # Row 2: Frames 84-125 (West/Side)
+    # Row 3: Frames 126-167 (North-West/Back-Side)
     ANIMATIONS = {
-        "IDLE": list(range(126, 134)),     # Row 3 Side-View
-        "WALK": list(range(126, 134)),     # Row 3 Side-View
-        "HAPPY": list(range(126, 134)),    # Row 3 Side-View
-        "HURT": list(range(126, 134)),     # Row 3 Side-View
+        "IDLE": list(range(0, 8)),        # Row 0 Front-View
+        "WALK": list(range(0, 8)),        # Row 0 Front-View
+        "HAPPY": list(range(0, 8)),       # Row 0 Front-View
+        "HURT": list(range(0, 8)),        # Row 0 Front-View
     }
 
     def __init__(self):
