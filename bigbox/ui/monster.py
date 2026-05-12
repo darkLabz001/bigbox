@@ -29,7 +29,7 @@ class Monster:
     def __init__(self):
         self.frames = []
         self.frame_size = 256
-        self.display_size = 180 # Massive and detailed
+        self.display_size = 240 # Even bigger!
         self.current_state = "IDLE"
         self.frame_index = 0
         self.last_update = time.time()
