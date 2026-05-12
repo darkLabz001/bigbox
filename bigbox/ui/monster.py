@@ -14,19 +14,22 @@ from bigbox import theme
 class Monster:
     """A highly detailed evil demon companion for the Operator."""
 
-    # 512x512 sprite sheet with 8x8 frames (64x64 per frame)
-    # Row 2 is typically the clear side-view for Flare-style sheets.
+    # 10752 x 2048 sheet with 256x256 frames (42 frames per row)
+    # Row 0: Frames 0-41
+    # Row 1: Frames 42-83
+    # Row 2: Frames 84-125
+    # Row 3: Frames 126-167 (This row usually has the best side-profile)
     ANIMATIONS = {
-        "IDLE": list(range(16, 24)),       # Row 2
-        "WALK": list(range(16, 24)),       # Using Row 2 for side walk
-        "HAPPY": list(range(16, 24)),      # Placeholder using same row
-        "HURT": list(range(16, 24)),       # Placeholder using same row
+        "IDLE": list(range(126, 134)),     # Row 3 Side-View
+        "WALK": list(range(126, 134)),     # Row 3 Side-View
+        "HAPPY": list(range(126, 134)),    # Row 3 Side-View
+        "HURT": list(range(126, 134)),     # Row 3 Side-View
     }
 
     def __init__(self):
         self.frames = []
-        self.frame_size = 64
-        self.display_size = 160 # Increased size as requested
+        self.frame_size = 256
+        self.display_size = 180 # Massive and detailed
         self.current_state = "IDLE"
         self.frame_index = 0
         self.last_update = time.time()
@@ -59,19 +62,20 @@ class Monster:
                 rows = full_sheet.get_height() // self.frame_size
                 
                 self.frames = []
-                for r in range(rows):
-                    for c in range(cols):
+                # Extract frames up to Row 3 for variety
+                for r in range(min(rows, 4)):
+                    for c in range(min(cols, 42)):
                         frame_surf = pygame.Surface((self.frame_size, self.frame_size), pygame.SRCALPHA)
                         frame_surf.blit(full_sheet, (0, 0), (c * self.frame_size, r * self.frame_size, self.frame_size, self.frame_size))
                         
-                        # Scale up to a massive 160x160 for detail
+                        # High-quality scale for maximum detail
                         scaled = pygame.transform.smoothscale(frame_surf, (self.display_size, self.display_size))
                         self.frames.append(scaled)
                 
                 self._loaded = True
-                print(f"[monster] Success: Massive detailed demon loaded ({len(self.frames)} frames)")
+                print(f"[monster] Success: High-res demon loaded ({len(self.frames)} frames)")
             else:
-                print(f"[monster] Error: monster.png missing")
+                print(f"[monster] Error: monster.png missing at {img_path}")
         except Exception as e:
             print(f"[monster] Load failure: {e}")
 
@@ -114,11 +118,11 @@ class Monster:
         
         if idx < len(self.frames):
             frame = self.frames[idx]
-            # Always force side view by ensuring we are looking the right way
+            # Ensure it's facing the center mass of the sidebar
             if self.current_x_direction() < 0:
                 frame = pygame.transform.flip(frame, True, False)
             
-            # Center mass position
+            # Draw with proper centering
             surf.blit(frame, (self.pos[0] - self.display_size // 2, self.pos[1] - self.display_size // 2))
 
     def current_x_direction(self):
