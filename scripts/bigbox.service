@@ -2,6 +2,11 @@
 Description=bigbox pentesting firmware
 After=multi-user.target network.target
 ConditionPathExists=/opt/bigbox/bigbox/__main__.py
+# If we crash 5 times within 5 minutes, stop trying — prevents a tight
+# flickering boot loop when the display/GPU isn't ready and lets a human
+# recover the device over SSH.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -25,7 +30,7 @@ StandardOutput=journal
 StandardError=journal
 
 Restart=on-failure
-RestartSec=2
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

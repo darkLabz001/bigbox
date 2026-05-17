@@ -31,17 +31,34 @@ class UpdateChecker:
     def _check_now(self) -> bool:
         """Runs git fetch and compares local HEAD to remote."""
         try:
-            # 1. Fetch remote changes without merging. Increased timeout for slow connections.
-            subprocess.run(["git", "fetch", "origin"], 
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
-            
-            # 2. Check if main is behind origin/main
-            # Use 'main@{u}' to check against upstream tracking branch correctly
+            # Retry git fetch with a short timeout: mobile hotspots and weak
+            # signal commonly stall fetches, and a single 60s blocking call
+            # would freeze the update thread between cycles.
+            fetched = False
+            for attempt in range(3):
+                try:
+                    subprocess.run(
+                        ["git", "fetch", "origin"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=15,
+                        check=True,
+                    )
+                    fetched = True
+                    break
+                except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+                    if self._stop.wait(2 * (attempt + 1)):
+                        return False
+            if not fetched:
+                print("[update_checker] fetch failed after retries")
+                return False
+
             res = subprocess.check_output(
                 ["git", "rev-list", "--count", "main..origin/main"],
-                text=True, stderr=subprocess.DEVNULL
+                text=True, stderr=subprocess.DEVNULL,
+                timeout=10,
             ).strip()
-            
+
             count = int(res)
             if count > 0:
                 print(f"[update_checker] found {count} new commits")

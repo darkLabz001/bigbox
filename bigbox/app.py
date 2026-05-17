@@ -283,6 +283,16 @@ class App:
         # /dev/fb0 with no DRM device). Either can be overridden by an
         # explicit SDL_VIDEODRIVER env var.
         if not self.dev_mode and not os.environ.get("DISPLAY"):
+            # On cold boot the GPU/framebuffer node may not exist yet;
+            # poll briefly so we don't crash and trigger a service restart loop.
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                if (os.path.exists("/dev/dri/card0")
+                        or os.path.exists("/dev/dri/card1")
+                        or os.path.exists("/dev/fb0")):
+                    break
+                time.sleep(0.5)
+
             if "SDL_VIDEODRIVER" not in os.environ:
                 if os.path.exists("/dev/dri/card0") or os.path.exists("/dev/dri/card1"):
                     os.environ["SDL_VIDEODRIVER"] = "kmsdrm"
@@ -290,8 +300,19 @@ class App:
                     os.environ["SDL_VIDEODRIVER"] = "fbcon"
                     os.environ.setdefault("SDL_FBDEV", "/dev/fb0")
 
-        # joystick doesn't sink the whole startup.
-        pygame.display.init()
+        # Retry display init: SDL can race driver readiness on first boot.
+        last_err: Exception | None = None
+        for attempt in range(5):
+            try:
+                pygame.display.init()
+                break
+            except pygame.error as e:
+                last_err = e
+                pygame.display.quit()
+                time.sleep(1.0 * (attempt + 1))
+        else:
+            raise RuntimeError(f"pygame.display.init failed after retries: {last_err}")
+
         pygame.font.init()
 
         # flags = 0 if self.dev_mode else pygame.FULLSCREEN
@@ -786,9 +807,14 @@ class App:
             if now - self._last_vol_enforce > 10:
                 self._last_vol_enforce = now
                 try:
-                    # Force Card 1 (Headphones) to 100% and unmute
-                    subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"], capture_output=True)
-                except:
+                    # Fire-and-forget: amixer occasionally hangs when the card is busy,
+                    # and blocking the render loop for that is worse than missing one nudge.
+                    subprocess.Popen(
+                        ["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception:
                     pass
 
             screen.fill(theme.BG)
