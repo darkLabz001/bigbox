@@ -337,6 +337,17 @@
     let activeTab = 'dashboard';
     let map, mapMarker;
 
+    // Escape strings that get spliced into innerHTML / onclick handlers.
+    // Anything reaching the browser from filenames, shop catalog, or activity
+    // log entries can contain quotes or angle brackets and would otherwise
+    // break out of the surrounding template-literal context.
+    function escHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function escAttr(s) { return escHtml(s); }
+
     function showTab(id) {
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -370,7 +381,7 @@
             document.getElementById('val-ssid').innerText = data.wifi.ssid || 'OFFLINE';
             document.getElementById('val-wifi').innerText = data.wifi.signal || '--';
             document.getElementById('bar-wifi').style.width = (data.wifi.signal || 0) + '%';
-        } catch(e) {}
+        } catch(e) { console.error('refreshStats', e); }
     }
 
     async function refreshActivity() {
@@ -381,10 +392,10 @@
             log.innerHTML = data.reverse().map(e => `
                 <div class="activity-entry">
                     <span class="activity-ts">[${new Date(e.ts*1000).toLocaleTimeString()}]</span>
-                    ${e.message}
+                    ${escHtml(e.message)}
                 </div>
             `).join('');
-        } catch(e) {}
+        } catch(e) { console.error('refreshActivity', e); }
     }
 
     async function refreshGPS() {
@@ -409,7 +420,7 @@
                 status.innerText = 'WAITING FOR FIX';
                 status.style.color = 'var(--err)';
             }
-        } catch(e) {}
+        } catch(e) { console.error('refreshGPS', e); }
     }
 
     function initMap() {
@@ -426,11 +437,11 @@
             if (data.length === 0) { list.innerHTML = '<div style="color:var(--fg-dim); font-size: 11px; text-align: center; padding: 20px;">NOMINAL</div>'; return; }
             list.innerHTML = data.map(t => `
                 <div class="task-item">
-                    <div class="task-info"><span class="task-label">${t.label}</span><span class="task-meta">${t.section} • ${formatAge(t.age_seconds)}</span></div>
-                    <button class="task-stop" onclick="stopTask('${t.id}')">STOP</button>
+                    <div class="task-info"><span class="task-label">${escHtml(t.label)}</span><span class="task-meta">${escHtml(t.section)} • ${formatAge(t.age_seconds)}</span></div>
+                    <button class="task-stop" onclick="stopTask('${escAttr(t.id)}')">STOP</button>
                 </div>
             `).join('');
-        } catch(e) {}
+        } catch(e) { console.error('refreshTasks', e); }
     }
 
     function formatAge(s) { if (s < 60) return Math.floor(s) + 's'; if (s < 3600) return Math.floor(s/60) + 'm'; return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm'; }
@@ -458,11 +469,11 @@
         const romR = await fetch('/roms'); const roms = await romR.json();
         document.getElementById('romList').innerHTML = Object.entries(roms).map(([sys, files]) => {
             if (sys === 'ps1-bios') return '';
-            return files.map(f => `<div class="list-item"><span><small style="color:var(--fg-dim)">[${sys.toUpperCase()}]</small> ${f}</span><button class="task-stop" onclick="deleteRom('${sys}','${f}')">DEL</button></div>`).join('');
+            return files.map(f => `<div class="list-item"><span><small style="color:var(--fg-dim)">[${escHtml(sys.toUpperCase())}]</small> ${escHtml(f)}</span><button class="task-stop" onclick="deleteRom('${escAttr(sys)}','${escAttr(f)}')">DEL</button></div>`).join('');
         }).join('');
         const medR = await fetch('/media'); const media = await medR.json();
         document.getElementById('mediaList').innerHTML = Object.entries(media).map(([cat, files]) => {
-            return files.map(f => `<div class="list-item"><span><small style="color:var(--fg-dim)">[${cat.toUpperCase()}]</small> ${f}</span></div>`).join('');
+            return files.map(f => `<div class="list-item"><span><small style="color:var(--fg-dim)">[${escHtml(cat.toUpperCase())}]</small> ${escHtml(f)}</span></div>`).join('');
         }).join('');
     }
     document.getElementById('romInput').onchange = e => upload(e.target.files[0], 'roms', document.getElementById('romSystem').value);
@@ -476,7 +487,7 @@
 
     async function refreshWardrive() {
         const r = await fetch('/wardrive/files'); const data = await r.json();
-        document.getElementById('wardriveList').innerHTML = data.files.map(f => `<div class="list-item"><span>${f.name} <small style="color:var(--fg-dim)">(${(f.size/1024).toFixed(0)}K)</small></span><button class="action-btn" style="padding: 2px 8px; font-size: 10px;" onclick="uploadWardrive('${f.name}', this)">RELAY</button></div>`).join('') || '<div style="color:var(--fg-dim); padding:10px;">EMPTY</div>';
+        document.getElementById('wardriveList').innerHTML = data.files.map(f => `<div class="list-item"><span>${escHtml(f.name)} <small style="color:var(--fg-dim)">(${(f.size/1024).toFixed(0)}K)</small></span><button class="action-btn" style="padding: 2px 8px; font-size: 10px;" onclick="uploadWardrive('${escAttr(f.name)}', this)">RELAY</button></div>`).join('') || '<div style="color:var(--fg-dim); padding:10px;">EMPTY</div>';
     }
     async function uploadWardrive(name, btn) { btn.innerText = '...'; const r = await fetch('/wardrive/upload/' + encodeURIComponent(name), { method: 'POST' }); btn.innerText = r.ok ? 'OK' : 'FAIL'; }
 
@@ -484,8 +495,8 @@
         const r = await fetch('/shop'); const data = await r.json();
         document.getElementById('shopList').innerHTML = data.items.map(it => `
             <div class="list-item">
-                <div class="task-info"><span class="task-label">${it.name} ${it.installed ? '<small style="color:var(--ok)">[INSTALLED]</small>' : ''}</span><span class="task-meta">${it.summary}</span></div>
-                <button class="action-btn" style="padding: 2px 10px; font-size: 10px;" onclick="${it.installed ? 'uninstall' : 'install'}Shop('${it.id}')">${it.installed ? 'PURGE' : 'DEPLOY'}</button>
+                <div class="task-info"><span class="task-label">${escHtml(it.name)} ${it.installed ? '<small style="color:var(--ok)">[INSTALLED]</small>' : ''}</span><span class="task-meta">${escHtml(it.summary)}</span></div>
+                <button class="action-btn" style="padding: 2px 10px; font-size: 10px;" onclick="${it.installed ? 'uninstall' : 'install'}Shop('${escAttr(it.id)}')">${it.installed ? 'PURGE' : 'DEPLOY'}</button>
             </div>
         `).join('');
     }
@@ -495,18 +506,20 @@
 
     async function checkAuth() {
         const wigle = await (await fetch('/wigle/status')).json();
-        document.getElementById('wigleAuth').innerHTML = wigle.logged_in ? `LOGGED_IN: <b>${wigle.api_name}</b> <button class="task-stop" onclick="logout('wigle')">DISCONNECT</button>` : 'OFFLINE';
+        document.getElementById('wigleAuth').innerHTML = wigle.logged_in ? `LOGGED_IN: <b>${escHtml(wigle.api_name)}</b> <button class="task-stop" onclick="logout('wigle')">DISCONNECT</button>` : 'OFFLINE';
         const ra = await (await fetch('/retroachievements/status')).json();
-        document.getElementById('raAuth').innerHTML = ra.logged_in ? `LOGGED_IN: <b>${ra.username}</b> <button class="task-stop" onclick="logout('ra')">DISCONNECT</button>` : 'OFFLINE';
+        document.getElementById('raAuth').innerHTML = ra.logged_in ? `LOGGED_IN: <b>${escHtml(ra.username)}</b> <button class="task-stop" onclick="logout('ra')">DISCONNECT</button>` : 'OFFLINE';
     }
     async function logout(sys) { await fetch(sys === 'wigle' ? '/wigle/logout' : '/retroachievements/logout', { method: 'POST' }); checkAuth(); }
     async function refreshWebhook() { const data = await (await fetch('/webhook/status')).json(); document.getElementById('webhookUrl').value = data.url; }
     async function saveWebhook() { const fd = new FormData(); fd.append('url', document.getElementById('webhookUrl').value); await fetch('/webhook/save', { method: 'POST', body: fd }); }
 
-    setInterval(refreshStats, 2000); 
-    setInterval(refreshTasks, 3000);
-    setInterval(refreshActivity, 2000);
-    setInterval(refreshGPS, 2000);
+    // Throttled polling — 2s × 4 = 2 req/sec is wasteful on weak networks
+    // and battery; widen now that the dashboard isn't strictly tactical.
+    setInterval(refreshStats, 5000);
+    setInterval(refreshTasks, 5000);
+    setInterval(refreshActivity, 5000);
+    setInterval(refreshGPS, 3000);
     refreshStats(); refreshTasks(); refreshActivity(); refreshGPS();
 </script>
 

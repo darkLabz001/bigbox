@@ -35,6 +35,20 @@ if TYPE_CHECKING:
 
 app = FastAPI()
 
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    resp = await call_next(request)
+    # Defense in depth: stop the dashboard from being framed by another origin,
+    # block MIME sniffing on uploads, and keep referer leakage down. CSP is
+    # intentionally permissive (the page pulls Leaflet + xterm from CDNs) but
+    # blocks inline scripts that aren't ours.
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
+
+
 @app.get("/system/stats")
 async def system_stats():
     return system_mod.get_system_stats()
