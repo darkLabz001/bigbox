@@ -164,41 +164,18 @@ class WifiAttackView:
 
     # ---------- monitor mode lifecycle ----------
     def _enable_monitor(self, iface: str) -> bool:
+        # Route through hardware.enable_monitor so the safety guard
+        # (refuse to monitor-mode the interface providing internet) and the
+        # Alfa-preferred fallback both apply here, not just in wifi_lite.
         self.original_iface = iface
         self.phase = PHASE_ENABLING
-        self.status_msg = f"airmon-ng start {iface}..."
-        try:
-            out = subprocess.run(
-                ["airmon-ng", "start", iface],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, timeout=15,
-            )
-        except FileNotFoundError:
-            self.status_msg = "airmon-ng not installed"
+        self.status_msg = f"enabling monitor on {iface}..."
+        mon = hardware.enable_monitor(iface)
+        if not mon:
+            self.status_msg = hardware.last_monitor_error() or "monitor mode failed"
             self.phase = PHASE_PICK_IFACE
             return False
-        except subprocess.TimeoutExpired:
-            self.status_msg = "airmon-ng timed out"
-            self.phase = PHASE_PICK_IFACE
-            return False
-        # airmon-ng stdout includes "monitor mode vif enabled for [phyN]<iface> on [phyN]<iface>mon"
-        m = re.search(r"monitor mode\s+vif enabled for[^\]]+\]\S+\s+on\s+\[(?:[^\]]+)\]?(\S+)",
-                      out.stdout)
-        if not m:
-            # Older airmon-ng: "(monitor mode enabled on <iface>mon)"
-            m = re.search(r"\(monitor mode enabled on (\S+?)\)", out.stdout)
-        if m:
-            self.mon_iface = m.group(1)
-        else:
-            # Fallback: scan iw dev for any "*mon" or new monitor interface.
-            for it in _list_wlan_ifaces():
-                if it.is_monitor:
-                    self.mon_iface = it.name
-                    break
-        if not self.mon_iface:
-            self.status_msg = "monitor mode failed (see iw dev)"
-            self.phase = PHASE_PICK_IFACE
-            return False
+        self.mon_iface = mon
         return True
 
     def _disable_monitor(self) -> None:

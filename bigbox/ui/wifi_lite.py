@@ -114,8 +114,10 @@ class _MonitorModeView:
         # switch the existing iface in place.
         mon = hardware.enable_monitor(iface)
         if not mon:
-            self.status_msg = ("monitor mode failed — adapter may not "
-                               "support it (try a different one)")
+            self.status_msg = hardware.last_monitor_error() or (
+                "monitor mode failed — adapter may not "
+                "support it (try a different one)"
+            )
             return False
         self.mon_iface = mon
         return True

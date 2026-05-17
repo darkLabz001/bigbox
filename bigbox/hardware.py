@@ -316,11 +316,54 @@ def list_monitor_capable_clients() -> list[str]:
     return usb_capable + internal_capable
 
 
-def enable_monitor(iface: str, timeout: float = 15.0) -> str | None:
+# Set by enable_monitor() on failure so views can surface a specific
+# message ("plug in an Alfa") instead of the generic "monitor mode failed".
+_last_monitor_error: str | None = None
+
+
+def last_monitor_error() -> str | None:
+    return _last_monitor_error
+
+
+def is_internet_iface(iface: str) -> bool:
+    """True if `iface` is currently providing the default route."""
+    return iface == get_internet_iface()
+
+
+def preferred_monitor_iface() -> str | None:
+    """Pick the best adapter for monitor mode.
+
+    Priority:
+      1. A USB Alfa adapter if plugged in (preferred per user request — keeps
+         the Pi's onboard radio free for the normal managed connection).
+      2. The first monitor-capable client that is NOT currently providing
+         the default route, so we never tear down the user's internet.
+      3. None (caller should surface "plug in an Alfa" to the user).
+    """
+    alfas = list_alfa_ifaces()
+    for a in alfas:
+        if iface_supports_monitor(a):
+            return a
+
+    inet = get_internet_iface()
+    for c in list_wifi_clients():
+        if c == inet:
+            continue
+        if iface_supports_monitor(c):
+            return c
+    return None
+
+
+def enable_monitor(iface: str, timeout: float = 15.0, force: bool = False) -> str | None:
     """Put `iface` into monitor mode and return the resulting iface name.
 
-    Three-step strategy. Returns the monitor iface name on success, or
-    None if every path failed. Robust against:
+    Refuses to monitor-mode whatever interface is currently providing the
+    default route unless `force=True` — putting the Pi's only uplink into
+    monitor mode kills SSH, NTP, the update checker, and anything else
+    that needs the network. Plug in an Alfa instead.
+
+    Three-step strategy on the chosen iface. Returns the monitor iface name
+    on success, or None if every path failed. Robust against:
       - NetworkManager re-claiming the radio mid-setup
       - airmon-ng output format variance across BlueZ versions
       - airmon-ng-less systems
@@ -336,6 +379,25 @@ def enable_monitor(iface: str, timeout: float = 15.0) -> str | None:
        airmon-ng create a *mon vif but will let you flip the existing
        iface into monitor mode directly.
     """
+    global _last_monitor_error
+    _last_monitor_error = None
+
+    if not force and is_internet_iface(iface):
+        alt = preferred_monitor_iface()
+        if alt and alt != iface:
+            _last_monitor_error = (
+                f"{iface} is providing internet — using {alt} instead"
+            )
+            print(f"[hardware] {_last_monitor_error}")
+            iface = alt
+        else:
+            _last_monitor_error = (
+                f"refusing to put {iface} in monitor mode — it's providing "
+                "internet. plug in an Alfa adapter or pass force=True."
+            )
+            print(f"[hardware] {_last_monitor_error}")
+            return None
+
     if shutil.which("nmcli"):
         _run(["nmcli", "device", "set", iface, "managed", "no"], timeout=5)
 
@@ -363,6 +425,7 @@ def enable_monitor(iface: str, timeout: float = 15.0) -> str | None:
         # iface keeps its name when switched in-place
         if iface in list_monitor_ifaces():
             return iface
+    _last_monitor_error = f"every path failed for {iface}"
     return None
 
 
