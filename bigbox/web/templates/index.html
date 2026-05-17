@@ -251,7 +251,6 @@
                 <button class="action-btn" onclick="doPoweroff()">Power Off</button>
                 <button class="action-btn" onclick="showTab('terminal')">Root Shell</button>
                 <button class="action-btn" onclick="refreshStats()">Sync Vitals</button>
-                <button class="action-btn" style="grid-column: span 2;" onclick="doLogout()">Sign Out</button>
             </div>
         </div>
     </div>
@@ -338,23 +337,6 @@
 <script>
     let activeTab = 'dashboard';
     let map, mapMarker;
-
-    // 401-redirect wrapper: if the session cookie expires or the device is
-    // re-flashed, every fetch starts returning 401 — bounce to /auth/login
-    // once instead of silently rendering "--" forever.
-    const _origFetch = window.fetch.bind(window);
-    window.fetch = async (...args) => {
-        const r = await _origFetch(...args);
-        if (r.status === 401 && !location.pathname.startsWith('/auth/')) {
-            location.href = '/auth/login';
-        }
-        return r;
-    };
-
-    async function doLogout() {
-        await fetch('/auth/logout', { method: 'POST' });
-        location.href = '/auth/login';
-    }
 
     // Escape strings that get spliced into innerHTML / onclick handlers.
     // Anything reaching the browser from filenames, shop catalog, or activity

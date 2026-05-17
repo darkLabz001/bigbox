@@ -14,7 +14,7 @@ import termios
 import struct
 import subprocess
 from fastapi import FastAPI, Request, Response, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
@@ -29,7 +29,6 @@ from bigbox.gps import GPSReader
 from bigbox import system as system_mod
 from bigbox import background as bg_mod
 from bigbox import activity as activity_mod
-from bigbox.web import auth as web_auth
 
 if TYPE_CHECKING:
     from bigbox.app import App
@@ -37,94 +36,16 @@ if TYPE_CHECKING:
 app = FastAPI()
 
 
-# Paths that bypass auth: the login page itself, the phone GPS link the
-# user shares deliberately, and the streaming MJPEG mirror (the WebSocket
-# terminal and dashboard are still gated).
-_AUTH_EXEMPT_PREFIXES = ("/auth/", "/gps/link", "/gps/phone")
-
-
 @app.middleware("http")
-async def _security_and_auth(request: Request, call_next):
-    path = request.url.path
-    is_exempt = any(path == p or path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES)
-    if not is_exempt and not web_auth.check_request(request):
-        # Browser hitting the dashboard → bounce to login. Anything else
-        # (XHR, fetch, curl) → 401 so the JS wrapper can redirect cleanly.
-        accept = request.headers.get("accept", "")
-        if request.method == "GET" and "text/html" in accept:
-            return RedirectResponse(url="/auth/login", status_code=303)
-        return JSONResponse({"error": "unauthorized"}, status_code=401)
-
+async def _security_headers(request: Request, call_next):
     resp = await call_next(request)
     # Defense in depth: stop the dashboard from being framed by another origin,
-    # block MIME sniffing on uploads, and keep referer leakage down.
+    # block MIME sniffing on uploads, and keep referer leakage down. CSP is
+    # intentionally permissive (the page pulls Leaflet + xterm from CDNs) but
+    # blocks inline scripts that aren't ours.
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
-    return resp
-
-
-_LOGIN_PAGE = """<!doctype html>
-<html><head><meta charset="utf-8"><title>bigbox login</title>
-<style>
-  body { background: #06070b; color: #cfe; font-family: monospace;
-         display: flex; align-items: center; justify-content: center;
-         height: 100vh; margin: 0; }
-  form { background: #0d1118; padding: 24px 28px; border: 1px solid #2a3140;
-         border-radius: 4px; min-width: 280px; }
-  h1 { margin: 0 0 14px 0; font-size: 14px; color: #5ae6aa;
-       letter-spacing: 2px; }
-  input[type=password] { width: 100%; padding: 8px 10px; box-sizing: border-box;
-                         background: #000; color: #cfe; border: 1px solid #2a3140;
-                         font-family: monospace; font-size: 13px; }
-  button { margin-top: 12px; width: 100%; padding: 8px; background: #1b2a3a;
-           color: #cfe; border: 1px solid #5ae6aa; cursor: pointer;
-           font-family: monospace; letter-spacing: 1px; }
-  button:hover { background: #243549; }
-  .err { color: #e66; font-size: 11px; margin-top: 8px; min-height: 14px; }
-  .hint { color: #556; font-size: 10px; margin-top: 12px; line-height: 1.4; }
-</style></head><body>
-<form method="post" action="/auth/login">
-  <h1>BIGBOX // AUTH</h1>
-  <input type="password" name="token" placeholder="auth token" autofocus required>
-  <button type="submit">AUTHENTICATE</button>
-  <div class="err">__ERR__</div>
-  <div class="hint">token at /etc/bigbox/web_token on device<br>(journalctl -u bigbox to see it)</div>
-</form></body></html>"""
-
-
-def _login_html(error: str = "") -> HTMLResponse:
-    body = _LOGIN_PAGE.replace("__ERR__", error)
-    return HTMLResponse(body)
-
-
-@app.get("/auth/login", response_class=HTMLResponse)
-async def auth_login_page(request: Request):
-    if web_auth.check_request(request):
-        return RedirectResponse(url="/", status_code=303)
-    return _login_html()
-
-
-@app.post("/auth/login")
-async def auth_login(token: str = Form(...)):
-    if not web_auth.matches(token):
-        return _login_html("invalid token")
-    resp = RedirectResponse(url="/", status_code=303)
-    resp.set_cookie(
-        key=web_auth.COOKIE_NAME,
-        value=token.strip(),
-        httponly=True,
-        samesite="strict",
-        max_age=60 * 60 * 24 * 30,  # 30 days
-        path="/",
-    )
-    return resp
-
-
-@app.post("/auth/logout")
-async def auth_logout():
-    resp = JSONResponse({"status": "ok"})
-    resp.delete_cookie(web_auth.COOKIE_NAME, path="/")
     return resp
 
 
@@ -205,10 +126,6 @@ async def index(request: Request):
 
 @app.websocket("/ws/terminal")
 async def terminal_websocket(websocket: WebSocket):
-    # HTTP middleware doesn't run on WS upgrades; check the cookie inline.
-    if not web_auth.check_websocket(websocket):
-        await websocket.close(code=1008, reason="unauthorized")
-        return
     await websocket.accept()
 
     # Spawn bash in a PTY
