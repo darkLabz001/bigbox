@@ -107,6 +107,8 @@ class WardriveView:
 
         # Kismet
         self.kismet = kismet.KismetManager()
+        self._last_wifi_ts = 0
+        self._last_bt_ts = 0
 
         # Scan threads
         self._stop = False
@@ -116,6 +118,9 @@ class WardriveView:
 
         # Result
         self.result_msg = ""
+        self.show_gps_detail = False
+
+    def _init_geiger(self):
 
     def _init_geiger(self):
         try:
@@ -242,6 +247,8 @@ class WardriveView:
             self.handshake_count = 0
         self._wifi_scan_count = 0
         self._bt_scan_count = 0
+        self._last_wifi_ts = 0
+        self._last_bt_ts = 0
         self._stop = False
         
         # Start Polling Thread
@@ -356,17 +363,15 @@ class WardriveView:
             
             # WIFI Poll
             if now - last_wifi_poll >= WIFI_SCAN_INTERVAL:
-                devices = self.kismet.get_wifi_devices()
+                devices = self.kismet.get_wifi_devices(last_ts=self._last_wifi_ts)
                 if devices:
+                    max_ts = self._last_wifi_ts
                     for d in devices:
-                        # Map Kismet fields to _Observation
-                        # Kismet fields vary, but common ones:
-                        # kismet.device.base.macaddr
-                        # kismet.device.base.commonname (SSID)
-                        # kismet.device.base.signal/last_signal_dbm
-                        # kismet.device.base.crypt (Encryption)
                         mac = d.get("kismet.device.base.macaddr")
                         if not mac: continue
+                        
+                        ts = d.get("kismet.device.base.last_time", 0)
+                        if ts > max_ts: max_ts = ts
                         
                         obs = _Observation(
                             mac=mac.lower(),
@@ -377,17 +382,23 @@ class WardriveView:
                             authmode=d.get("kismet.device.base.crypt", "None")
                         )
                         self._record(obs)
+                    self._last_wifi_ts = max_ts
                     with self._lock:
                         self._wifi_scan_count += 1
                 last_wifi_poll = now
 
             # BT Poll
             if now - last_bt_poll >= BT_SCAN_INTERVAL:
-                devices = self.kismet.get_bt_devices()
+                devices = self.kismet.get_bt_devices(last_ts=self._last_bt_ts)
                 if devices:
+                    max_ts = self._last_bt_ts
                     for d in devices:
                         mac = d.get("kismet.device.base.macaddr")
                         if not mac: continue
+                        
+                        ts = d.get("kismet.device.base.last_time", 0)
+                        if ts > max_ts: max_ts = ts
+                        
                         obs = _Observation(
                             mac=mac.lower(),
                             type="BLE",
@@ -396,6 +407,7 @@ class WardriveView:
                             authmode="[BLE]"
                         )
                         self._record(obs)
+                    self._last_bt_ts = max_ts
                     with self._lock:
                         self._bt_scan_count += 1
                 last_bt_poll = now
@@ -426,6 +438,8 @@ class WardriveView:
         if self.phase == PHASE_CAPTURING:
             if ev.button in (Button.A, Button.START):
                 self._stop_capture()
+            elif ev.button is Button.X:
+                self.show_gps_detail = not self.show_gps_detail
             return
 
         if self.phase == PHASE_RESULT:
@@ -492,6 +506,9 @@ class WardriveView:
         elif self.phase == PHASE_RESULT:
             self._render_result(surf, head_h, foot_h)
 
+        if getattr(self, "show_gps_detail", False):
+            self._render_gps_detail(surf, head_h)
+
     def _hint(self) -> str:
         if self.phase == PHASE_LANDING:
             return "A: Start  Y: Phone GPS  B: Back"
@@ -500,7 +517,7 @@ class WardriveView:
         if self.phase == PHASE_PHONE_QR:
             return "B: Back"
         if self.phase == PHASE_CAPTURING:
-            return "A: Stop  B: Back"
+            return "A: Stop  X: GPS Detail  B: Back"
         if self.phase == PHASE_RESULT:
             return "A: New session  X: Upload  B: Back"
         return "B: Back"
@@ -526,6 +543,40 @@ class WardriveView:
 
         s = f.render(label, True, color)
         surf.blit(s, (theme.PADDING, y))
+
+    def _render_gps_detail(self, surf: pygame.Surface, head_h: int) -> None:
+        fix = self.gps.latest()
+        
+        panel_w, panel_h = 360, 240
+        px = (theme.SCREEN_W - panel_w) // 2
+        py = head_h + 40
+        
+        pygame.draw.rect(surf, (10, 10, 20, 220), (px, py, panel_w, panel_h), border_radius=10)
+        pygame.draw.rect(surf, theme.ACCENT, (px, py, panel_w, panel_h), 2, border_radius=10)
+        
+        f_med = pygame.font.Font(None, 28)
+        f_small = pygame.font.Font(None, 22)
+        
+        title = f_med.render("GPS STATUS (gpsd)", True, theme.ACCENT)
+        surf.blit(title, (px + 20, py + 15))
+        pygame.draw.line(surf, theme.DIVIDER, (px + 20, py + 45), (px + panel_w - 20, py + 45))
+        
+        lines = [
+            f"Fix: {'YES' if fix.has_fix else 'NO'}",
+            f"Sats: {fix.sats}",
+            f"HDOP: {fix.hdop:.2f}",
+            f"Accuracy: {fix.accuracy_m:.1f}m",
+            f"Latitude: {fix.lat:.6f}",
+            f"Longitude: {fix.lon:.6f}",
+            f"Altitude: {fix.alt_m:.1f}m",
+            f"Speed: {fix.speed_kmh:.1f} km/h",
+            f"Path: {fix.device_path}",
+            f"Time: {fix.timestamp_iso.split(' ')[1] if fix.timestamp_iso else 'N/A'}"
+        ]
+        
+        for i, ln in enumerate(lines):
+            ls = f_small.render(ln, True, theme.FG)
+            surf.blit(ls, (px + 30, py + 60 + i * 20))
 
     def _render_landing(self, surf: pygame.Surface, head_h: int) -> None:
         f_big = pygame.font.Font(None, 44)

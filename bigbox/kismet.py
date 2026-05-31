@@ -82,10 +82,16 @@ class KismetManager:
             pass
         return []
 
-    def get_wifi_devices(self) -> list[dict]:
-        """Fetch only Wi-Fi devices."""
+    def get_wifi_devices(self, last_ts: int = 0) -> list[dict]:
+        """Fetch Wi-Fi devices updated since last_ts."""
         try:
+            # We filter by 'last_time' to avoid processing the same devices repeatedly.
+            # Kismet uses Unix timestamps.
             url = f"{self.base_url}/devices/views/phydot11_accesspoints/devices.json"
+            if last_ts > 0:
+                # Kismet REST API filtering syntax
+                url += f"?filter=kismet.device.base.last_time > {last_ts}"
+            
             r = requests.get(url, timeout=2)
             if r.status_code == 200:
                 return r.json()
@@ -93,10 +99,13 @@ class KismetManager:
             pass
         return []
 
-    def get_bt_devices(self) -> list[dict]:
-        """Fetch only Bluetooth devices."""
+    def get_bt_devices(self, last_ts: int = 0) -> list[dict]:
+        """Fetch Bluetooth devices updated since last_ts."""
         try:
             url = f"{self.base_url}/devices/views/bluetooth_devices/devices.json"
+            if last_ts > 0:
+                url += f"?filter=kismet.device.base.last_time > {last_ts}"
+                
             r = requests.get(url, timeout=2)
             if r.status_code == 200:
                 return r.json()
