@@ -51,13 +51,19 @@ class UpdateView(ResultView):
         if status_match:
             self.status_msg = status_match.group(1).strip().upper()
 
+        if "[exit 0]" in text:
+            self.progress = 1.0
+            self.target_progress = 1.0
+            self.status_msg = "INSTALLATION COMPLETE"
+            self._success_time = time.time()
+
     def handle(self, ev: ButtonEvent) -> None:
         # Override to prevent exiting while updating unless it's done or failed
         if not ev.pressed:
             return
         if ev.button is Button.B:
             # Allow exit if progress is 100% or if there's an error
-            if self.progress >= 0.99 or "ERROR" in self.status_msg:
+            if self.progress >= 0.95 or "ERROR" in self.status_msg:
                 self.dismissed = True
         elif ev.button is Button.UP:
             self.scroll = max(0, self.scroll - 1)
@@ -69,6 +75,10 @@ class UpdateView(ResultView):
             self.scroll += 10
 
     def render(self, surf: pygame.Surface) -> None:
+        # Auto-dismiss 3 seconds after success
+        if hasattr(self, "_success_time") and time.time() - self._success_time > 3.0:
+            self.dismissed = True
+
         # Smooth progress interpolation
         if self.progress < self.target_progress:
             self.progress += (self.target_progress - self.progress) * 0.1
