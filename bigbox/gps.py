@@ -11,6 +11,8 @@ returning a no-fix sentinel. Wardrive UI uses that to render a
 from __future__ import annotations
 
 import glob
+import json
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
@@ -34,7 +36,7 @@ class GPSFix:
     speed_kmh: float = 0.0
     heading_deg: float = 0.0
     timestamp_iso: str = ""  # UTC, "YYYY-MM-DD HH:MM:SS"
-    device_path: str = ""    # which /dev node we're reading from
+    device_path: str = ""    # which /dev node or service we're reading from
 
     @property
     def accuracy_m(self) -> float:
@@ -129,6 +131,7 @@ def _parse_line(line: str, fix: GPSFix) -> None:
     body = line.split("*", 1)[0]
     parts = body.split(",")
     head = parts[0]
+    if len(head) < 6: return
     if head[3:] == "GGA":
         _parse_gga(parts, fix)
     elif head[3:] == "RMC":
@@ -137,13 +140,15 @@ def _parse_line(line: str, fix: GPSFix) -> None:
 
 def _candidate_devices() -> list[str]:
     paths: list[str] = []
-    for pat in ("/dev/ttyUSB*", "/dev/ttyACM*", "/dev/ttyAMA*"):
+    for pat in ("/dev/ttyUSB*", "/dev/ttyACM*", "/dev/ttyAMA*", "/dev/serial/by-id/*"):
         paths.extend(sorted(glob.glob(pat)))
     return paths
 
 
 class GPSReader:
-    """Background NMEA reader. Thread-safe latest() snapshot."""
+    """Background GPS reader. Tries gpsd then serial NMEA.
+    Thread-safe latest() snapshot.
+    """
 
     _shared: Optional[GPSReader] = None
 
@@ -165,6 +170,7 @@ class GPSReader:
         self._stop = False
         self._thread: Optional[threading.Thread] = None
         self._serial: Optional["serial.Serial"] = None  # type: ignore[name-defined]
+        self._socket: Optional[socket.socket] = None
 
     @classmethod
     def inject_external_fix(cls, lat: float, lon: float, alt_m: float = 0.0, hdop: float = 1.0) -> None:
@@ -188,18 +194,24 @@ class GPSReader:
 
     def stop(self) -> None:
         self._stop = True
+        self._close_all()
+
+    def _close_all(self):
         try:
             if self._serial:
                 self._serial.close()
-        except Exception:
-            pass
+        except Exception: pass
         self._serial = None
+        try:
+            if self._socket:
+                self._socket.close()
+        except Exception: pass
+        self._socket = None
 
     def latest(self) -> GPSFix:
         # Check for external fix first (Phone GPS)
         with self._external_lock:
             if self._external_fix and self._external_fix.has_fix:
-                # Basic expiry check for external fix: if it's older than 15s, ignore it.
                 try:
                     import datetime
                     fix_time = datetime.datetime.strptime(self._external_fix.timestamp_iso, "%Y-%m-%d %H:%M:%S")
@@ -210,20 +222,72 @@ class GPSReader:
                     pass
 
         with self._lock:
-            # Return a copy so callers can mutate freely.
             return GPSFix(**self._fix.__dict__)
 
-    def _open_first_working(self) -> Optional["serial.Serial"]:  # type: ignore[name-defined]
+    def _try_gpsd(self) -> bool:
+        """Connect to gpsd and poll for fixes."""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2.0)
+            s.connect(("localhost", 2947))
+            
+            # Read banner
+            banner = s.recv(1024)
+            if b"VERSION" not in banner:
+                s.close()
+                return False
+                
+            s.sendall(b'?WATCH={"enable":true,"json":true};')
+            self._socket = s
+            with self._lock:
+                self._fix.device_path = "gpsd"
+            
+            # Loop inside _try_gpsd as long as we have data
+            while not self._stop:
+                try:
+                    line = s.recv(4096).decode("utf-8", errors="ignore")
+                    if not line: break
+                    for part in line.split("\n"):
+                        if not part.strip(): continue
+                        try:
+                            data = json.loads(part)
+                            if data.get("class") == "TPV":
+                                with self._lock:
+                                    self._fix.has_fix = data.get("mode", 0) >= 2
+                                    if self._fix.has_fix:
+                                        self._fix.lat = data.get("lat", 0.0)
+                                        self._fix.lon = data.get("lon", 0.0)
+                                        self._fix.alt_m = data.get("alt", 0.0)
+                                        self._fix.speed_kmh = data.get("speed", 0.0) * 3.6
+                                        self._fix.heading_deg = data.get("track", 0.0)
+                                        t = data.get("time")
+                                        if t:
+                                            # gpsd: 2023-01-01T12:00:00.000Z
+                                            self._fix.timestamp_iso = t.replace("T", " ").split(".")[0]
+                            elif data.get("class") == "SKY":
+                                with self._lock:
+                                    self._fix.sats = data.get("nSat", 0)
+                                    self._fix.hdop = data.get("hdop", 99.9)
+                        except json.JSONDecodeError:
+                            continue
+                except socket.timeout:
+                    continue
+            return True
+        except Exception:
+            return False
+        finally:
+            if self._socket:
+                self._socket.close()
+                self._socket = None
+        return False
+
+    def _open_serial(self) -> Optional["serial.Serial"]:  # type: ignore[name-defined]
         if not _HAS_SERIAL:
             return None
         for path in _candidate_devices():
             for baud in self.BAUDS:
                 try:
                     s = serial.Serial(path, baudrate=baud, timeout=1.0)
-                except Exception:
-                    continue
-                # Probe: read a few lines, look for any NMEA sentence.
-                try:
                     deadline = time.time() + 2.0
                     found = False
                     while time.time() < deadline:
@@ -237,47 +301,35 @@ class GPSReader:
                         return s
                     s.close()
                 except Exception:
-                    try:
-                        s.close()
-                    except Exception:
-                        pass
                     continue
         return None
 
     def _loop(self) -> None:
         while not self._stop:
-            self._serial = self._open_first_working()
+            # 1. Try gpsd
+            if self._try_gpsd():
+                # If it exited but we're not stopping, it might have crashed.
+                time.sleep(2.0)
+                continue
+                
+            # 2. Try serial fallback
+            self._serial = self._open_serial()
             if not self._serial:
-                # No device found — back off and keep probing.
                 time.sleep(2.0)
                 continue
             try:
                 while not self._stop:
                     raw = self._serial.readline()
-                    if not raw:
-                        continue
-                    try:
-                        line = raw.decode("ascii", errors="ignore").strip()
-                    except Exception:
-                        continue
-                    if not line.startswith(_NMEA_PREFIXES):
-                        continue
+                    if not raw: continue
+                    line = raw.decode("ascii", errors="ignore").strip()
+                    if not line.startswith(_NMEA_PREFIXES): continue
                     with self._lock:
-                        # Update in place so partial info from GGA gets
-                        # combined with timestamp from RMC etc.
                         _parse_line(line, self._fix)
             except Exception:
-                # Device unplugged or read error — drop and re-probe.
                 pass
             finally:
-                try:
-                    if self._serial:
-                        self._serial.close()
-                except Exception:
-                    pass
-                self._serial = None
-                # Reset fix on disconnect so UI doesn't show stale coords
-                # as if we still had GPS.
+                self._close_all()
                 with self._lock:
                     self._fix = GPSFix()
                 time.sleep(1.0)
+

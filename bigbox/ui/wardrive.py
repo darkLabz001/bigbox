@@ -27,21 +27,23 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import pygame
 
-from bigbox import hardware, theme, wigle, oui
+from bigbox import hardware, theme, wigle, oui, kismet
 from bigbox.events import Button, ButtonEvent
 from bigbox.gps import GPSFix, GPSReader
 from bigbox.ui.section import SectionContext
 
 
-WIFI_SCAN_INTERVAL = 5.0
-BT_SCAN_INTERVAL = 8.0
+WIFI_SCAN_INTERVAL = 2.0  # Faster polling of Kismet API
+BT_SCAN_INTERVAL = 5.0
 LOOT_DIR = Path("loot/wardrive")
 
 
 PHASE_LANDING = "landing"        # show GPS state, big "A: start" hint
+PHASE_STARTING = "starting"      # hardware setup in background
 PHASE_PHONE_QR = "phone_qr"      # show QR code to link phone GPS
 PHASE_CAPTURING = "capturing"    # actively logging
 PHASE_RESULT = "result"          # final stats after stop
@@ -55,8 +57,8 @@ class _Observation:
     authmode: str = "[]"
     channel: int = 0
     rssi: int = -100
-    vendor: str = ""   # Added: Vendor from OUI lookup
-    klass: str = ""    # Added: Heuristic device class
+    vendor: str = ""   
+    klass: str = ""    
     first_seen_iso: str = ""
     first_lat: float = 0.0
     first_lon: float = 0.0
@@ -68,142 +70,17 @@ def _now_iso() -> str:
     return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _parse_iw_scan(text: str) -> list[_Observation]:
-    """Very tolerant parser for `iw dev <iface> scan` output."""
-    obs: list[_Observation] = []
-    cur: _Observation | None = None
-    for raw in text.splitlines():
-        line = raw.rstrip()
-        m = re.match(r"^BSS\s+([0-9a-fA-F:]{17})", line)
-        if m:
-            if cur:
-                obs.append(cur)
-            cur = _Observation(
-                mac=m.group(1).lower(),
-                type="WIFI",
-                first_seen_iso=_now_iso(),
-            )
-            continue
-        if not cur:
-            continue
-        ls = line.strip()
-        if ls.startswith("freq:"):
-            try:
-                freq = int(ls.split(":", 1)[1].strip())
-                cur.channel = _freq_to_channel(freq)
-            except ValueError:
-                pass
-        elif ls.startswith("signal:"):
-            # "signal: -50.00 dBm"
-            m2 = re.search(r"-?\d+(\.\d+)?", ls)
-            if m2:
-                try:
-                    cur.rssi = int(float(m2.group(0)))
-                except ValueError:
-                    pass
-        elif ls.startswith("SSID:"):
-            cur.ssid = ls.split(":", 1)[1].strip()
-        elif ls.startswith("RSN:") or ls.startswith("WPA:"):
-            # Keep first non-empty security marker; build [WPA2] etc.
-            head = ls.split(":", 1)[0]
-            if not cur.authmode or cur.authmode == "[]":
-                cur.authmode = f"[{head}]"
-            else:
-                cur.authmode = cur.authmode.rstrip("]") + "][" + head + "]"
-        elif "Privacy" in ls and cur.authmode == "[]":
-            cur.authmode = "[WEP]"
-    if cur:
-        obs.append(cur)
-    # Default unencrypted nets to [ESS]
-    for o in obs:
-        if o.authmode == "[]":
-            o.authmode = "[ESS]"
-        else:
-            o.authmode = o.authmode + "[ESS]"
-    return obs
-
-
-def _freq_to_channel(freq_mhz: int) -> int:
-    if 2412 <= freq_mhz <= 2484:
-        if freq_mhz == 2484:
-            return 14
-        return (freq_mhz - 2407) // 5
-    if 5170 <= freq_mhz <= 5825:
-        return (freq_mhz - 5000) // 5
-    if 5955 <= freq_mhz <= 7115:  # 6 GHz
-        return (freq_mhz - 5950) // 5
-    return 0
-
-
-def _parse_bluetoothctl_devices(text: str) -> list[_Observation]:
-    """`bluetoothctl devices` rows: 'Device AA:BB:CC:DD:EE:FF Name'."""
-    out: list[_Observation] = []
-    for line in text.splitlines():
-        m = re.match(r"^Device\s+([0-9A-Fa-f:]{17})\s+(.*)$", line.strip())
-        if not m:
-            continue
-        out.append(_Observation(
-            mac=m.group(1).lower(),
-            type="BLE",
-            ssid=m.group(2).strip(),
-            authmode="[BLE]",
-            channel=0,
-            rssi=-100,
-            first_seen_iso=_now_iso(),
-        ))
-    return out
-
-
 from bigbox.ui.map import MapWidget
 
 class WardriveView:
     def __init__(self) -> None:
         self.dismissed = False
         self.phase = PHASE_LANDING
-        self.status_msg = "Initialising..."
-        self.show_map = True  # Toggle between map and stats
+        self.status_msg = "Ready"
+        self.show_map = True 
 
-        # Recover from previous tools (monitor mode, btmon, etc.)
-        hardware.ensure_wifi_managed()
-        self.bt_hci: str | None = hardware.ensure_bluetooth_on()
-
-        # Split interfaces: one for scanning, one for capture (if available)
-        all_ifaces = hardware.list_wifi_clients()
-        internet_iface = hardware.get_internet_iface()
-        alfa_ifaces = hardware.list_alfa_ifaces()
-        
-        scan_ifaces = []
-        cap_iface = None
-        
-        if len(all_ifaces) >= 2:
-            # We have at least two. Use one for scanning, one for monitor-mode capture.
-            # Prefer Alfa for capture (monitor mode) if it's not the internet iface.
-            potential_caps = [i for i in alfa_ifaces if i != internet_iface]
-            if not potential_caps:
-                # If no Alfa is available (or it IS the internet iface), use any non-internet iface.
-                potential_caps = [i for i in all_ifaces if i != internet_iface]
-            
-            if potential_caps:
-                cap_iface = potential_caps[0]
-                # Use all other interfaces for scanning. 
-                # Scanning in managed mode (iw scan) is generally safe on the internet interface.
-                scan_ifaces = [i for i in all_ifaces if i != cap_iface]
-            else:
-                # Everything is internet? Unlikely, but fallback to original logic.
-                cap_iface = all_ifaces[1]
-                scan_ifaces = [all_ifaces[0]]
-        else:
-            # Only one interface available.
-            scan_ifaces = all_ifaces
-            cap_iface = None
-        
-        self.ifaces = scan_ifaces
-        self.cap_iface_raw = cap_iface
-        self.mon_iface: str | None = None
-        
         # GPS
-        self.gps = GPSReader()
-        self.gps.start()
+        self.gps = GPSReader.get_shared()
 
         # Map
         self.map = MapWidget(theme.SCREEN_W - 2 * theme.PADDING, 240)
@@ -228,12 +105,14 @@ class WardriveView:
         self._wifi_scan_count = 0
         self._bt_scan_count = 0
 
+        # Kismet
+        self.kismet = kismet.KismetManager()
+
         # Scan threads
         self._stop = False
-        self._wifi_threads: list[threading.Thread] = []
-        self._bt_thread: threading.Thread | None = None
-        self._bt_proc: subprocess.Popen | None = None  # the persistent `scan le on`
-        self._hcxdumptool: subprocess.Popen | None = None
+        self._worker_thread: threading.Thread | None = None
+        self._ifaces: list[str] = []
+        self._hci: str | None = None
 
         # Result
         self.result_msg = ""
@@ -302,41 +181,60 @@ class WardriveView:
             pass
 
     # ---------- session lifecycle ----------
-    def _start_capture(self) -> None:
+    def _start_capture_async(self) -> None:
+        self.phase = PHASE_STARTING
+        self.status_msg = "Preparing hardware..."
+        threading.Thread(target=self._start_capture_worker, daemon=True).start()
+
+    def _start_capture_worker(self) -> None:
         # Check dependencies
-        missing = hardware.check_dependencies("iw", "bluetoothctl", "hcxdumptool")
-        # Note: hcxdumptool is optional but we check it anyway if we have a cap_iface
-        if not shutil.which("iw") or not shutil.which("bluetoothctl"):
-            self.status_msg = "Error: iw or bluetoothctl missing"
+        missing = hardware.check_dependencies("kismet", "bluetoothctl")
+        if missing:
+            self.status_msg = f"Missing: {', '.join(missing)}"
+            self.phase = PHASE_LANDING
             return
+
+        # Recover from previous tools
+        hardware.ensure_wifi_managed()
+        self._hci = hardware.ensure_bluetooth_on()
+
+        # Interfaces
+        all_ifaces = hardware.list_wifi_clients()
+        internet_iface = hardware.get_internet_iface()
+        alfa_ifaces = hardware.list_alfa_ifaces()
+        
+        scan_ifaces = [i for i in all_ifaces if i != internet_iface]
+        if not scan_ifaces:
+            scan_ifaces = all_ifaces[:1] # Use what we have
 
         # Try to lock interfaces
         locked_ifaces = []
-        for iface in self.ifaces:
+        for iface in scan_ifaces:
             if hardware.request_iface(iface):
                 locked_ifaces.append(iface)
         
         if not locked_ifaces:
-            self.status_msg = "Error: All Wi-Fi interfaces busy"
+            self.status_msg = "Error: Wi-Fi interfaces busy"
+            self.phase = PHASE_LANDING
             return
         
-        # Lock bluetooth
-        hci = hardware.preferred_bluetooth_controller()
-        if hci and not hardware.request_bluetooth(hci):
-            self.status_msg = f"Error: {hci} busy"
-            # We can still wardrive with just Wi-Fi, but let's be strict for reliability
-            for iface in locked_ifaces:
-                hardware.release_iface(iface)
+        self._ifaces = locked_ifaces
+
+        # Start Kismet
+        self.status_msg = "Starting Kismet..."
+        if not self.kismet.start(self._ifaces):
+            self.status_msg = "Error: Kismet failed to start"
+            for i in self._ifaces: hardware.release_iface(i)
+            self.phase = PHASE_LANDING
             return
 
-        self.locked_ifaces = locked_ifaces
-        self.locked_hci = hci
-
+        # Setup CSV
         LOOT_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         self._csv_path = LOOT_DIR / f"wardrive_{ts}.csv"
-        self._csv_handle = self._csv_path.open("w", buffering=1)  # line-buffered
+        self._csv_handle = self._csv_path.open("w", buffering=1)
         self._csv_handle.write(wigle.wigle_csv_header())
+        
         self._capture_started = time.time()
         with self._lock:
             self.observed.clear()
@@ -345,103 +243,37 @@ class WardriveView:
         self._wifi_scan_count = 0
         self._bt_scan_count = 0
         self._stop = False
-        self.phase = PHASE_CAPTURING
-
-        # Start one thread per interface
-        self._wifi_threads = []
-        for i, iface in enumerate(self.ifaces):
-            t = threading.Thread(target=self._wifi_loop, args=(iface, i), daemon=True)
-            t.start()
-            self._wifi_threads.append(t)
-
-        self._bt_thread = threading.Thread(target=self._bt_loop, daemon=True)
-        self._bt_thread.start()
-
-        # Optional: Handshake capture if we have a spare iface
-        if self.cap_iface_raw:
-            self.status_msg = f"Enabling monitor on {self.cap_iface_raw}..."
-            # This is blocking, but it's okay for a moment
-            self.mon_iface = hardware.enable_monitor(self.cap_iface_raw)
-            if self.mon_iface:
-                self._start_hcxdumptool(ts)
-            else:
-                self.status_msg = "Monitor mode failed, scanning only."
+        
+        # Start Polling Thread
+        self._worker_thread = threading.Thread(target=self._polling_loop, daemon=True)
+        self._worker_thread.start()
 
         self.status_msg = "Capturing..."
+        self.phase = PHASE_CAPTURING
+
         from bigbox import background as _bg
         _bg.register(
             "wardrive",
-            f"Wardrive ({len(self.ifaces)} iface)",
+            f"Wardrive ({len(self._ifaces)} iface)",
             "Recon",
             stop=self._stop_capture,
         )
 
-    def _start_hcxdumptool(self, ts: str) -> None:
-        if not self.mon_iface:
-            return
-        
-        pcap_path = LOOT_DIR / f"wardrive_{ts}.pcapng"
-        # hcxdumptool -i <iface> -o <out> --enable_status=1
-        # Status 1 gives us periodic updates on stdout
-        cmd = ["hcxdumptool", "-i", self.mon_iface, "-o", str(pcap_path), "--enable_status=1"]
-        try:
-            self._hcxdumptool = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1
-            )
-            # Thread to watch for handshakes in output
-            def _watcher():
-                if not self._hcxdumptool or not self._hcxdumptool.stdout: return
-                for line in self._hcxdumptool.stdout:
-                    if self._stop: break
-                    # [PMKID] or [EAPOL] typically indicates a capture
-                    if "[PMKID]" in line or "[EAPOL]" in line:
-                        with self._lock:
-                            self.handshake_count += 1
-                        self._play_beep() # Triple beep for handshake?
-            
-            threading.Thread(target=_watcher, daemon=True).start()
-        except Exception as e:
-            self.status_msg = f"hcxdumptool failed: {e}"
-
     def _stop_capture(self) -> None:
         self._stop = True
-        # Kill hcxdumptool
-        if self._hcxdumptool:
-            try:
-                self._hcxdumptool.terminate()
-                self._hcxdumptool.wait(timeout=2)
-            except Exception:
-                try: self._hcxdumptool.kill()
-                except Exception: pass
-        self._hcxdumptool = None
+        self.status_msg = "Stopping..."
         
-        # Restore capture interface if needed
-        if self.mon_iface:
-            hardware.ensure_wifi_managed(self.cap_iface_raw)
-            self.mon_iface = None
-
+        # Stop Kismet
+        self.kismet.stop()
+        
         # Release locks
-        for iface in getattr(self, "locked_ifaces", []):
+        for iface in getattr(self, "_ifaces", []):
             hardware.release_iface(iface)
-        if getattr(self, "locked_hci", None):
-            hardware.release_bluetooth(self.locked_hci)
+        if getattr(self, "_hci", None):
+            hardware.release_bluetooth(self._hci)
 
-        # Bring BT down first so we don't leave bluetoothctl scanning.
-        if self._bt_proc and self._bt_proc.poll() is None:
-            try:
-                self._bt_proc.terminate()
-                self._bt_proc.wait(timeout=2)
-            except Exception:
-                try:
-                    self._bt_proc.kill()
-                except Exception:
-                    pass
-        self._bt_proc = None
         hardware.stop_bluetooth_scan()
+        
         # Close CSV
         if self._csv_handle:
             try:
@@ -450,14 +282,15 @@ class WardriveView:
             except Exception:
                 pass
         self._csv_handle = None
+        
         with self._lock:
             wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
             bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
+        
         elapsed = max(0, time.time() - self._capture_started)
         self.result_msg = (
-            f"{wifi_count} Wi-Fi APs, {bt_count} BT devices "
-            f"in {int(elapsed)}s — saved to "
-            f"{self._csv_path.name if self._csv_path else '<no file>'}"
+            f"{wifi_count} Wi-Fi, {bt_count} BT "
+            f"in {int(elapsed)}s"
         )
         self.status_msg = self.result_msg
         from bigbox import background as _bg
@@ -465,32 +298,24 @@ class WardriveView:
         self.phase = PHASE_RESULT
 
     def _shutdown(self) -> None:
-        # called on B-exit at any phase
         if self.phase == PHASE_CAPTURING:
             self._stop_capture()
-        try:
-            self.gps.stop()
-        except Exception:
-            pass
         self.dismissed = True
 
     # ---------- record an observation ----------
     def _record(self, obs: _Observation) -> None:
         with self._lock:
             if obs.mac in self.observed:
-                # Update RSSI for last_found display even if already known
+                # Update RSSI
                 if self.last_found and self.last_found.mac == obs.mac:
                     self.last_found.rssi = obs.rssi
                 return
             
-            # Lookup vendor
-            obs.vendor, obs.klass = oui.lookup(obs.mac)
-            
             fix = self.gps.latest()
             if not fix.has_fix:
-                # WiGLE will reject rows with no GPS — skip.
-                return
+                return # Need GPS for WiGLE
             
+            obs.vendor, obs.klass = oui.lookup(obs.mac)
             obs.first_lat = fix.lat
             obs.first_lon = fix.lon
             obs.first_alt = fix.alt_m
@@ -501,7 +326,7 @@ class WardriveView:
             
             # Achievements
             from bigbox import achievements
-            achievements.report_node(is_bt=(obs.type == "BT"))
+            achievements.report_node(is_bt=(obs.type == "BLE"))
 
         self._play_beep()
         self.map.add_discovery_ring(obs.first_lat, obs.first_lon)
@@ -521,86 +346,61 @@ class WardriveView:
                 obs_type="WIFI" if obs.type == "WIFI" else "BT",
             ))
 
-    # ---------- scan loops ----------
-    def _wifi_loop(self, iface: str, index: int) -> None:
-        # 14 channels in 2.4GHz, ~25 in 5GHz.
-        # If we have 2 adapters, one does 2.4GHz, other does 5GHz.
-        # Frequencies in MHz
-        freqs_24 = [2412, 2417, 2422, 2427, 2432, 2437, 2442, 2447, 2452, 2457, 2462, 2467, 2472, 2484]
-        # 5GHz (Subset of common channels)
-        freqs_5 = [5180, 5200, 5220, 5240, 5260, 5280, 5300, 5320, 5500, 5520, 5540, 5560, 5580, 5600, 5620, 5640, 5660, 5680, 5700, 5745, 5765, 5785, 5805, 5825]
+    def _polling_loop(self) -> None:
+        """Poll Kismet API for new devices."""
+        last_wifi_poll = 0.0
+        last_bt_poll = 0.0
         
         while not self._stop:
-            try:
-                cmd = ["iw", "dev", iface, "scan"]
-                if len(self.ifaces) > 1:
-                    # Split frequencies
-                    target_freqs = freqs_24 if index == 0 else freqs_5
-                    cmd.append("freq")
-                    cmd.extend(map(str, target_freqs))
-                
-                proc = subprocess.run(
-                    cmd,
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                    text=True, timeout=30,
-                )
-                if proc.returncode == 0:
-                    for o in _parse_iw_scan(proc.stdout):
-                        self._record(o)
+            now = time.time()
+            
+            # WIFI Poll
+            if now - last_wifi_poll >= WIFI_SCAN_INTERVAL:
+                devices = self.kismet.get_wifi_devices()
+                if devices:
+                    for d in devices:
+                        # Map Kismet fields to _Observation
+                        # Kismet fields vary, but common ones:
+                        # kismet.device.base.macaddr
+                        # kismet.device.base.commonname (SSID)
+                        # kismet.device.base.signal/last_signal_dbm
+                        # kismet.device.base.crypt (Encryption)
+                        mac = d.get("kismet.device.base.macaddr")
+                        if not mac: continue
+                        
+                        obs = _Observation(
+                            mac=mac.lower(),
+                            type="WIFI",
+                            ssid=d.get("kismet.device.base.commonname", ""),
+                            rssi=d.get("kismet.device.base.signal", {}).get("kismet.common.signal.last_signal", -100),
+                            channel=d.get("kismet.device.base.channel", 0),
+                            authmode=d.get("kismet.device.base.crypt", "None")
+                        )
+                        self._record(obs)
                     with self._lock:
                         self._wifi_scan_count += 1
-            except Exception:
-                pass
-            # Sleep but stay responsive to stop
-            t = time.time()
-            while time.time() - t < WIFI_SCAN_INTERVAL and not self._stop:
-                time.sleep(0.1)
+                last_wifi_poll = now
 
-    def _bt_loop(self) -> None:
-        # Start a persistent `scan le on` so the controller keeps probing.
-        try:
-            self._bt_proc = subprocess.Popen(
-                ["bluetoothctl"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                text=True,
-            )
-            assert self._bt_proc.stdin is not None
-            if self.locked_hci: # Use the locked controller
-                self._bt_proc.stdin.write(f"select {self.locked_hci}\n")
-            self._bt_proc.stdin.write("scan le on\n")
-            self._bt_proc.stdin.flush()
-        except Exception:
-            self._bt_proc = None
-
-        while not self._stop:
-            try:
-                # Power efficiency: check battery
-                from bigbox import power
-                bat = power.battery()
-                interval = BT_SCAN_INTERVAL
-                if bat and bat.percent < 15:
-                    interval *= 2 # Slow down BT to save power
-                
-                proc = subprocess.run(
-                    ["bluetoothctl", "devices"],
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                    text=True, timeout=5,
-                )
-                if proc.returncode == 0:
-                    for o in _parse_bluetoothctl_devices(proc.stdout):
-                        self._record(o)
+            # BT Poll
+            if now - last_bt_poll >= BT_SCAN_INTERVAL:
+                devices = self.kismet.get_bt_devices()
+                if devices:
+                    for d in devices:
+                        mac = d.get("kismet.device.base.macaddr")
+                        if not mac: continue
+                        obs = _Observation(
+                            mac=mac.lower(),
+                            type="BLE",
+                            ssid=d.get("kismet.device.base.commonname", ""),
+                            rssi=d.get("kismet.device.base.signal", {}).get("kismet.common.signal.last_signal", -100),
+                            authmode="[BLE]"
+                        )
+                        self._record(obs)
                     with self._lock:
                         self._bt_scan_count += 1
-            except Exception:
-                pass
-            # Sleep but stay responsive to stop
-            t = time.time()
-            while time.time() - t < interval and not self._stop:
-                time.sleep(0.1)
+                last_bt_poll = now
+
+            time.sleep(0.5)
 
     # ---------- input ----------
     def handle(self, ev: ButtonEvent, ctx: SectionContext) -> None:
@@ -613,7 +413,7 @@ class WardriveView:
 
         if self.phase == PHASE_LANDING:
             if ev.button is Button.A:
-                self._start_capture()
+                self._start_capture_async()
             elif ev.button is Button.Y:
                 self.phase = PHASE_PHONE_QR
             return
@@ -630,8 +430,7 @@ class WardriveView:
 
         if self.phase == PHASE_RESULT:
             if ev.button in (Button.A, Button.START):
-                # Start another session
-                self._start_capture()
+                self._start_capture_async()
             elif ev.button is Button.X:
                 self._trigger_upload()
             return
@@ -643,10 +442,10 @@ class WardriveView:
         
         creds = wigle.load_creds()
         if not creds:
-            self.status_msg = "Not signed in to WiGLE (use Web UI)"
+            self.status_msg = "Not signed in to WiGLE"
             return
         
-        self.status_msg = "Uploading to WiGLE..."
+        self.status_msg = "Uploading..."
         
         def _worker():
             ok, msg = wigle.upload(self._csv_path, creds)
@@ -663,7 +462,7 @@ class WardriveView:
         pygame.draw.line(surf, theme.ACCENT, (0, head_h - 1),
                          (theme.SCREEN_W, head_h - 1), 2)
         f_title = pygame.font.Font(None, 32)
-        surf.blit(f_title.render("RECON :: WARDRIVE", True, theme.ACCENT),
+        surf.blit(f_title.render("RECON :: WARDRIVE (KISMET)", True, theme.ACCENT),
                   (theme.PADDING, 8))
 
         foot_h = 32
@@ -680,11 +479,12 @@ class WardriveView:
         s_surf = f_small.render(self.status_msg[:60], True, theme.ACCENT)
         surf.blit(s_surf, (theme.PADDING, theme.SCREEN_H - foot_h + 8))
 
-        # GPS strip — always visible
         self._render_gps_strip(surf, head_h)
 
         if self.phase == PHASE_LANDING:
             self._render_landing(surf, head_h)
+        elif self.phase == PHASE_STARTING:
+            self._render_starting(surf, head_h)
         elif self.phase == PHASE_PHONE_QR:
             self._render_phone_qr(surf, head_h)
         elif self.phase == PHASE_CAPTURING:
@@ -695,6 +495,8 @@ class WardriveView:
     def _hint(self) -> str:
         if self.phase == PHASE_LANDING:
             return "A: Start  Y: Phone GPS  B: Back"
+        if self.phase == PHASE_STARTING:
+            return "B: Back"
         if self.phase == PHASE_PHONE_QR:
             return "B: Back"
         if self.phase == PHASE_CAPTURING:
@@ -708,40 +510,19 @@ class WardriveView:
         f = pygame.font.Font(None, 22)
         y = head_h + 8
         
-        # Draw background for strip
         pygame.draw.rect(surf, (5, 5, 15), (0, head_h, theme.SCREEN_W, 30))
         pygame.draw.line(surf, theme.DIVIDER, (0, head_h + 30), (theme.SCREEN_W, head_h + 30))
 
         if not fix.device_path:
-            label = "GPS: NO DEVICE (plug in LC86L)"
+            label = "GPS: DISCONNECTED"
             color = theme.ERR
         elif not fix.has_fix:
             label = f"GPS: SEARCHING ({fix.device_path})"
             color = theme.WARN
         else:
-            label = (f"GPS: FIX  {fix.lat:.5f}, {fix.lon:.5f}  "
-                     f"alt {fix.alt_m:.0f}m  hdop {fix.hdop:.1f}  "
+            label = (f"GPS: {fix.device_path}  {fix.lat:.5f}, {fix.lon:.5f}  "
                      f"sats {fix.sats}  {fix.speed_kmh:.0f}km/h")
             color = theme.ACCENT
-            
-            # Graphical Sat HUD (Top Right)
-            sx, sy = theme.SCREEN_W - 140, head_h + 6
-            for i in range(5):
-                h = 4 + i * 3
-                bx = sx + i * 5
-                by = sy + (16 - h)
-                # Color based on fix quality
-                s_col = theme.ACCENT if fix.sats > 4 else theme.WARN
-                if fix.sats > 8: s_col = (100, 255, 100) # Bright green
-                
-                # Active bars based on sat count
-                if i < min(5, fix.sats // 2):
-                    pygame.draw.rect(surf, s_col, (bx, by, 3, h))
-                else:
-                    pygame.draw.rect(surf, (30, 30, 45), (bx, by, 3, h))
-            
-            sat_txt = f.render(f"{fix.sats} SATS", True, theme.FG_DIM)
-            surf.blit(sat_txt, (sx + 30, sy + 2))
 
         s = f.render(label, True, color)
         surf.blit(s, (theme.PADDING, y))
@@ -749,86 +530,44 @@ class WardriveView:
     def _render_landing(self, surf: pygame.Surface, head_h: int) -> None:
         f_big = pygame.font.Font(None, 44)
         f_med = pygame.font.Font(None, 24)
-        msg = f_big.render("Ready to wardrive", True, theme.FG)
+        msg = f_big.render("Wardriver Ready", True, theme.FG)
         surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2,
                         head_h + 80))
-        sub = f_med.render(
-            "Press A to begin capturing Wi-Fi + Bluetooth with GPS.",
-            True, theme.FG_DIM)
+        sub = f_med.render("Using Kismet for discovery and gpsd for location.",
+                        True, theme.FG_DIM)
         surf.blit(sub, (theme.SCREEN_W // 2 - sub.get_width() // 2,
                         head_h + 140))
         
-        ifaces_str = ", ".join(self.ifaces)
-        cap_str = self.cap_iface_raw or "None"
-        bt_label = self.bt_hci or "none"
-        if self.bt_hci and hardware.is_usb_bluetooth(self.bt_hci):
-            bt_label += " (USB)"
-        
-        internet_iface = hardware.get_internet_iface()
-        
-        scan_info = f"Scan: {ifaces_str}"
-        if internet_iface in self.ifaces:
-            scan_info += " (Internet)"
-            
-        sub2 = f_med.render(
-            f"{scan_info}   Capture: {cap_str}   BT: {bt_label}",
-            True, theme.FG_DIM)
-        surf.blit(sub2, (theme.SCREEN_W // 2 - sub2.get_width() // 2,
-                         head_h + 180))
-        sub3 = f_med.render(
-            "Sign in to WiGLE via the web UI to upload sessions.",
-            True, theme.FG_DIM)
-        surf.blit(sub3, (theme.SCREEN_W // 2 - sub3.get_width() // 2,
-                         head_h + 220))
+    def _render_starting(self, surf: pygame.Surface, head_h: int) -> None:
+        f_big = pygame.font.Font(None, 36)
+        msg = f_big.render("Initialising Kismet...", True, theme.ACCENT)
+        surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2, head_h + 100))
+        # Optional: draw a spinner or progress bar
 
     def _render_phone_qr(self, surf: pygame.Surface, head_h: int) -> None:
         from bigbox import qr
         ip = qr.lan_ipv4()
         url = f"https://{ip}:8080/gps/link" if ip else None
-        
         f_big = pygame.font.Font(None, 36)
         f_med = pygame.font.Font(None, 24)
-        
         msg = f_big.render("LINK PHONE GPS", True, theme.ACCENT)
         surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2, head_h + 40))
-        
-        if not url:
-            err = f_med.render("No LAN IP found. Connect to Wi-Fi first.", True, theme.ERR)
-            surf.blit(err, (theme.SCREEN_W // 2 - err.get_width() // 2, head_h + 120))
-            return
-
-        sub = f_med.render("Scan this QR with your iPhone to share GPS", True, theme.FG)
-        surf.blit(sub, (theme.SCREEN_W // 2 - sub.get_width() // 2, head_h + 80))
-        
-        # Draw QR
+        if not url: return
         matrix = qr.make_matrix(url)
         if matrix:
-            padding = 4
             mod_size = 6
-            qr_w = (len(matrix) + 2 * padding) * mod_size
-            qx = (theme.SCREEN_W - qr_w) // 2
-            qy = head_h + 120
-            
-            # White background for QR
+            qr_w = (len(matrix) + 8) * mod_size
+            qx, qy = (theme.SCREEN_W - qr_w) // 2, head_h + 120
             pygame.draw.rect(surf, (255, 255, 255), (qx, qy, qr_w, qr_w))
-            
             for r, row in enumerate(matrix):
                 for c, val in enumerate(row):
                     if val:
-                        pygame.draw.rect(surf, (0, 0, 0), 
-                                         (qx + (c + padding) * mod_size, 
-                                          qy + (r + padding) * mod_size, 
-                                          mod_size, mod_size))
-        
-        u_surf = f_med.render(url, True, theme.ACCENT)
-        surf.blit(u_surf, (theme.SCREEN_W // 2 - u_surf.get_width() // 2, head_h + 380))
+                        pygame.draw.rect(surf, (0, 0, 0), (qx + (c+4)*mod_size, qy + (r+4)*mod_size, mod_size, mod_size))
 
-    def _render_capturing(self, surf: pygame.Surface,
-                          head_h: int, foot_h: int) -> None:
+    def _render_capturing(self, surf: pygame.Surface, head_h: int, foot_h: int) -> None:
         with self._lock:
             wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
             bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
-            hand_count = self.handshake_count
             last = self.last_found
 
         elapsed = int(time.time() - self._capture_started)
@@ -836,107 +575,26 @@ class WardriveView:
         npm = (total_nodes / (elapsed / 60.0)) if elapsed > 10 else 0
         self._play_geiger(npm)
 
-        f_huge = pygame.font.Font(None, 80)
-        f_med = pygame.font.Font(None, 26)
-        f_small = pygame.font.Font(None, 20)
-
         if self.show_map:
-            # Map takes the main area
             self.map.render(surf, theme.PADDING, head_h + 40)
-            
-            # Small HUD on top of map
             hx, hy = theme.PADDING + 10, head_h + 50
-            # Dark overlay for HUD text
-            hud_surf = pygame.Surface((120, 85), pygame.SRCALPHA)
-            hud_surf.fill((0, 0, 0, 160))
-            surf.blit(hud_surf, (hx-5, hy-5))
-
+            f_small = pygame.font.Font(None, 20)
             surf.blit(f_small.render(f"WIFI: {wifi_count}", True, theme.ACCENT), (hx, hy))
             surf.blit(f_small.render(f"BT:   {bt_count}", True, theme.ACCENT), (hx, hy + 20))
-            surf.blit(f_small.render(f"HAND: {hand_count}", True, theme.ACCENT), (hx, hy + 40))
-            surf.blit(f_small.render(f"ZOOM: {self.map.zoom}", True, theme.FG_DIM), (hx, hy + 60))
-            
-            # NPM HUD (Top Right)
-            nx, ny = theme.SCREEN_W - 120, head_h + 40
-            npm_surf = f_small.render(f"{npm:.1f} NPM", True, theme.ACCENT if npm > 5 else theme.FG_DIM)
-            surf.blit(npm_surf, (nx, ny))
-        else:
-            # Stats view
-            cy = head_h + 80
-            col_w = theme.SCREEN_W // 3
-            
-            wifi_n = f_huge.render(str(wifi_count), True, theme.ACCENT)
-            surf.blit(wifi_n, (col_w // 2 - wifi_n.get_width() // 2, cy))
-            wifi_l = f_med.render("WI-FI", True, theme.FG_DIM)
-            surf.blit(wifi_l, (col_w // 2 - wifi_l.get_width() // 2, cy + wifi_n.get_height() + 4))
-
-            bt_n = f_huge.render(str(bt_count), True, theme.ACCENT)
-            surf.blit(bt_n, (col_w + col_w // 2 - bt_n.get_width() // 2, cy))
-            bt_l = f_med.render("BLUETOOTH", True, theme.FG_DIM)
-            surf.blit(bt_l, (col_w + col_w // 2 - bt_l.get_width() // 2, cy + bt_n.get_height() + 4))
-            
-            hand_n = f_huge.render(str(hand_count), True, theme.ACCENT if hand_count > 0 else theme.FG_DIM)
-            surf.blit(hand_n, (2 * col_w + col_w // 2 - hand_n.get_width() // 2, cy))
-            hand_l = f_med.render("HANDSHAKES", True, theme.FG_DIM)
-            surf.blit(hand_l, (2 * col_w + col_w // 2 - hand_l.get_width() // 2, cy + hand_n.get_height() + 4))
-
+        
         # Last found box
-        ly = head_h + 290 if self.show_map else head_h + 210
+        ly = head_h + 290
         pygame.draw.rect(surf, theme.BG_ALT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), border_radius=5)
-        pygame.draw.rect(surf, theme.ACCENT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), 1, border_radius=5)
-        
         if last:
-            l_title = f_small.render(f"LAST DISCOVERY: {last.type}", True, theme.ACCENT)
-            surf.blit(l_title, (theme.PADDING + 10, ly + 8))
-            
-            ssid = last.ssid or "<hidden>"
-            if len(ssid) > 20: ssid = ssid[:17] + "..."
-            
-            vendor_str = f"({last.vendor})" if last.vendor and last.vendor != "Unknown" else ""
-            info = f"{ssid} [{last.mac}] {vendor_str}  {last.rssi}dBm  {last.authmode}"
-            l_info = f_med.render(info, True, theme.FG)
-            surf.blit(l_info, (theme.PADDING + 10, ly + 30))
-        else:
-            l_info = f_med.render("WAITING FOR DISCOVERY...", True, theme.FG_DIM)
-            surf.blit(l_info, (theme.PADDING + 10, ly + 20))
+            f_med = pygame.font.Font(None, 24)
+            info = f"{last.ssid or last.mac} ({last.rssi}dBm)"
+            surf.blit(f_med.render(info, True, theme.FG), (theme.PADDING + 10, ly + 20))
 
-        # Bottom strip: elapsed, file, scan counts
-        sy = theme.SCREEN_H - foot_h - 60
-        info = (f"elapsed: {elapsed}s   wifi scans: {self._wifi_scan_count}  "
-                f"bt polls: {self._bt_scan_count}")
-        if self.mon_iface:
-            info += f"   cap: {self.mon_iface}"
-        info_s = f_small.render(info, True, theme.FG_DIM)
-        surf.blit(info_s, (theme.PADDING, sy))
-        if self._csv_path:
-            ps = f_small.render(f"-> {self._csv_path}", True, theme.FG_DIM)
-            surf.blit(ps, (theme.PADDING, sy + 22))
-
-    def _render_result(self, surf: pygame.Surface,
-                       head_h: int, foot_h: int) -> None:
+    def _render_result(self, surf: pygame.Surface, head_h: int, foot_h: int) -> None:
         f_big = pygame.font.Font(None, 36)
-        f_med = pygame.font.Font(None, 22)
+        msg = f_big.render("SESSION SAVED", True, theme.ACCENT)
+        surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2, head_h + 80))
+        f_med = pygame.font.Font(None, 24)
+        surf.blit(f_med.render(self.result_msg, True, theme.FG), (theme.SCREEN_W // 2 - 100, head_h + 140))
 
-        title = f_big.render("SESSION SAVED", True, theme.ACCENT)
-        surf.blit(title, (theme.SCREEN_W // 2 - title.get_width() // 2,
-                          head_h + 50))
-
-        with self._lock:
-            wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
-            bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
-            hand_count = self.handshake_count
-        
-        lines = [
-            f"Wi-Fi APs:  {wifi_count}",
-            f"Bluetooth:  {bt_count}",
-            f"Handshakes: {hand_count}",
-        ]
-        if self._csv_path:
-            lines.append(f"CSV File:   {self._csv_path.name}")
-        lines.append("Press X to upload to WiGLE now.")
-
-        for i, ln in enumerate(lines):
-            ls = f_med.render(ln, True, theme.FG)
-            surf.blit(ls, (theme.SCREEN_W // 2 - ls.get_width() // 2,
-                           head_h + 110 + i * 30))
 
