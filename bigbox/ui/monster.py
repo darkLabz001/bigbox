@@ -2,6 +2,7 @@ from __future__ import annotations
 import time
 import random
 import pygame
+import math
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -12,8 +13,8 @@ if TYPE_CHECKING:
 from bigbox import theme
 
 class Monster:
-    """Pwnagotchi-style companion for the Operator.
-    Replaces the old demon with the classic AI face.
+    """Animated Pwnagotchi-style companion for the Operator.
+    Features blinking, sine-wave bobbing, and mood-based expressions.
     """
 
     MOODS = ("intense", "excited", "calm", "alert", "sad", "happy", "look", "sleep")
@@ -28,10 +29,13 @@ class Monster:
         
         # Position in the sidebar (centered)
         self.pos = [85, 260] 
+        self._hop_y = 0.0
+        self._hop_start = 0.0
         
         self._loaded = False
         self._blink_state = False
         self._last_blink = time.time()
+        self._t0 = time.time()
 
     def _load_assets(self):
         if self._loaded:
@@ -57,7 +61,6 @@ class Monster:
             
             if self.sprites:
                 self._loaded = True
-                print(f"[monster] Pwnagotchi face loaded ({len(self.sprites)} moods)")
             else:
                 print(f"[monster] Error: Pwnagotchi sprites missing at {SPR_DIR}")
         except Exception as e:
@@ -66,9 +69,14 @@ class Monster:
     def set_state(self, mood: str, duration: float = 0.0):
         """Set the current mood. If duration > 0, it will revert to 'calm' after."""
         if mood in self.MOODS:
+            if mood == "happy":
+                self.trigger_hop()
             self.current_mood = mood
             self.mood_start = time.time()
             self.mood_duration = duration
+
+    def trigger_hop(self):
+        self._hop_start = time.time()
 
     def update(self, app: App):
         now = time.time()
@@ -88,6 +96,12 @@ class Monster:
             
             if random.random() < 0.005:
                 self.set_state("look", 2.0)
+        
+        # Hop logic
+        if now - self._hop_start < 0.4:
+            self._hop_y = -15.0 # Jump up
+        else:
+            self._hop_y = 0.0
 
     def render(self, surf: pygame.Surface):
         if not self._loaded:
@@ -96,13 +110,20 @@ class Monster:
         if not self.sprites:
             return
 
+        now = time.time()
+        t = now - self._t0
         mood = self.current_mood
+        
+        # Bobbing (Sine wave)
+        bob = math.sin(t * 2.6) * 4
+        
         # Blinking logic: "sleep" is a horizontal line (closed eyes)
-        if self._blink_state and mood in ("calm", "happy", "alert"):
+        open_eyed = {"intense", "excited", "alert", "sad", "look", "calm"}
+        if self._blink_state and mood in open_eyed:
             mood = "sleep"
 
         frame = self.sprites.get(mood, self.sprites.get("calm"))
         if frame:
-            # Draw centered on pos
-            rect = frame.get_rect(center=(self.pos[0], self.pos[1]))
+            # Draw centered on pos with bob and hop
+            rect = frame.get_rect(center=(self.pos[0], self.pos[1] + bob + self._hop_y))
             surf.blit(frame, rect)

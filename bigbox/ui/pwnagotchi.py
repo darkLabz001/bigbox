@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import threading
 import time
+import math
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -30,6 +32,10 @@ class PwnagotchiView:
         self._load_sprites()
         
         self.current_mood = "sleep"
+        self._t0 = time.time()
+        self._hop_t = 0.0
+        self._blink_until = 0.0
+        
         self.iface: str | None = None
         self.mon_iface: str | None = None
         self._proc: subprocess.Popen | None = None
@@ -89,7 +95,7 @@ class PwnagotchiView:
         pcap = LOOT_DIR / f"pwn_{ts}.pcapng"
         
         self.status_msg = "Starting harvester..."
-        self.current_mood = "excited"
+        self.current_mood = "look"
         self.start_time = time.time()
         
         # hcxdumptool command
@@ -136,12 +142,15 @@ class PwnagotchiView:
             if new_loot:
                 self.status_msg = "GOT LOOT!"
                 self.current_mood = "happy"
+                self._hop_t = time.time()
                 # Achievement integration
                 from bigbox import achievements
                 achievements.report_handshake()
             elif self.aps > 0:
                 self.status_msg = "Hunting..."
-                self.current_mood = "intense"
+                # Alternating excited/intense like original
+                now = time.time()
+                self.current_mood = "excited" if int(now * 0.7) % 2 else "intense"
             else:
                 self.status_msg = "Scanning..."
                 self.current_mood = "calm"
@@ -174,10 +183,21 @@ class PwnagotchiView:
         f_title = pygame.font.Font(None, 32)
         surf.blit(f_title.render("RECON :: PWNAGOTCHI", True, theme.ACCENT), (theme.PADDING, 8))
         
-        # Face
-        face = self.sprites.get(self.current_mood, self.sprites.get("calm"))
+        # Face animation
+        now = time.time()
+        t = now - self._t0
+        bob = math.sin(t * 2.6) * 4
+        hop = -15 if (now - self._hop_t) < 0.4 else 0
+        
+        mood = self.current_mood
+        # Blinking
+        open_eyed = {"intense", "excited", "alert", "sad", "look", "calm"}
+        if mood in open_eyed and (t % 3.0) < 0.16:
+            mood = "sleep"
+
+        face = self.sprites.get(mood, self.sprites.get("calm"))
         if face:
-            rect = face.get_rect(center=(theme.SCREEN_W // 2, head_h + 100))
+            rect = face.get_rect(center=(theme.SCREEN_W // 2, head_h + 100 + bob + hop))
             surf.blit(face, rect)
             
         # Stats
@@ -200,4 +220,4 @@ class PwnagotchiView:
         surf.blit(s_surf, (theme.PADDING, theme.SCREEN_H - foot_h + 8))
         
         hint = f_small.render("B: Stop & Exit", True, theme.FG_DIM)
-        surf.blit(hint, (theme.SCREEN_W - hint.get_width() - theme.PADDING, theme.SCREEN_H - foot_h + 8))
+        surf.blit(hint, (theme.SCREEN_W - hint.get_width() - hint.get_width() - theme.PADDING, theme.SCREEN_H - foot_h + 8))
