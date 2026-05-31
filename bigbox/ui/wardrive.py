@@ -119,8 +119,72 @@ class WardriveView:
         # Result
         self.result_msg = ""
         self.show_gps_detail = False
+        
+        # UI Overhaul Stats
+        self.discovery_log: list[_Observation] = [] # Last 10
+        self.npm_history: list[float] = [0.0] * 30   # Last 30 samples (5s each = 2.5 mins)
+        self._last_sample_t = time.time()
+        self._nodes_at_last_sample = 0
+        self._max_npm = 10.0 # scale
+        
+        # Animations
+        self._radar_radius = 0
+        self._radar_t = time.time()
 
-    def _init_geiger(self):
+    def _draw_panel(self, surf: pygame.Surface, x: int, y: int, w: int, h: int, title: str):
+        # Translucent background
+        panel_bg = pygame.Surface((w, h), pygame.SRCALPHA)
+        panel_bg.fill((15, 18, 28, 200))
+        surf.blit(panel_bg, (x, y))
+        
+        # Border and Glow
+        pygame.draw.rect(surf, theme.DIVIDER, (x, y, w, h), 1, border_radius=3)
+        pygame.draw.line(surf, theme.ACCENT, (x, y), (x + w, y), 2)
+        
+        # Title
+        f = pygame.font.Font(None, 20)
+        ts = f.render(title.upper(), True, theme.ACCENT_DIM)
+        surf.blit(ts, (x + 8, y + 4))
+
+    def _draw_gauge(self, surf: pygame.Surface, x: int, y: int, label: str, val: float, max_val: float, color: tuple):
+        w, h = 160, 45
+        # Label
+        f = pygame.font.Font(None, 18)
+        ls = f.render(label, True, theme.FG_DIM)
+        surf.blit(ls, (x, y))
+        
+        # Value
+        v_str = f"{val:.1f}" if val < 100 else f"{int(val)}"
+        if "SATS" in label: v_str = str(int(val))
+        vs = f.render(v_str, True, theme.FG)
+        surf.blit(vs, (x + w - vs.get_width(), y))
+        
+        # Bar
+        bx, by, bw, bh = x, y + 20, w, 6
+        pygame.draw.rect(surf, (30, 35, 45), (bx, by, bw, bh), border_radius=3)
+        perc = min(1.0, val / max_val) if max_val > 0 else 0
+        if perc > 0:
+            pygame.draw.rect(surf, color, (bx, by, int(bw * perc), bh), border_radius=3)
+
+    def _draw_graph(self, surf: pygame.Surface, x: int, y: int, w: int, h: int, data: list[float], title: str):
+        self._draw_panel(surf, x, y, w, h, title)
+        if not data: return
+        
+        points = []
+        max_v = max(max(data), 1.0)
+        for i, v in enumerate(data):
+            px = x + (i * (w / (len(data) - 1)))
+            py = y + h - 10 - (v / max_v) * (h - 30)
+            points.append((px, py))
+        
+        if len(points) > 1:
+            pygame.draw.lines(surf, theme.ACCENT, False, points, 2)
+            # Area fill (translucent)
+            fill_pts = [(points[0][0], y + h - 5)] + points + [(points[-1][0], y + h - 5)]
+            fill_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            rel_pts = [(p[0] - x, p[1] - y) for p in fill_pts]
+            pygame.draw.polygon(fill_surf, (90, 230, 170, 40), rel_pts)
+            surf.blit(fill_surf, (x, y))
 
     def _init_geiger(self):
         try:
@@ -330,6 +394,11 @@ class WardriveView:
             obs.first_seen_iso = fix.timestamp_iso or _now_iso()
             self.observed[obs.mac] = obs
             self.last_found = obs
+            
+            # Update discovery log (UI)
+            self.discovery_log.insert(0, obs)
+            if len(self.discovery_log) > 10:
+                self.discovery_log.pop()
             
             # Achievements
             from bigbox import achievements
@@ -579,21 +648,29 @@ class WardriveView:
             surf.blit(ls, (px + 30, py + 60 + i * 20))
 
     def _render_landing(self, surf: pygame.Surface, head_h: int) -> None:
-        f_big = pygame.font.Font(None, 44)
+        f_big = pygame.font.Font(None, 48)
         f_med = pygame.font.Font(None, 24)
-        msg = f_big.render("Wardriver Ready", True, theme.FG)
-        surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2,
-                        head_h + 80))
-        sub = f_med.render("Using Kismet for discovery and gpsd for location.",
-                        True, theme.FG_DIM)
-        surf.blit(sub, (theme.SCREEN_W // 2 - sub.get_width() // 2,
-                        head_h + 140))
+        
+        # Cyber-glow background effect
+        pygame.draw.rect(surf, (20, 30, 40), (theme.PADDING, head_h + 50, theme.SCREEN_W - 2*theme.PADDING, 300), border_radius=10)
+        pygame.draw.rect(surf, theme.ACCENT, (theme.PADDING, head_h + 50, theme.SCREEN_W - 2*theme.PADDING, 300), 2, border_radius=10)
+        
+        msg = f_big.render("TACTICAL WARDRIVE READY", True, theme.FG)
+        surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2, head_h + 100))
+        
+        sub = f_med.render("Backends: Kismet (Discovery) + gpsd (Location)", True, theme.ACCENT)
+        surf.blit(sub, (theme.SCREEN_W // 2 - sub.get_width() // 2, head_h + 160))
+        
+        hint = f_med.render("Press [A] to initiate capture sequence", True, theme.FG_DIM)
+        surf.blit(hint, (theme.SCREEN_W // 2 - hint.get_width() // 2, head_h + 240))
         
     def _render_starting(self, surf: pygame.Surface, head_h: int) -> None:
         f_big = pygame.font.Font(None, 36)
-        msg = f_big.render("Initialising Kismet...", True, theme.ACCENT)
+        msg = f_big.render("INITIALIZING KISMET...", True, theme.ACCENT)
         surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2, head_h + 100))
-        # Optional: draw a spinner or progress bar
+        # Add a tactical scanning line
+        line_y = head_h + 150 + int(math.sin(time.time() * 10) * 20)
+        pygame.draw.line(surf, theme.ACCENT, (theme.PADDING, line_y), (theme.SCREEN_W - theme.PADDING, line_y), 1)
 
     def _render_phone_qr(self, surf: pygame.Surface, head_h: int) -> None:
         from bigbox import qr
@@ -620,32 +697,98 @@ class WardriveView:
             wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
             bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
             last = self.last_found
-
-        elapsed = int(time.time() - self._capture_started)
-        total_nodes = wifi_count + bt_count
-        npm = (total_nodes / (elapsed / 60.0)) if elapsed > 10 else 0
-        self._play_geiger(npm)
-
-        if self.show_map:
-            self.map.render(surf, theme.PADDING, head_h + 40)
-            hx, hy = theme.PADDING + 10, head_h + 50
-            f_small = pygame.font.Font(None, 20)
-            surf.blit(f_small.render(f"WIFI: {wifi_count}", True, theme.ACCENT), (hx, hy))
-            surf.blit(f_small.render(f"BT:   {bt_count}", True, theme.ACCENT), (hx, hy + 20))
+            log = list(self.discovery_log)
         
-        # Last found box
-        ly = head_h + 290
-        pygame.draw.rect(surf, theme.BG_ALT, (theme.PADDING, ly, theme.SCREEN_W - 2*theme.PADDING, 60), border_radius=5)
-        if last:
-            f_med = pygame.font.Font(None, 24)
-            info = f"{last.ssid or last.mac} ({last.rssi}dBm)"
-            surf.blit(f_med.render(info, True, theme.FG), (theme.PADDING + 10, ly + 20))
+        total_nodes = wifi_count + bt_count
+        now = time.time()
+        elapsed = int(now - self._capture_started)
+        
+        # NPM Sampling (every 5 seconds)
+        if now - self._last_sample_t >= 5.0:
+            nodes_diff = total_nodes - self._nodes_at_last_sample
+            npm = nodes_diff * 12.0 # 60s / 5s = 12
+            self.npm_history.pop(0)
+            self.npm_history.append(npm)
+            self._last_sample_t = now
+            self._nodes_at_last_sample = total_nodes
+        
+        # Current NPM (for audio and HUD)
+        npm_curr = self.npm_history[-1]
+        self._play_geiger(npm_curr)
+
+        # --- Layout ---
+        # Top Left: MAP
+        map_w, map_h = 500, 240
+        mx, my = theme.PADDING, head_h + 40
+        self.map.render(surf, mx, my, w=map_w, h=map_h)
+        
+        # Radar Pulse Animation on Map
+        self._radar_radius = (self._radar_radius + 2) % 60
+        pygame.draw.circle(surf, theme.ACCENT, (mx + map_w//2, my + map_h//2), self._radar_radius, 1)
+        
+        # Top Right: Metrics Panel
+        mw, mh = 260, 240
+        mxx, myy = mx + map_w + 10, my
+        self._draw_panel(surf, mxx, myy, mw, mh, "Tactical Metrics")
+        
+        fix = self.gps.latest()
+        self._draw_gauge(surf, mxx + 10, myy + 35, "SATS", fix.sats, 12.0, theme.ACCENT)
+        self._draw_gauge(surf, mxx + 10, myy + 85, "HDOP", 10.0 - min(fix.hdop, 10.0), 10.0, theme.WARN)
+        self._draw_gauge(surf, mxx + 10, myy + 135, "SPEED (KM/H)", fix.speed_kmh, 60.0, theme.ACCENT)
+        self._draw_gauge(surf, mxx + 10, myy + 185, "ALT (M)", fix.alt_m, 1000.0, theme.FG_DIM)
+
+        # Bottom Left: NPM Graph
+        gx, gy = mx, my + map_h + 10
+        gw, gh = 340, 120
+        self._draw_graph(surf, gx, gy, gw, gh, self.npm_history, "Nodes Per Minute")
+
+        # Bottom Right: Discovery Log
+        lx, ly = gx + gw + 10, gy
+        lw, lh = theme.SCREEN_W - lx - theme.PADDING, gh
+        self._draw_panel(surf, lx, ly, lw, lh, "Discovery Log")
+        
+        f_log = pygame.font.Font(None, 18)
+        for i, obs in enumerate(log[:5]):
+            icon = "[W]" if obs.type == "WIFI" else "[B]"
+            color = theme.ACCENT if obs.type == "WIFI" else theme.WARN
+            name = obs.ssid or obs.mac
+            if len(name) > 25: name = name[:22] + "..."
+            
+            line = f"{icon} {name} ({obs.rssi}dBm)"
+            ls = f_log.render(line, True, color)
+            surf.blit(ls, (lx + 10, ly + 30 + i * 18))
+
+        # Big Stats Overlay
+        f_huge = pygame.font.Font(None, 48)
+        surf.blit(f_huge.render(str(wifi_count), True, theme.ACCENT), (mx + 10, my + 10))
+        f_small = pygame.font.Font(None, 20)
+        surf.blit(f_small.render("WI-FI", True, theme.FG_DIM), (mx + 10, my + 50))
+        
+        surf.blit(f_huge.render(str(bt_count), True, theme.WARN), (mx + 120, my + 10))
+        surf.blit(f_small.render("BT", True, theme.FG_DIM), (mx + 120, my + 50))
 
     def _render_result(self, surf: pygame.Surface, head_h: int, foot_h: int) -> None:
-        f_big = pygame.font.Font(None, 36)
-        msg = f_big.render("SESSION SAVED", True, theme.ACCENT)
-        surf.blit(msg, (theme.SCREEN_W // 2 - msg.get_width() // 2, head_h + 80))
-        f_med = pygame.font.Font(None, 24)
-        surf.blit(f_med.render(self.result_msg, True, theme.FG), (theme.SCREEN_W // 2 - 100, head_h + 140))
+        f_big = pygame.font.Font(None, 48)
+        f_med = pygame.font.Font(None, 28)
+        
+        pygame.draw.rect(surf, (20, 30, 40), (theme.PADDING, head_h + 50, theme.SCREEN_W - 2*theme.PADDING, 300), border_radius=10)
+        pygame.draw.rect(surf, theme.ACCENT, (theme.PADDING, head_h + 50, theme.SCREEN_W - 2*theme.PADDING, 300), 2, border_radius=10)
+
+        title = f_big.render("MISSION ACCOMPLISHED", True, theme.ACCENT)
+        surf.blit(title, (theme.SCREEN_W // 2 - title.get_width() // 2, head_h + 80))
+
+        with self._lock:
+            wifi_count = sum(1 for o in self.observed.values() if o.type == "WIFI")
+            bt_count = sum(1 for o in self.observed.values() if o.type == "BLE")
+        
+        stats = [
+            f"TOTAL WI-FI APs:  {wifi_count}",
+            f"TOTAL BLUETOOTH:  {bt_count}",
+            f"SESSION LOOT:    {self._csv_path.name if self._csv_path else 'SAVED'}"
+        ]
+
+        for i, ln in enumerate(stats):
+            ls = f_med.render(ln, True, theme.FG)
+            surf.blit(ls, (theme.SCREEN_W // 2 - ls.get_width() // 2, head_h + 150 + i * 35))
 
 
