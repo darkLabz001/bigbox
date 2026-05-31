@@ -14,14 +14,15 @@ fail() {
 # Wait for apt lock to be released if another process is using it
 wait_for_apt() {
     local count=0
-    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+    # Check multiple possible lock files
+    while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/lib/dpkg/lock >/dev/null 2>&1; do
         if [ $count -eq 0 ]; then
             echo "STATUS: Waiting for other apt process..."
         fi
         sleep 2
         ((count++))
         if [ $count -gt 300 ]; then # 10 minutes timeout
-            fail "Timed out waiting for apt lock"
+            fail "Timed out waiting for apt lock. Try rebooting if this persists."
         fi
     done
 }
@@ -93,6 +94,6 @@ for i in "${!NEEDED[@]}"; do
     sleep 0.5
 done
 
-echo "STATUS: Core tools verified"
+echo "STATUS: INSTALLATION COMPLETE"
 echo "PROGRESS: 100"
-echo "Installation complete."
+echo "All core tools have been verified and installed."
