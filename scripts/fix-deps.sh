@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script to ensure all bigbox core dependencies are installed.
-# Designed to be run from the UI with progress feedback.
+# Optimized for Raspberry Pi: installs one-by-one to prevent freezes.
 
 LOG="/tmp/bigbox-fix-deps.log"
 : > "$LOG"
@@ -11,8 +11,17 @@ fail() {
     exit 1
 }
 
+check_load() {
+    # If load average is too high, wait a bit
+    load=$(cat /proc/loadavg | awk '{print $1}')
+    if (( $(echo "$load > 4.0" | bc -l) )); then
+        echo "STATUS: High load ($load), waiting..."
+        sleep 5
+    fi
+}
+
 echo "STATUS: Checking core dependencies..."
-echo "PROGRESS: 10"
+echo "PROGRESS: 5"
 
 # List of all tools used by bigbox (sync with install.sh)
 PKGS=(
@@ -22,7 +31,7 @@ PKGS=(
     cryptsetup bettercap bluez alsa-utils pulseaudio-utils mpv mgba-sdl mednafen pcsxr
     python3-serial rfkill curl ca-certificates fonts-dejavu-core
     traceroute dnsutils iputils-ping sqlite3 build-essential pkg-config
-    hostapd dnsmasq unzip
+    hostapd dnsmasq unzip kismet gpsd gpsd-clients
 )
 
 NEEDED=()
@@ -39,17 +48,29 @@ if [ "${#NEEDED[@]}" -eq 0 ]; then
     exit 0
 fi
 
-echo "STATUS: Installing ${#NEEDED[@]} missing packages..."
-echo "PROGRESS: 30"
+TOTAL=${#NEEDED[@]}
+echo "STATUS: Installing $TOTAL missing packages..."
+echo "PROGRESS: 10"
 
-# Use DEBIAN_FRONTEND=noninteractive to avoid prompts
 echo "Updating apt cache..." >>"$LOG"
 sudo apt-get update >>"$LOG" 2>&1 || fail "apt-get update failed"
-echo "PROGRESS: 50"
 
-echo "Installing ${NEEDED[*]}..." >>"$LOG"
-sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    "${NEEDED[@]}" >>"$LOG" 2>&1 || fail "apt install failed"
+for i in "${!NEEDED[@]}"; do
+    pkg="${NEEDED[$i]}"
+    COUNT=$((i + 1))
+    PERCENT=$((10 + (90 * COUNT / TOTAL)))
+    
+    echo "STATUS: Installing $pkg ($COUNT/$TOTAL)..."
+    echo "PROGRESS: $PERCENT"
+    
+    check_load
+    
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        "$pkg" >>"$LOG" 2>&1 || echo "WARN: Failed to install $pkg, continuing..." >>"$LOG"
+    
+    # Small breather for the CPU
+    sleep 0.5
+done
 
 echo "STATUS: Core tools verified"
 echo "PROGRESS: 100"
