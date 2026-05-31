@@ -44,6 +44,14 @@ check_load() {
 echo "STATUS: Checking core dependencies..."
 echo "PROGRESS: 5"
 
+# --- Kismet Repo Setup ---
+if ! command -v kismet >/dev/null 2>&1; then
+    echo "STATUS: Adding Kismet repository..."
+    wget -O - https://www.kismetwireless.net/repos/kismet-release.gpg.key | sudo gpg --dearmor --yes -o /usr/share/keyrings/kismet-archive-keyring.gpg >>"$LOG" 2>&1
+    echo "deb [signed-by=/usr/share/keyrings/kismet-archive-keyring.gpg] https://www.kismetwireless.net/repos/apt/release/$(lsb_release -c -s) $(lsb_release -c -s) main" | sudo tee /etc/apt/sources.list.d/kismet.list >>"$LOG" 2>&1
+    sudo apt-get update >>"$LOG" 2>&1
+fi
+
 PKGS=(
     python3 python3-venv python3-pip python3-pygame python3-lgpio
     libturbojpeg0 nmap arp-scan aircrack-ng iw wireless-tools
