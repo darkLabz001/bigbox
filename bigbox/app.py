@@ -32,7 +32,7 @@ from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.update_checker import UpdateChecker
-from bigbox.ui import Launcher, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, ShopView, UpdateView, WifiMultiToolView, WardriveView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Launcher, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, ShopView, UpdateView, WifiMultiToolView, WardriveView, PwnagotchiView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
 from bigbox.ui.adsb import ADSBView
 from bigbox.ui.pager import PagerView
 from bigbox.ui.mission_report import MissionReportView
@@ -93,6 +93,7 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("theme_manager_view", 2),
     ("shop_view", 2),
     ("wardrive_view", 2),
+    ("pwnagotchi_view", 2),
     ("harvester_view", 2),
     ("beacon_bomber_view", 2),
     ("eviltwin_view", 2),
@@ -509,6 +510,9 @@ class App:
 
     def show_wardrive(self) -> None:
         self.wardrive_view = WardriveView()
+
+    def show_pwnagotchi(self) -> None:
+        self.pwnagotchi_view = PwnagotchiView()
 
     def show_harvester(self) -> None:
         self.harvester_view = HarvesterView()
