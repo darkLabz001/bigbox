@@ -69,7 +69,7 @@ class WardriveView:
         self.status_msg = "Ready"
 
         self.gps = GPSReader.get_shared()
-        self.map = MapWidget(theme.SCREEN_W - 2 * theme.PADDING, 240)
+        self.map = MapWidget(theme.SCREEN_W - 2 * theme.PADDING, 150)
 
         # counters
         self.aps_found = 0
@@ -536,7 +536,7 @@ class WardriveView:
 
         # map (middle)
         my = head_h + 138
-        self.map.render(surf, theme.PADDING, my, w=theme.SCREEN_W - 2 * theme.PADDING, h=150)
+        self.map.render(surf, theme.PADDING, my)
 
         # live log (bottom)
         ly = my + 158
