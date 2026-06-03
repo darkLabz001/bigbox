@@ -119,11 +119,16 @@ class MeshtasticLink:
         if self._started:
             return
         self._started = True
-        if not _HAS_MESHTASTIC:
+        # The local LoRa radio needs the meshtastic lib; the global internet
+        # bridge needs only paho. As long as one is present we can do useful
+        # work, so only bail when neither is installed.
+        if not (_HAS_MESHTASTIC or _HAS_PAHO):
             self._set(phase="NO_LIB",
-                      error="meshtastic library missing — run Settings > Fix Dependencies, then update")
-            self._log("SYS", "system", "meshtastic python library not installed")
+                      error="meshtastic/paho-mqtt missing — run Fix Dependencies, then update")
+            self._log("SYS", "system", "meshtastic + paho-mqtt not installed")
             return
+        if not _HAS_MESHTASTIC:
+            self._log("SYS", "system", "meshtastic lib absent — global-only mode (no local radio)")
         self._worker.start()
 
     def snapshot(self) -> LinkState:
@@ -184,21 +189,33 @@ class MeshtasticLink:
     # ---- worker ---------------------------------------------------------
 
     def _run(self) -> None:
+        self._ensure_identity()
+        if not _HAS_MESHTASTIC:
+            self._set(phase="NO_DEVICE", error="no local radio (meshtastic lib absent)")
         while not self._stop.is_set():
-            if self._iface is None:
+            # Local LoRa radio is optional — its absence must never stall the
+            # global bridge, which only needs the Pi's internet connection.
+            if _HAS_MESHTASTIC and self._iface is None:
                 self._connect_serial()
-                if self._iface is None:
-                    # back off before re-probing for a dongle
-                    self._stop.wait(3.0)
-                    continue
             try:
                 self._service_global()
                 self._drain_tx()
-                self._refresh_node()
+                if self._iface is not None:
+                    self._refresh_node()
             except Exception as e:
-                self._set(phase="ERROR", error=f"{type(e).__name__}: {e}")
-                self.reconnect()
-            self._stop.wait(1.0)
+                self._log("SYS", "system", f"{type(e).__name__}: {e}")
+                if self._iface is not None:
+                    self.reconnect()
+            self._stop.wait(2.0 if self._iface is None else 1.0)
+
+    def _ensure_identity(self) -> None:
+        """Synthesize a node id so the global bridge can address/echo-filter
+        even with no radio attached. A real node overrides this on connect."""
+        if self._my_num == 0:
+            import random
+            self._my_num = random.randint(0x10000000, 0x7FFFFFFF)
+            self._set(my_id=f"!{self._my_num:08x}",
+                      my_name=self._st.my_name or "bigbox")
 
     def _connect_serial(self) -> None:
         ports = _find_ports()
@@ -256,24 +273,28 @@ class MeshtasticLink:
             pass
 
     def _drain_tx(self) -> None:
-        iface = self._iface
-        if iface is None:
-            return
         with self._lock:
             pending, self._tx = self._tx, []
+        if not pending:
+            return
+        iface = self._iface
         for text in pending:
-            sent_lora = False
-            try:
-                iface.sendText(text)
-                sent_lora = True
-            except Exception as e:
-                self._log("SYS", "system", f"LoRa send failed: {e}")
-            if self._st.global_enabled:
+            sent_any = False
+            if iface is not None:
+                try:
+                    iface.sendText(text)
+                    sent_any = True
+                except Exception as e:
+                    self._log("SYS", "system", f"LoRa send failed: {e}")
+            if self._st.global_enabled and self._mqtt is not None:
                 self._mqtt_publish(text)
-            if sent_lora or self._st.global_enabled:
+                sent_any = True
+            if sent_any:
                 with self._lock:
                     self._st.sent += 1
                 self._log("ME", self._st.my_name or "me", text)
+            else:
+                self._log("SYS", "system", "no radio and global is off — message dropped")
 
     # ---- meshtastic pubsub callbacks ------------------------------------
 

@@ -124,14 +124,18 @@ class MeshtasticView:
 
     def _draw_status_pill(self, surf, st) -> None:
         phase = st.phase
-        text, color = {
-            "ONLINE": ("DONGLE ONLINE", theme.ACCENT),
-            "CONNECTING": ("CONNECTING…", theme.WARN),
-            "INIT": ("STARTING…", theme.WARN),
-            "NO_DEVICE": ("NO DONGLE", theme.ERR),
-            "NO_LIB": ("LIB MISSING", theme.ERR),
-            "ERROR": ("LINK ERROR", theme.ERR),
-        }.get(phase, (phase, theme.FG_DIM))
+        # A live global bridge is a "good" state even with no local radio.
+        if phase != "ONLINE" and st.mqtt_connected:
+            text, color = "GLOBAL ONLY", theme.ACCENT
+        else:
+            text, color = {
+                "ONLINE": ("DONGLE ONLINE", theme.ACCENT),
+                "CONNECTING": ("CONNECTING…", theme.WARN),
+                "INIT": ("STARTING…", theme.WARN),
+                "NO_DEVICE": ("NO RADIO", theme.WARN),
+                "NO_LIB": ("LIB MISSING", theme.ERR),
+                "ERROR": ("LINK ERROR", theme.ERR),
+            }.get(phase, (phase, theme.FG_DIM))
         surf_t = self.small_font.render(text, True, color)
         x = theme.SCREEN_W - theme.PADDING - surf_t.get_width()
         surf.blit(surf_t, (x, theme.PADDING + 6))
@@ -144,8 +148,10 @@ class MeshtasticView:
         msgs = st.messages
 
         if not msgs:
-            hint = self.body_font.render(
-                "Waiting for mesh traffic… press A to broadcast.", True, theme.FG_DIM)
+            tip = ("Waiting for mesh traffic… A: broadcast"
+                   if st.global_enabled else
+                   "No traffic yet.  X: connect GLOBAL mesh   A: broadcast")
+            hint = self.body_font.render(tip, True, theme.FG_DIM)
             surf.blit(hint, (theme.PADDING, top + 4))
             self._maybe_error(surf, st, top + 34)
             return
