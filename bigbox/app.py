@@ -32,7 +32,7 @@ from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.update_checker import UpdateChecker
-from bigbox.ui import Launcher, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, ShopView, UpdateView, WifiMultiToolView, WardriveView, PwnagotchiView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView
+from bigbox.ui import Launcher, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, ShopView, UpdateView, WifiMultiToolView, WardriveView, PwnagotchiView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView, MeshtasticView
 from bigbox.ui.adsb import ADSBView
 from bigbox.ui.pager import PagerView
 from bigbox.ui.mission_report import MissionReportView
@@ -88,6 +88,7 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("bbs_view", 2),
     ("ble_view", 2),
     ("onion_view", 2),
+    ("mesh_view", 2),
     ("ble_spam_view", 2),
     ("terminal_view", 2),
     ("theme_manager_view", 2),
@@ -608,6 +609,9 @@ class App:
     def show_onion_chat(self) -> None:
         self.onion_view = OnionChatView()
 
+    def show_meshtastic(self) -> None:
+        self.mesh_view = MeshtasticView()
+
     def show_ble_spam(self) -> None:
         self.ble_spam_view = BLESpamView()
 
@@ -671,6 +675,7 @@ class App:
         self.bbs_view = None
         self.ble_view = None
         self.onion_view = None
+        self.mesh_view = None
         self.ble_spam_view = None
         self.terminal_view = None
         self.theme_manager_view = None

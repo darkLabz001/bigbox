@@ -40,6 +40,11 @@ def _open_onion_chat(ctx: SectionContext) -> None:
     ctx.show_onion_chat()
 
 
+def _open_meshtastic(ctx: SectionContext) -> None:
+    """LoRa mesh chat via USB dongle, bridged to the global internet mesh."""
+    ctx.show_meshtastic()
+
+
 def _achievements(ctx: SectionContext) -> None:
     """Operational stats and unlocked medals."""
     ctx.show_achievements()
@@ -63,6 +68,7 @@ def build() -> Section:
             Action("Tactical Mail", _open_mail, "IMAP/SMTP email client"),
             Action("Tactical Messenger", _open_messenger, "Free Web/Gateway SMS"),
             Action("Dead Drop", _open_deaddrop, "Rogue AP offline chatroom"),
+            Action("Meshtastic", _open_meshtastic, "LoRa mesh + global internet bridge"),
             Action("BLE Mesh Chat", _open_ble_chat, "Bluetooth peer-to-peer"),
             Action("Local BBS", _open_bbs, "LAN-based message board"),
             Action("Onion IRC", _open_onion_chat, "Tor-routed anonymous chat"),

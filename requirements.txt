@@ -33,3 +33,5 @@ psutil
 yt-dlp
 evdev
 segno
+meshtastic>=2.3,<3
+paho-mqtt>=1.6
