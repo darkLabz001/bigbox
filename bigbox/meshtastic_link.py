@@ -330,7 +330,10 @@ class MeshtasticLink:
             self._want_global = False
             return
         try:
-            client = mqtt.Client()
+            try:
+                client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+            except (AttributeError, TypeError):
+                client = mqtt.Client()  # paho-mqtt 1.x has no CallbackAPIVersion
             client.username_pw_set(PUBLIC_MQTT_USER, PUBLIC_MQTT_PASS)
             client.on_connect = self._on_mqtt_connect
             client.on_disconnect = self._on_mqtt_disconnect
@@ -357,7 +360,10 @@ class MeshtasticLink:
             self._log("SYS", "system", "global bridge disconnected")
 
     def _sub_topic(self) -> str:
-        return f"msh/{MQTT_REGION}/2/json/{DEFAULT_CHANNEL}/#"
+        # All regions, JSON subtree only. The absolute-root "msh/#" gets
+        # ACL-kicked by the public broker, but this constrained wildcard
+        # stays connected and carries real worldwide text traffic.
+        return "msh/+/2/json/#"
 
     def _pub_topic(self) -> str:
         gw = self._st.my_id or f"!{self._my_num:08x}"
@@ -385,7 +391,7 @@ class MeshtasticLink:
                 client.subscribe(self._sub_topic())
             except Exception:
                 pass
-            self._log("SYS", "system", f"global mesh online ({DEFAULT_CHANNEL})")
+            self._log("SYS", "system", "global mesh online (worldwide)")
         else:
             self._set(mqtt_connected=False)
             self._log("SYS", "system", f"global broker refused (rc={rc})")
