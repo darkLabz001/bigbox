@@ -22,6 +22,7 @@ from __future__ import annotations
 import copy
 import glob
 import json
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
@@ -39,10 +40,18 @@ MAX_LOG = 200
 try:
     import meshtastic
     import meshtastic.serial_interface
+    import meshtastic.tcp_interface
     from pubsub import pub
     _HAS_MESHTASTIC = True
 except Exception:
     _HAS_MESHTASTIC = False
+
+# A local meshtasticd (Linux-native Meshtastic) exposes the radio here. This
+# is how USB SPI modules are driven — CH341+SX1262 sticks ("MeshToad" /
+# MeshStick, incl. the Glytch Pager mesh mod) appear as no serial port, so
+# meshtasticd owns the radio and we connect to it as a TCP client.
+MESHD_HOST = "127.0.0.1"
+MESHD_PORT = 4403
 
 try:
     import paho.mqtt.client as mqtt
@@ -71,6 +80,15 @@ def _find_ports() -> list[str]:
             seen.add(p)
             out.append(p)
     return out
+
+
+def _tcp_open(host: str, port: int, timeout: float = 1.0) -> bool:
+    """True if a TCP connection to host:port succeeds (meshtasticd up)."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 @dataclass
@@ -196,7 +214,7 @@ class MeshtasticLink:
             # Local LoRa radio is optional — its absence must never stall the
             # global bridge, which only needs the Pi's internet connection.
             if _HAS_MESHTASTIC and self._iface is None:
-                self._connect_serial()
+                self._connect_radio()
             try:
                 self._service_global()
                 self._drain_tx()
@@ -217,18 +235,34 @@ class MeshtasticLink:
             self._set(my_id=f"!{self._my_num:08x}",
                       my_name=self._st.my_name or "bigbox")
 
-    def _connect_serial(self) -> None:
-        ports = _find_ports()
-        if not ports:
-            self._set(phase="NO_DEVICE",
-                      error="No Meshtastic dongle found on /dev/ttyUSB* or /dev/ttyACM*")
-            return
-        self._set(phase="CONNECTING", error="", port=ports[0])
-        try:
-            iface = meshtastic.serial_interface.SerialInterface(devPath=ports[0])
-        except Exception as e:
-            self._set(phase="ERROR", port=ports[0], error=f"open failed: {e}")
-            return
+    def _connect_radio(self) -> None:
+        # Prefer a local meshtasticd over TCP (USB SPI radios like the CH341+
+        # SX1262 mesh mod are driven this way), then fall back to a direct USB
+        # serial Meshtastic node if one is plugged in.
+        iface = None
+        label = ""
+        if _tcp_open(MESHD_HOST, MESHD_PORT):
+            self._set(phase="CONNECTING", error="", port=f"meshtasticd {MESHD_HOST}:{MESHD_PORT}")
+            try:
+                iface = meshtastic.tcp_interface.TCPInterface(hostname=MESHD_HOST)
+                label = "meshtasticd"
+            except Exception as e:
+                self._set(error=f"meshtasticd connect failed: {e}")
+                iface = None
+        if iface is None:
+            ports = _find_ports()
+            if not ports:
+                if self._st.phase != "ONLINE":
+                    self._set(phase="NO_DEVICE",
+                              error="No meshtasticd (127.0.0.1:4403) and no USB serial node")
+                return
+            self._set(phase="CONNECTING", error="", port=ports[0])
+            try:
+                iface = meshtastic.serial_interface.SerialInterface(devPath=ports[0])
+                label = ports[0]
+            except Exception as e:
+                self._set(phase="ERROR", port=ports[0], error=f"open failed: {e}")
+                return
         self._iface = iface
         try:
             pub.subscribe(self._on_receive, "meshtastic.receive.text")
@@ -237,7 +271,7 @@ class MeshtasticLink:
             pass
         self._read_identity()
         self._set(phase="ONLINE", error="")
-        self._log("SYS", "system", f"local mesh online via {ports[0]}")
+        self._log("SYS", "system", f"local mesh online via {label}")
 
     def _read_identity(self) -> None:
         iface = self._iface
