@@ -294,7 +294,10 @@ class MeshtasticLink:
         try:
             region = iface.localNode.localConfig.lora.region
             try:
-                from meshtastic.config_pb2 import Config
+                try:
+                    from meshtastic.protobuf.config_pb2 import Config  # meshtastic >= 2.4
+                except Exception:
+                    from meshtastic.config_pb2 import Config           # older layout
                 region = Config.LoRaConfig.RegionCode.Name(region)
             except Exception:
                 region = str(region)
