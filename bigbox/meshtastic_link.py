@@ -293,7 +293,12 @@ class MeshtasticLink:
             pass
         try:
             region = iface.localNode.localConfig.lora.region
-            self._set(region=str(region))
+            try:
+                from meshtastic.config_pb2 import Config
+                region = Config.LoRaConfig.RegionCode.Name(region)
+            except Exception:
+                region = str(region)
+            self._set(region=region)
         except Exception:
             pass
 
