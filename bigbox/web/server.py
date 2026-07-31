@@ -29,11 +29,13 @@ from bigbox.gps import GPSReader
 from bigbox import system as system_mod
 from bigbox import background as bg_mod
 from bigbox import activity as activity_mod
+from bigbox.web import flipper_api
 
 if TYPE_CHECKING:
     from bigbox.app import App
 
 app = FastAPI()
+app.include_router(flipper_api.router)
 
 
 @app.middleware("http")
@@ -123,6 +125,10 @@ def set_app(bb_app: App):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
+
+@app.get("/flipper", response_class=HTMLResponse)
+async def flipper_control(request: Request):
+    return templates.TemplateResponse(request, "flipper.html")
 
 @app.websocket("/ws/terminal")
 async def terminal_websocket(websocket: WebSocket):

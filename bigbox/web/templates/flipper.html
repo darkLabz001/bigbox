@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>qFlipper Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0e27;
+            color: #00ff00;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 30px;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+
+        h1 {
+            font-size: 28px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .status-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .status-item {
+            background: #1a1f3a;
+            border: 1px solid #00ff00;
+            padding: 15px;
+            border-radius: 4px;
+        }
+
+        .status-item.disconnected {
+            border-color: #ff3333;
+        }
+
+        .status-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .status-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .status-value.error {
+            color: #ff3333;
+        }
+
+        .status-value.warning {
+            color: #ffaa00;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .panel {
+            background: #1a1f3a;
+            border: 1px solid #00ff00;
+            padding: 20px;
+            border-radius: 4px;
+        }
+
+        .panel h2 {
+            font-size: 16px;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #00ff00;
+            padding-bottom: 10px;
+        }
+
+        .app-list, .file-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .app-item, .file-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #0a0e27;
+            border: 1px solid #003300;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.2s;
+        }
+
+        .app-item:hover, .file-item:hover {
+            background: #1a2040;
+            border-color: #00ff00;
+        }
+
+        .app-item.loading {
+            color: #ffaa00;
+            cursor: not-allowed;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        button {
+            flex: 1;
+            padding: 10px 15px;
+            background: #1a1f3a;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            text-transform: uppercase;
+            border-radius: 3px;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #00ff00;
+            color: #0a0e27;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button.danger {
+            border-color: #ff3333;
+            color: #ff3333;
+        }
+
+        button.danger:hover {
+            background: #ff3333;
+            color: #0a0e27;
+        }
+
+        .console {
+            background: #0a0e27;
+            border: 1px solid #00ff00;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        .console-line {
+            margin: 2px 0;
+            word-break: break-all;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #003300;
+        }
+
+        .info-label {
+            color: #888;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+
+        .info-value {
+            color: #00ff00;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ FLIPPER ZERO CONTROL</h1>
+        </header>
+
+        <div class="status-bar">
+            <div class="status-item" id="status-connection">
+                <div class="status-label">Status</div>
+                <div class="status-value" id="connection-status">Checking...</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Battery</div>
+                <div class="status-value" id="battery-status">--%</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Firmware</div>
+                <div class="status-value" id="firmware-status">Loading...</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Device</div>
+                <div class="status-value" id="device-status">—</div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="panel">
+                <h2>📱 Apps</h2>
+                <div class="app-list" id="app-list">
+                    <div class="app-item loading">Scanning for apps...</div>
+                </div>
+                <div class="button-group">
+                    <button onclick="loadApps()">Refresh</button>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>📂 Files</h2>
+                <div class="file-list" id="file-list">
+                    <div class="file-item">Scanning storage...</div>
+                </div>
+                <div class="button-group">
+                    <button onclick="loadFiles()">Refresh</button>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>⚙️ Device Info</h2>
+                <div class="info-grid">
+                    <div class="info-row">
+                        <span class="info-label">Connected</span>
+                        <span class="info-value" id="info-connected">No</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Battery</span>
+                        <span class="info-value" id="info-battery">--%</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Device Name</span>
+                        <span class="info-value" id="info-name">—</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Firmware</span>
+                        <span class="info-value" id="info-fw">Unknown</span>
+                    </div>
+                </div>
+                <div class="button-group" style="margin-top: 20px;">
+                    <button onclick="rebootDevice()" class="danger">Reboot</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="console" id="console">
+            <div class="console-line" style="color: #888;">[System ready]</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/flipper';
+
+        function log(msg) {
+            const console_el = document.getElementById('console');
+            const line = document.createElement('div');
+            line.className = 'console-line';
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            console_el.appendChild(line);
+            console_el.scrollTop = console_el.scrollHeight;
+        }
+
+        async function getStatus() {
+            try {
+                const resp = await fetch(`${API_BASE}/status`);
+                const data = await resp.json();
+                updateStatus(data);
+            } catch (e) {
+                log(`Error fetching status: ${e.message}`);
+            }
+        }
+
+        function updateStatus(data) {
+            const statusEl = document.getElementById('status-connection');
+            const statusValue = document.getElementById('connection-status');
+
+            if (data.connected) {
+                statusEl.classList.remove('disconnected');
+                statusValue.textContent = data.phase;
+                statusValue.classList.remove('error', 'warning');
+                statusValue.style.color = '#00ff00';
+            } else {
+                statusEl.classList.add('disconnected');
+                statusValue.textContent = 'DISCONNECTED';
+                statusValue.classList.add('error');
+            }
+
+            document.getElementById('battery-status').textContent =
+                data.battery >= 0 ? `${data.battery}%` : '--';
+            document.getElementById('device-status').textContent =
+                data.device_name || '—';
+            document.getElementById('firmware-status').textContent =
+                data.firmware_version || 'Unknown';
+
+            document.getElementById('info-connected').textContent =
+                data.connected ? 'Yes' : 'No';
+            document.getElementById('info-battery').textContent =
+                data.battery >= 0 ? `${data.battery}%` : '--';
+            document.getElementById('info-name').textContent =
+                data.device_name || '—';
+            document.getElementById('info-fw').textContent =
+                data.firmware_version || 'Unknown';
+        }
+
+        async function loadApps() {
+            const appList = document.getElementById('app-list');
+            appList.innerHTML = '<div class="app-item loading"><span class="spinner"></span> Loading...</div>';
+
+            try {
+                const resp = await fetch(`${API_BASE}/apps`);
+                const data = await resp.json();
+
+                appList.innerHTML = '';
+                if (data.apps.length === 0) {
+                    appList.innerHTML = '<div class="app-item">No apps found</div>';
+                } else {
+                    data.apps.forEach(app => {
+                        const div = document.createElement('div');
+                        div.className = 'app-item';
+                        div.textContent = app.name;
+                        div.onclick = () => launchApp(app.name);
+                        appList.appendChild(div);
+                    });
+                }
+                log(`Found ${data.apps.length} apps`);
+            } catch (e) {
+                appList.innerHTML = `<div class="app-item" style="color: #ff3333;">Error loading apps</div>`;
+                log(`Error loading apps: ${e.message}`);
+            }
+        }
+
+        async function loadFiles() {
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = '<div class="file-item loading"><span class="spinner"></span> Loading...</div>';
+
+            try {
+                // Simulating file browser for now
+                const resp = await fetch(`${API_BASE}/command?command=ls&args=/mnt/flipper`, {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+
+                fileList.innerHTML = '';
+                const lines = data.result.split('\n').slice(0, 10);
+                if (lines.length === 0 || lines[0].startsWith('Error')) {
+                    fileList.innerHTML = '<div class="file-item">Unable to list files</div>';
+                } else {
+                    lines.forEach(line => {
+                        if (line.trim()) {
+                            const div = document.createElement('div');
+                            div.className = 'file-item';
+                            div.textContent = line.trim();
+                            fileList.appendChild(div);
+                        }
+                    });
+                }
+                log('Files loaded');
+            } catch (e) {
+                fileList.innerHTML = `<div class="file-item" style="color: #ff3333;">Error loading files</div>`;
+                log(`Error loading files: ${e.message}`);
+            }
+        }
+
+        async function launchApp(appName) {
+            log(`Launching ${appName}...`);
+            try {
+                const resp = await fetch(`${API_BASE}/apps/${appName}/launch`, { method: 'POST' });
+                const data = await resp.json();
+                log(data.message);
+            } catch (e) {
+                log(`Error launching app: ${e.message}`);
+            }
+        }
+
+        async function rebootDevice() {
+            if (!confirm('Reboot Flipper Zero?')) return;
+            log('Rebooting device...');
+            try {
+                const resp = await fetch(`${API_BASE}/reboot`, { method: 'POST' });
+                const data = await resp.json();
+                log(data.message);
+            } catch (e) {
+                log(`Error: ${e.message}`);
+            }
+        }
+
+        // WebSocket for real-time updates
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(`${protocol}//${window.location.host}/api/flipper/ws`);
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'status') {
+                    updateStatus(data);
+                }
+            };
+
+            ws.onerror = () => {
+                setTimeout(connectWebSocket, 5000);
+            };
+        }
+
+        // Initialize
+        getStatus();
+        loadApps();
+        loadFiles();
+        connectWebSocket();
+
+        // Refresh status every 5 seconds
+        setInterval(getStatus, 5000);
+    </script>
+</body>
+</html>

@@ -44,6 +44,8 @@ dependencies = [
   "yt-dlp",
   "evdev",
   "segno",
+  "flipper-zero",
+  "protobuf>=3.20",
 ]
 
 [project.scripts]
