@@ -62,7 +62,7 @@ class QFlipperView:
 
     def _handle_home(self, ev: ButtonEvent, ctx: App) -> None:
         """Handle input on home menu."""
-        menu_items = ["Browse Apps", "File Manager", "Device Info", "Settings"]
+        menu_items = ["Scan Devices", "Device Info", "Browse Apps", "File Manager", "Settings"]
 
         if ev.button is Button.UP:
             self.cursor = (self.cursor - 1) % len(menu_items)
@@ -70,14 +70,19 @@ class QFlipperView:
             self.cursor = (self.cursor + 1) % len(menu_items)
         elif ev.button is Button.A:
             if self.cursor == 0:
+                # Scan for devices
+                self.output_buffer = "Scanning for Flipper Zero..."
+                self.link = FliperZeroLink()
+                self.link.start()
+            elif self.cursor == 1:
+                self.mode = "INFO"
+            elif self.cursor == 2:
                 self.mode = "APPS"
                 self._load_apps()
-            elif self.cursor == 1:
+            elif self.cursor == 3:
                 self.mode = "FILES"
                 self._load_files()
-            elif self.cursor == 2:
-                self.mode = "INFO"
-            elif self.cursor == 3:
+            elif self.cursor == 4:
                 self.mode = "SETTINGS"
             self.cursor = 0
 
@@ -174,19 +179,24 @@ class QFlipperView:
         pad = theme.PADDING
 
         # Header
-        title = self.title_font.render("FLIPPER ZERO CONTROL", True, theme.ACCENT)
+        title = self.title_font.render("FLIPPER ZERO", True, theme.ACCENT)
         surf.blit(title, (pad, pad))
 
         # Connection status
         st = self.link.snapshot()
-        status_text = "● CONNECTED" if st.connected else "○ DISCONNECTED"
+        status_text = "● CONNECTED" if st.connected else "○ NOT CONNECTED"
         status_color = theme.ACCENT if st.connected else theme.WARN
         status = self.body_font.render(status_text, True, status_color)
         surf.blit(status, (theme.SCREEN_W - pad - status.get_width(), pad + 6))
 
+        # Connection type badge
+        conn_type = st.connection_type if st.connection_type else "—"
+        conn_badge = self.small_font.render(f"[{conn_type}]", True, theme.FG_DIM)
+        surf.blit(conn_badge, (theme.SCREEN_W - pad - conn_badge.get_width(), pad + 32))
+
         # Menu items
-        menu_items = ["Browse Apps", "File Manager", "Device Info", "Settings"]
-        y = 80
+        menu_items = ["Scan Devices", "Device Info", "Browse Apps", "File Manager", "Settings"]
+        y = 90
 
         for i, item in enumerate(menu_items):
             selected = i == self.cursor
@@ -202,6 +212,11 @@ class QFlipperView:
             text = self.body_font.render(f"{'▶' if selected else ' '} {item}", True, color)
             surf.blit(text, (pad + 10, y))
             y += 36
+
+        # Status/output
+        if self.output_buffer:
+            out = self.small_font.render(self.output_buffer[:60], True, theme.FG_DIM)
+            surf.blit(out, (pad, theme.SCREEN_H - 50))
 
         # Device info strip
         self._render_status_strip(surf, st)
