@@ -23,6 +23,10 @@ def _ble_spam(ctx: SectionContext) -> None:
     ctx.show_ble_spam()
 
 
+def _qflipper(ctx: SectionContext) -> None:
+    ctx.show_qflipper()
+
+
 def _trackers(ctx: SectionContext) -> None:
     ctx.show_trackers()
 
@@ -34,6 +38,7 @@ def build() -> Section:
         icon_img=load_icon("bluetooth"),
         background_img=load_background("bluetooth"),
         actions=[
+            Action("qFlipper", _qflipper, "Flipper Zero device manager"),
             Action("Tracker Detector", _trackers, "AirTag/SmartTag/Tile follow-alarm"),
             Action("BLE Spam (AppleJuice)", _ble_spam, "spoof pairing popups"),
             Action("Controller info", _ctl_show),

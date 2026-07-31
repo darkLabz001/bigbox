@@ -46,6 +46,7 @@ from bigbox.ui.wardrive import WardriveView
 from bigbox.ui.pwnagotchi import PwnagotchiView
 from bigbox.ui.shop import ShopView
 from bigbox.ui.loot import LootGalleryView
+from bigbox.ui.qflipper import QFlipperView
 from bigbox.ui.wifi_lite import (
     ProbeSnifferView, BeaconFloodView, KarmaLiteView,
 )
@@ -103,6 +104,7 @@ __all__ = [
     "PwnagotchiView",
     "ShopView",
     "LootGalleryView",
+    "QFlipperView",
     "ProbeSnifferView",
     "BeaconFloodView",
     "KarmaLiteView",

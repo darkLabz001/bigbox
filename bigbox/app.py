@@ -32,7 +32,7 @@ from bigbox.input.keyboard import translate as kbd_translate
 from bigbox.runner import run_streaming
 from bigbox.sections import build_sections
 from bigbox.update_checker import UpdateChecker
-from bigbox.ui import Launcher, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, ShopView, UpdateView, WifiMultiToolView, WardriveView, PwnagotchiView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView, MeshtasticView
+from bigbox.ui import Launcher, CCTVView, MenuView, ResultView, StatusBar, PingSweepView, KeyboardView, ARPScanView, FlockScannerView, WifiConnectView, CamScannerView, WifiAttackView, OfflineCrackerView, DataSniperView, MediaPlayerView, InternetTVView, YouTubeView, TailscaleView, AnonSurfView, VaultView, BettercapView, MailView, MessengerView, RagnarView, SignalScraperView, TrafficCamView, CameraInterceptorView, WifiteView, ChatView, SherlockView, DeadDropView, BBSView, BLEChatView, OnionChatView, BLESpamView, TerminalView, ThemeManagerView, ShopView, UpdateView, WifiMultiToolView, WardriveView, PwnagotchiView, EvilTwinView, GamesView, TrackerView, ProbeSnifferView, BeaconFloodView, KarmaLiteView, MeshtasticView, QFlipperView
 from bigbox.ui.adsb import ADSBView
 from bigbox.ui.pager import PagerView
 from bigbox.ui.mission_report import MissionReportView
@@ -90,6 +90,7 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("onion_view", 2),
     ("mesh_view", 2),
     ("ble_spam_view", 2),
+    ("qflipper_view", 2),
     ("terminal_view", 2),
     ("theme_manager_view", 2),
     ("shop_view", 2),
@@ -615,6 +616,9 @@ class App:
     def show_ble_spam(self) -> None:
         self.ble_spam_view = BLESpamView()
 
+    def show_qflipper(self) -> None:
+        self.qflipper_view = QFlipperView()
+
     def show_terminal(self) -> None:
         self.terminal_view = TerminalView()
 
@@ -677,6 +681,7 @@ class App:
         self.onion_view = None
         self.mesh_view = None
         self.ble_spam_view = None
+        self.qflipper_view = None
         self.terminal_view = None
         self.theme_manager_view = None
         self.shop_view = None
