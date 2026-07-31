@@ -78,19 +78,42 @@ class FliperZeroLink:
 
     def _monitor_loop(self) -> None:
         """Background thread monitoring Flipper Zero connection."""
+        usb_attempts = 0
+        ble_attempts = 0
+
         while self.running and not self._stop_event.is_set():
             try:
                 if not self._snapshot.connected:
-                    # Try USB first, then BLE
-                    if not self._try_usb_connect():
-                        self._try_ble_connect()
+                    # Try USB first (with limit to avoid infinite loop)
+                    if usb_attempts < 3:
+                        if self._try_usb_connect():
+                            usb_attempts = 0
+                            ble_attempts = 0
+                        else:
+                            usb_attempts += 1
+
+                    # Try BLE if USB failed
+                    if not self._snapshot.connected and ble_attempts < 3:
+                        if self._try_ble_connect():
+                            usb_attempts = 0
+                            ble_attempts = 0
+                        else:
+                            ble_attempts += 1
+
+                    # If both failed, mark as disconnected
+                    if not self._snapshot.connected:
+                        self._snapshot.phase = "DISCONNECTED"
+
                 else:
                     # Keep connection alive
                     if self._snapshot.connection_type == "USB":
-                        self._keep_alive_usb()
+                        if not self._keep_alive_usb():
+                            self._disconnect()
                     elif self._snapshot.connection_type == "BLE":
-                        self._keep_alive_ble()
-                    self._get_device_info()
+                        if not self._keep_alive_ble():
+                            self._disconnect()
+                    else:
+                        self._get_device_info()
 
             except Exception as e:
                 self._snapshot.phase = "ERROR"
@@ -106,24 +129,28 @@ class FliperZeroLink:
         if self._snapshot.connection_type == "USB" and self._snapshot.connected:
             return True
 
-        self._snapshot.phase = "CONNECTING"
+        self._snapshot.phase = "CONNECTING (USB)"
         serial_port = self._find_serial_port()
 
         if not serial_port:
+            self._snapshot.phase = "USB: No port found"
             return False
 
         try:
             if serial is None:
+                self._snapshot.error = "pyserial not installed"
                 return False
 
+            # Try to open port with short timeout
             self._serial = serial.Serial(
                 port=serial_port,
                 baudrate=230400,
-                timeout=1.0
+                timeout=0.5
             )
             self._snapshot.serial_port = serial_port
-            time.sleep(1)
+            time.sleep(0.5)
 
+            # Try to ping device
             if self._send_rpc_command_usb("system", "ping"):
                 self._snapshot.connected = True
                 self._snapshot.phase = "CONNECTED"
@@ -132,11 +159,12 @@ class FliperZeroLink:
                 self._snapshot.device_name = "Flipper Zero (USB)"
                 return True
             else:
+                self._snapshot.phase = "USB: No response"
                 self._disconnect()
                 return False
 
         except Exception as e:
-            self._snapshot.phase = "ERROR"
+            self._snapshot.phase = f"USB: {str(e)[:30]}"
             self._snapshot.error = str(e)[:60]
             self._disconnect()
             return False
@@ -216,38 +244,52 @@ class FliperZeroLink:
             self._snapshot.error = str(e)[:60]
             return False
 
-    def _keep_alive_usb(self) -> None:
+    def _keep_alive_usb(self) -> bool:
         """Send keep-alive ping over USB."""
         try:
-            self._send_rpc_command_usb("system", "ping")
+            return self._send_rpc_command_usb("system", "ping")
         except Exception:
-            pass
+            return False
 
     # ============ BLE BLUETOOTH CONNECTION ============
 
     def _try_ble_connect(self) -> bool:
         """Try to connect via Bluetooth LE."""
         if not BleakClient or not BleakScanner:
+            self._snapshot.phase = "BLE: bleak not installed"
             return False
 
         if self._snapshot.connection_type == "BLE" and self._snapshot.connected:
             return True
 
-        self._snapshot.phase = "CONNECTING"
+        self._snapshot.phase = "CONNECTING (BLE)"
 
         try:
-            # Scan for Flipper Zero
+            # Scan for Flipper Zero with timeout
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            address = loop.run_until_complete(self._ble_scan())
+
+            try:
+                address = loop.run_until_complete(asyncio.wait_for(self._ble_scan(), timeout=10.0))
+            except asyncio.TimeoutError:
+                self._snapshot.phase = "BLE: Scan timeout"
+                loop.close()
+                return False
 
             if not address:
+                self._snapshot.phase = "BLE: Device not found"
                 loop.close()
                 return False
 
             # Connect to device
             self._ble_device_address = address
-            success = loop.run_until_complete(self._ble_connect_device(address))
+            try:
+                success = loop.run_until_complete(asyncio.wait_for(self._ble_connect_device(address), timeout=10.0))
+            except asyncio.TimeoutError:
+                self._snapshot.phase = "BLE: Connect timeout"
+                loop.close()
+                return False
+
             loop.close()
 
             if success:
@@ -258,10 +300,11 @@ class FliperZeroLink:
                 self._snapshot.device_name = "Flipper Zero (BLE)"
                 return True
             else:
+                self._snapshot.phase = "BLE: Connection failed"
                 return False
 
         except Exception as e:
-            self._snapshot.phase = "ERROR"
+            self._snapshot.phase = f"BLE: {str(e)[:30]}"
             self._snapshot.error = str(e)[:60]
             return False
 
@@ -325,15 +368,16 @@ class FliperZeroLink:
             self._snapshot.error = str(e)[:60]
             return False
 
-    def _keep_alive_ble(self) -> None:
+    def _keep_alive_ble(self) -> bool:
         """Send keep-alive ping over BLE."""
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(self._send_rpc_command_ble("system", "ping"))
+            result = loop.run_until_complete(self._send_rpc_command_ble("system", "ping"))
             loop.close()
+            return result
         except Exception:
-            pass
+            return False
 
     # ============ COMMON METHODS ============
 

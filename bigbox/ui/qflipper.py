@@ -213,9 +213,12 @@ class QFlipperView:
             surf.blit(text, (pad + 10, y))
             y += 36
 
-        # Status/output
-        if self.output_buffer:
-            out = self.small_font.render(self.output_buffer[:60], True, theme.FG_DIM)
+        # Status/output and phase info
+        phase_text = st.phase if st.phase != "DISCONNECTED" else ""
+        if self.output_buffer or phase_text:
+            display_text = self.output_buffer or phase_text
+            color = theme.WARN if "CONNECTING" in phase_text or "Scanning" in self.output_buffer else theme.FG_DIM
+            out = self.small_font.render(display_text[:60], True, color)
             surf.blit(out, (pad, theme.SCREEN_H - 50))
 
         # Device info strip
