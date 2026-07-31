@@ -24,12 +24,13 @@ class QFlipperView:
         self.link = FliperZeroLink()
         self.link.start()
 
-        self.mode = "HOME"  # HOME, APPS, FILES, SETTINGS, INFO
+        self.mode = "HOME"  # HOME, APPS, FILES, SETTINGS, INFO, DIAGNOSTICS
         self.cursor = 0
         self.scroll = 0
         self.apps: list[dict] = []
         self.files: list[str] = []
         self.output_buffer = ""
+        self.diagnostics_output = ""
         self._loading = False
 
         self.title_font = pygame.font.Font(None, 36)
@@ -59,10 +60,12 @@ class QFlipperView:
             self._handle_settings(ev)
         elif self.mode == "INFO":
             self._handle_info(ev)
+        elif self.mode == "DIAGNOSTICS":
+            self._handle_diagnostics(ev)
 
     def _handle_home(self, ev: ButtonEvent, ctx: App) -> None:
         """Handle input on home menu."""
-        menu_items = ["Scan Devices", "Device Info", "Browse Apps", "File Manager", "Settings"]
+        menu_items = ["Scan Devices", "Diagnostics", "Device Info", "Browse Apps", "File Manager", "Settings"]
 
         if ev.button is Button.UP:
             self.cursor = (self.cursor - 1) % len(menu_items)
@@ -75,14 +78,17 @@ class QFlipperView:
                 self.link = FliperZeroLink()
                 self.link.start()
             elif self.cursor == 1:
-                self.mode = "INFO"
+                # Show diagnostics
+                self.mode = "DIAGNOSTICS"
             elif self.cursor == 2:
+                self.mode = "INFO"
+            elif self.cursor == 3:
                 self.mode = "APPS"
                 self._load_apps()
-            elif self.cursor == 3:
+            elif self.cursor == 4:
                 self.mode = "FILES"
                 self._load_files()
-            elif self.cursor == 4:
+            elif self.cursor == 5:
                 self.mode = "SETTINGS"
             self.cursor = 0
 
@@ -126,6 +132,27 @@ class QFlipperView:
     def _handle_info(self, ev: ButtonEvent) -> None:
         """Handle info screen input."""
         pass
+
+    def _handle_diagnostics(self, ev: ButtonEvent) -> None:
+        """Handle diagnostics screen input."""
+        if ev.button is Button.A:
+            # Refresh diagnostics
+            thread = threading.Thread(target=self._load_diagnostics, daemon=True)
+            thread.start()
+        elif ev.button is Button.UP:
+            self.scroll = max(0, self.scroll - 1)
+        elif ev.button is Button.DOWN:
+            self.scroll += 1
+
+    def _load_diagnostics(self) -> None:
+        """Load diagnostics in background thread."""
+        self._loading = True
+        try:
+            self.diagnostics_output = self.link.get_diagnostics()
+        except Exception as e:
+            self.diagnostics_output = f"Error: {str(e)}"
+        finally:
+            self._loading = False
 
     def _load_apps(self) -> None:
         """Load app list in background."""
@@ -172,6 +199,8 @@ class QFlipperView:
             self._render_settings(surf)
         elif self.mode == "INFO":
             self._render_info(surf)
+        elif self.mode == "DIAGNOSTICS":
+            self._render_diagnostics(surf)
 
     def _render_home(self, surf: pygame.Surface) -> None:
         """Render home screen."""
@@ -351,6 +380,39 @@ class QFlipperView:
             surf.blit(label_surf, (pad, y))
             surf.blit(val_surf, (pad + 150, y))
             y += 28
+
+    def _render_diagnostics(self, surf: pygame.Surface) -> None:
+        """Render diagnostics screen."""
+        surf.fill(theme.BG)
+        pad = theme.PADDING
+
+        title = self.title_font.render("DIAGNOSTICS", True, theme.ACCENT)
+        surf.blit(title, (pad, pad))
+
+        if self._loading:
+            loading = self.body_font.render("Scanning...", True, theme.WARN)
+            surf.blit(loading, (pad, 80))
+            return
+
+        if not self.diagnostics_output:
+            load_hint = self.body_font.render("Press A to scan", True, theme.FG_DIM)
+            surf.blit(load_hint, (pad, 80))
+            return
+
+        # Render scrollable diagnostics output
+        y = 80
+        lines = self.diagnostics_output.split("\n")
+
+        for i, line in enumerate(lines[self.scroll:self.scroll + 8]):
+            if line:
+                color = theme.ACCENT if "✓" in line else theme.ERR if "✗" in line else theme.FG_DIM
+                text = self.small_font.render(line[:70], True, color)
+                surf.blit(text, (pad, y))
+            y += 22
+
+        # Footer
+        hint = self.small_font.render("A: Refresh  ↑↓: Scroll  B: Back", True, theme.FG_DIM)
+        surf.blit(hint, (pad, theme.SCREEN_H - 30))
 
     def _render_status_strip(self, surf: pygame.Surface, st) -> None:
         """Render device status strip at bottom."""

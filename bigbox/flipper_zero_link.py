@@ -36,6 +36,52 @@ class FliperSnapshot:
     connection_type: str = ""  # USB or BLE
 
 
+def diagnose_flipper() -> dict:
+    """Diagnose Flipper Zero connectivity."""
+    diagnostics = {
+        "lsusb_output": "",
+        "serial_ports": [],
+        "bt_devices": [],
+        "dmesg_recent": "",
+        "permissions": {},
+    }
+
+    # Check lsusb
+    try:
+        result = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=5)
+        diagnostics["lsusb_output"] = result.stdout
+        if "0483:5740" in result.stdout:
+            diagnostics["flipper_detected_usb"] = True
+    except Exception as e:
+        diagnostics["lsusb_error"] = str(e)
+
+    # Check serial ports
+    try:
+        result = subprocess.run(["ls", "-la", "/dev/tty*"], capture_output=True, text=True, timeout=5)
+        diagnostics["serial_ports"] = result.stdout.split("\n")
+    except Exception:
+        pass
+
+    # Check Bluetooth
+    try:
+        result = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True, timeout=5)
+        for line in result.stdout.split("\n"):
+            if "Flipper" in line or "flipper" in line.lower():
+                diagnostics["bt_devices"].append(line)
+    except Exception:
+        pass
+
+    # Check dmesg
+    try:
+        result = subprocess.run(["dmesg"], capture_output=True, text=True, timeout=5)
+        lines = result.stdout.split("\n")[-30:]
+        diagnostics["dmesg_recent"] = "\n".join(lines)
+    except Exception:
+        pass
+
+    return diagnostics
+
+
 class FliperZeroLink:
     """Manages connection to Flipper Zero device via USB/Serial or Bluetooth."""
 
@@ -496,6 +542,44 @@ class FliperZeroLink:
             pass
 
         return apps
+
+    def get_diagnostics(self) -> str:
+        """Get diagnostic information about Flipper Zero connectivity."""
+        diag = diagnose_flipper()
+
+        output = []
+        output.append("=== FLIPPER ZERO DIAGNOSTICS ===\n")
+
+        if diag.get("flipper_detected_usb"):
+            output.append("✓ USB Device detected (0483:5740)\n")
+        else:
+            output.append("✗ USB Device NOT found in lsusb\n")
+
+        if diag.get("bt_devices"):
+            output.append("✓ Bluetooth devices found:")
+            for device in diag["bt_devices"]:
+                output.append(f"  {device}")
+            output.append("\n")
+        else:
+            output.append("✗ No Flipper Zero found in Bluetooth devices\n")
+
+        output.append("\n=== SERIAL PORTS ===\n")
+        tty_lines = [l for l in diag.get("serial_ports", []) if l]
+        if tty_lines:
+            for line in tty_lines[:10]:
+                output.append(line + "\n")
+        else:
+            output.append("No TTY devices found\n")
+
+        output.append("\n=== RECENT DMESG ===\n")
+        if "tty" in diag.get("dmesg_recent", "").lower():
+            for line in diag["dmesg_recent"].split("\n")[-10:]:
+                if line:
+                    output.append(line + "\n")
+        else:
+            output.append("No recent device messages\n")
+
+        return "".join(output)
 
     def launch_app(self, app_name: str) -> str:
         """Launch an app on the Flipper Zero."""
