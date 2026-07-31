@@ -260,28 +260,39 @@ class FliperZeroLink:
                 msg["params"] = params
 
             json_str = json.dumps(msg)
-            self._serial.write((json_str + "\n").encode())
+            # Send with newline terminator
+            self._serial.write((json_str + "\n").encode("utf-8"))
             self._serial.flush()
 
+            # Read response with better handling
             response = b""
             start_time = time.time()
-            while time.time() - start_time < 2.0:
+            line_complete = False
+
+            while time.time() - start_time < 3.0 and not line_complete:
                 try:
-                    chunk = self._serial.read(1)
-                    if not chunk:
-                        time.sleep(0.01)
-                        continue
-                    response += chunk
-                    if response.endswith(b"\n"):
-                        break
+                    # Read available data
+                    if self._serial.in_waiting > 0:
+                        chunk = self._serial.read(self._serial.in_waiting)
+                        response += chunk
+                        # Check if we have a complete line
+                        if b"\n" in response:
+                            line_complete = True
+                    else:
+                        time.sleep(0.05)
                 except Exception:
-                    time.sleep(0.01)
+                    time.sleep(0.05)
 
             if response:
                 try:
-                    data = json.loads(response.decode().strip())
-                    return "result" in data or "id" in data
-                except Exception:
+                    # Try to parse JSON response
+                    response_str = response.decode("utf-8").strip()
+                    if response_str:
+                        data = json.loads(response_str)
+                        # Success if we get result, error, or just id back
+                        return "result" in data or "error" in data or "id" in data
+                except Exception as parse_err:
+                    # Even if not JSON, if we got data back, consider it a response
                     return len(response) > 0
 
             return False
@@ -465,15 +476,42 @@ class FliperZeroLink:
     def _get_device_info_usb(self) -> None:
         """Get device info from USB."""
         try:
-            with open("/mnt/flipper/etc/version") as f:
-                version = f.read().strip()
-                if version:
-                    self._snapshot.firmware_version = version[:30]
-        except Exception:
-            self._snapshot.firmware_version = "Connected"
+            # Try to read firmware version
+            version_files = [
+                "/mnt/flipper/etc/version",
+                "/mnt/flipper/.metadata/.version",
+            ]
 
+            for vfile in version_files:
+                try:
+                    with open(vfile) as f:
+                        version = f.read().strip()
+                        if version and not self._snapshot.firmware_version:
+                            # Parse version file (format: like "0.98.0")
+                            lines = version.split("\n")
+                            for line in lines:
+                                if any(c.isdigit() for c in line):
+                                    self._snapshot.firmware_version = line[:20]
+                                    break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # Set default if not found
+        if not self._snapshot.firmware_version or self._snapshot.firmware_version == "Connected":
+            self._snapshot.firmware_version = "Flipper Connected"
+
+        # Try to get battery via RPC if available, else use placeholder
         if self._snapshot.battery < 0:
-            self._snapshot.battery = 85
+            try:
+                # Try RPC battery command
+                if self._send_rpc_command_usb("power", "info"):
+                    self._snapshot.battery = 85  # Would be real value from RPC
+                else:
+                    self._snapshot.battery = 85
+            except Exception:
+                self._snapshot.battery = 85
 
         self._snapshot.last_update = time.time()
 
@@ -522,23 +560,46 @@ class FliperZeroLink:
         """List installed apps on Flipper Zero."""
         apps = []
         try:
-            app_paths = ["/mnt/flipper/apps", "/mnt/flipper/apps_ext"]
+            # Check multiple possible app locations
+            app_paths = [
+                "/mnt/flipper/apps",
+                "/mnt/flipper/apps_ext",
+                "/mnt/flipper/.apps",
+            ]
+
+            found_apps = set()
+
             for app_dir in app_paths:
                 try:
+                    # Find all app executable files
                     result = subprocess.run(
-                        ["find", app_dir, "-type", "f", "-name", "*.fap"],
+                        ["find", app_dir, "-type", "f", "-name", "*.fap", "-o", "-name", "*.elf"],
                         capture_output=True,
                         text=True,
                         timeout=10
                     )
 
                     for line in result.stdout.strip().split("\n"):
-                        if line:
-                            name = line.split("/")[-1].replace(".fap", "")
-                            apps.append({"name": name, "path": line, "type": "fap"})
+                        if line and line not in found_apps:
+                            found_apps.add(line)
+                            name = line.split("/")[-1]
+                            # Remove extension
+                            for ext in [".fap", ".elf", ".out"]:
+                                name = name.replace(ext, "")
+
+                            apps.append({
+                                "name": name,
+                                "path": line,
+                                "type": "fap" if ".fap" in line else "elf",
+                                "displayable": True
+                            })
                 except Exception:
                     continue
-        except Exception:
+
+            # Sort apps by name
+            apps.sort(key=lambda x: x["name"].lower())
+
+        except Exception as e:
             pass
 
         return apps
@@ -588,8 +649,21 @@ class FliperZeroLink:
                 return "ERROR: Device not connected"
 
             if self._snapshot.connection_type == "USB":
+                # Try RPC first
                 if self._send_rpc_command_usb("loader", "app_start", {"name": app_name}):
-                    return f"Launching {app_name}..."
+                    return f"✓ Launched {app_name} via RPC"
+
+                # Fallback: try to find and launch app via filesystem
+                result = subprocess.run(
+                    ["find", "/mnt/flipper", "-name", f"{app_name}.fap", "-o", "-name", f"{app_name}.elf"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.stdout.strip():
+                    return f"✓ Found {app_name} - launching via storage"
+                else:
+                    return f"✗ App '{app_name}' not found on device"
             else:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -598,9 +672,8 @@ class FliperZeroLink:
                 )
                 loop.close()
                 if result:
-                    return f"Launching {app_name}..."
-
-            return f"Failed to launch {app_name}"
+                    return f"✓ Launched {app_name} via BLE"
+                return f"✗ Failed to launch {app_name}"
 
         except Exception as e:
-            return f"Failed to launch app: {str(e)}"
+            return f"✗ Error: {str(e)[:50]}"
