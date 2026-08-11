@@ -72,12 +72,81 @@ class KeyboardView:
         elif ev.button is Button.A:
             key = layout[self.cursor_y][self.cursor_x]
             self._press_key(key)
-        elif ev.button is Button.B:
-            self.callback(None) # Cancel
+        elif ev.button in (Button.B, Button.SELECT):
+            # Cancel. On the PocketTerm35 the gamepad B == the letter-B key, so
+            # in a text box B types 'b'; the SELECT button sends a distinct code
+            # and is the reliable "exit" button (Esc on the QWERTY also cancels).
+            self.callback(None)
+            self.dismissed = True
+        elif ev.button is Button.START:
+            self.callback(self.text) # Done / submit
             self.dismissed = True
         elif ev.button is Button.X: # Quick Backspace
             if len(self.text) > 0:
                 self.text = self.text[:-1]
+
+    _SHIFT_MAP = {
+        "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&",
+        "8": "*", "9": "(", "0": ")", "-": "_", "=": "+", "[": "{", "]": "}",
+        "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?", "`": "~",
+    }
+
+    def key_event(self, ev) -> None:
+        """Handle a physical KEYDOWN while the keyboard is open.
+
+        Uses pygame.key.name()+Shift rather than ev.unicode, which is empty on
+        the device's console/KMSDRM SDL backend. The caller routes every
+        non-arrow key here and consumes it, so no key can fire a game button or
+        the HK system menu while typing.
+        """
+        k = ev.key
+        if k in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.callback(self.text)
+            self.dismissed = True
+            return
+        if k in (pygame.K_ESCAPE, pygame.K_TAB):   # Esc / Select -> cancel
+            self.callback(None)
+            self.dismissed = True
+            return
+        if k == pygame.K_BACKSPACE:
+            self.text = self.text[:-1]
+            return
+        if k in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT):
+            return  # navigation is handled via translated button events
+        name = pygame.key.name(k)
+        shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+        if name == "space":
+            self.text += " "
+        elif len(name) == 1:
+            if name.isalpha():
+                self.text += name.upper() if shift else name
+            elif shift and name in self._SHIFT_MAP:
+                self.text += self._SHIFT_MAP[name]
+            else:
+                self.text += name
+
+    def handle_touch(self, x: int, y: int) -> None:
+        """Press the on-screen key at canvas coords (x, y). Mirrors render()."""
+        kb_w = min(700, theme.SCREEN_W - 40)
+        kb_h = 360
+        kb_x = (theme.SCREEN_W - kb_w) // 2
+        kb_y = (theme.SCREEN_H - kb_h) // 2
+        key_start_y = (kb_y + 55 + 50) + 20   # input box bottom + 20
+        key_margin = 8
+        key_h = 40
+        layout = self._get_layout()
+        for r, row in enumerate(layout):
+            row_w = kb_w - 40
+            key_w = (row_w - (len(row) - 1) * key_margin) // len(row)
+            ky = key_start_y + r * (key_h + key_margin)
+            if not (ky <= y < ky + key_h):
+                continue
+            for c, key in enumerate(row):
+                kx = kb_x + 20 + c * (key_w + key_margin)
+                if kx <= x < kx + key_w:
+                    self.cursor_y, self.cursor_x = r, c
+                    self._press_key(key)
+                    return
 
     def _press_key(self, key: str):
         if key == "SHIFT":

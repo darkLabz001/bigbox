@@ -24,31 +24,38 @@ echo "    target:  $INSTALL_DIR"
 # --- 1. apt packages ----------------------------------------------------------
 echo "==> apt packages"
 apt-get update
+
+# Required for bigbox to actually run. If these fail, we want to know.
 apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip \
     python3-pygame \
+    python3-serial rfkill \
+    alsa-utils libturbojpeg0 \
+    curl ca-certificates \
+    fonts-dejavu-core unzip
+
+# Optional tools/emulators. Installed best-effort: a package that is missing
+# on this arch/release (e.g. python3-lgpio on Kali arm64, or an emulator) must
+# NOT abort the whole install. GPIO libs aren't needed on the PocketTerm35
+# anyway (GPIO is disabled; controls ride the RP2040 over USB).
+for pkg in \
     python3-lgpio \
-    libturbojpeg0 \
     nmap arp-scan \
     aircrack-ng iw wireless-tools \
     tcpdump mdk4 wifite reaver bully pixiewps tshark \
     hashcat macchanger \
     cryptsetup bettercap \
     bluez \
-    alsa-utils \
-    mpv \
-    mgba-sdl \
-    mednafen \
-    pcsxr \
-    python3-serial rfkill \
-    curl ca-certificates \
-    fonts-dejavu-core unzip \
-    kismet gpsd gpsd-clients
+    mpv mgba-sdl mednafen pcsxr \
+    kismet gpsd gpsd-clients; do
+    apt-get install -y --no-install-recommends "$pkg" \
+        || echo "  (skipping unavailable package: $pkg)"
+done
 
-# --- 1b. tailscale ------------------------------------------------------------
+# --- 1b. tailscale (best-effort) ---------------------------------------------
 if ! command -v tailscale >/dev/null 2>&1; then
     echo "==> tailscale"
-    curl -fsSL https://tailscale.com/install.sh | sh
+    curl -fsSL https://tailscale.com/install.sh | sh || echo "  (tailscale install skipped)"
 fi
 
 # --- 2. copy source to /opt/bigbox -------------------------------------------

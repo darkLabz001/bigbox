@@ -318,22 +318,25 @@ class App:
 
         pygame.font.init()
 
-        # Fit the window to the real panel so a handheld whose native resolution
-        # differs from the theme default (PocketTerm35 = 640x480, GamePi43 =
-        # 800x480) needs no config. An explicit display.json override always wins.
-        if not self.dev_mode and not theme.DISPLAY_OVERRIDE:
-            try:
-                dinfo = pygame.display.Info()
-                if dinfo.current_w and dinfo.current_h:
-                    theme.SCREEN_W = dinfo.current_w
-                    theme.SCREEN_H = dinfo.current_h
-                    print(f"[bigbox] panel {theme.SCREEN_W}x{theme.SCREEN_H} (auto)")
-            except Exception:
-                pass
-
-        # flags = 0 if self.dev_mode else pygame.FULLSCREEN
-        flags = pygame.FULLSCREEN if not self.dev_mode else 0
+        # bigbox's views are laid out for the 800x480 design canvas. On a panel
+        # with a different native size (PocketTerm35 = 640x480) we render to that
+        # design-size canvas and scale it to the panel when presenting, so every
+        # view fits and fills the screen without per-view layout rewrites.
+        # Render at the 800x480 design resolution and let pygame.SCALED fit it
+        # to the real panel (e.g. 640x480 on the PocketTerm35). SCALED scales
+        # EVERY present (boot splash, games, menus) and maps input coords back
+        # to this logical space automatically, so no view needs per-panel
+        # layout work and direct display.flip() calls keep working.
+        flags = pygame.SCALED
+        if not self.dev_mode:
+            flags |= pygame.FULLSCREEN
         screen = pygame.display.set_mode((theme.SCREEN_W, theme.SCREEN_H), flags)
+        self._display = screen
+        self._canvas = screen
+        self._scale_x = self._scale_y = 1.0   # SCALED maps input coords for us
+        if not self.dev_mode:
+            print(f"[bigbox] logical {theme.SCREEN_W}x{theme.SCREEN_H} "
+                  f"(pygame.SCALED to panel)")
         
         # Disable screen blanking for the current session.
         try:
@@ -672,6 +675,23 @@ class App:
     def get_input(self, title: str, callback: Callable[[str | None], None], initial: str = "") -> None:
         self.kb_view = KeyboardView(title, callback, initial)
 
+    def _handle_tap(self, x: float, y: float) -> None:
+        """Route a touchscreen tap (in logical canvas coords) to a view.
+
+        Views opt in by defining handle_touch(x, y). The on-screen keyboard is
+        wired up today; other views can add the method to become tappable.
+        """
+        x, y = int(x), int(y)
+        self._last_input_ts = time.time()
+        for name in ("kb_view", "menu_view"):
+            v = getattr(self, name, None)
+            if v is not None and hasattr(v, "handle_touch"):
+                try:
+                    v.handle_touch(x, y)
+                except Exception as e:
+                    print(f"[touch] {name}: {e}")
+                return
+
     def go_back(self) -> None:
         self.result_view = None
         self.update_view = None
@@ -838,10 +858,28 @@ class App:
                 if ev.type == pygame.QUIT:
                     self.running = False
                 elif ev.type in (pygame.KEYDOWN, pygame.KEYUP):
+                    # When the on-screen keyboard is up, the physical QWERTY
+                    # keyboard types directly into it. Only the D-pad/arrows
+                    # still navigate the grid; every other key is consumed so
+                    # it can't fire a game button or the HK system menu.
+                    if self.kb_view is not None:
+                        if ev.key in (pygame.K_UP, pygame.K_DOWN,
+                                      pygame.K_LEFT, pygame.K_RIGHT):
+                            kbd_translate(ev, self.bus)
+                        elif ev.type == pygame.KEYDOWN:
+                            self.kb_view.key_event(ev)
+                        continue
                     if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                         self.running = False
                     # Always translate keyboard events (supports USB/BLE keyboards on device)
                     kbd_translate(ev, self.bus)
+                elif ev.type == pygame.FINGERDOWN:
+                    # Touchscreen: normalized (0..1) coords -> logical canvas.
+                    self._handle_tap(ev.x * theme.SCREEN_W, ev.y * theme.SCREEN_H)
+                elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                    # Panel-pixel coords -> logical canvas via present scale.
+                    self._handle_tap(ev.pos[0] * self._scale_x,
+                                     ev.pos[1] * self._scale_y)
 
             # 2. Drain logical button events; route to the foreground screen.
             for bev in self.bus.drain():
