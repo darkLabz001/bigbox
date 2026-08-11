@@ -92,19 +92,38 @@ cat > "$MNT/usr/local/sbin/bigbox-firstboot.sh" <<'FB'
 LOG=/var/log/bigbox-firstboot.log
 exec >>"$LOG" 2>&1
 echo "=== bigbox firstboot $(date) ==="
-# wait for network (up to ~3 min) so apt/pip can fetch deps
-for i in $(seq 1 60); do ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && break; sleep 3; done
+
+# 1. wait for network (up to ~4 min) so we can sync time + fetch deps
+for i in $(seq 1 80); do ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 && break; sleep 3; done
+
+# 2. FIX THE CLOCK — the Pi has no RTC; apt signature checks reject the repo
+#    ("Not live until ...") when the clock is wrong. Try NTP, then fall back
+#    to an HTTP Date header (works even if NTP/123 is blocked).
+timedatectl set-ntp true 2>/dev/null || true
+sleep 3
+for host in cloudflare.com google.com kali.org; do
+  D=$(curl -sI --max-time 8 "http://$host" 2>/dev/null | awk -F': ' 'tolower($1)=="date"{print $2; exit}')
+  if [ -n "$D" ]; then date -s "$D" >/dev/null 2>&1 && { echo "clock set from $host -> $(date -u)"; break; }; fi
+done
+
+# 3. install bigbox
 cd /opt/bigbox || exit 1
 bash scripts/install.sh || echo "WARN: install.sh returned non-zero"
-# boot to console so bigbox owns the panel (no desktop grabbing the GPU)
+
+# 4. boot to console + install the PocketTerm35 unit (KMSDRM fullscreen tty1)
 systemctl set-default multi-user.target || true
-# use the PocketTerm35 unit (KMSDRM fullscreen on tty1, 640x480)
 install -m 0644 scripts/bigbox-pocketterm.service /etc/systemd/system/bigbox.service
 systemctl daemon-reload
 systemctl enable bigbox.service
-systemctl start bigbox.service || true
-systemctl disable bigbox-firstboot.service || true
-echo "=== firstboot done $(date) ==="
+
+# 5. only finish (disable self) if deps really installed; else retry next boot
+if [ -x /opt/bigbox/.venv/bin/python ]; then
+  systemctl start bigbox.service || true
+  systemctl disable bigbox-firstboot.service || true
+  echo "=== firstboot SUCCESS $(date) ==="
+else
+  echo "=== firstboot INCOMPLETE (no venv) - will retry next boot $(date) ==="
+fi
 FB
 chmod +x "$MNT/usr/local/sbin/bigbox-firstboot.sh"
 
