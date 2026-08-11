@@ -112,7 +112,7 @@ class KeyboardView:
         surf.blit(overlay, (0, 0))
 
         # Main Box
-        kb_w, kb_h = 700, 360
+        kb_w, kb_h = min(700, theme.SCREEN_W - 40), 360
         kb_rect = pygame.Rect((theme.SCREEN_W - kb_w)//2, (theme.SCREEN_H - kb_h)//2, kb_w, kb_h)
         pygame.draw.rect(surf, theme.BG, kb_rect, border_radius=10)
         pygame.draw.rect(surf, theme.ACCENT, kb_rect, 2, border_radius=10)

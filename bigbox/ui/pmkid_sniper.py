@@ -410,7 +410,7 @@ class PMKIDSniperView:
             surf.blit(self.f_tiny.render(line[:120], True, col), (term_rect.x + 10, term_rect.y + 8 + i * 18))
 
     def _render_result(self, surf: pygame.Surface, head_h: int):
-        box_w, box_h = 720, 360
+        box_w, box_h = min(720, theme.SCREEN_W - 40), 360
         bx = (theme.SCREEN_W - box_w) // 2
         by = head_h + 20
         pygame.draw.rect(surf, theme.BG_ALT, (bx, by, box_w, box_h), border_radius=10)

@@ -19,6 +19,8 @@ class ButtonConfig:
     debounce_ms: int = 30
     repeat_delay_ms: int = 400
     repeat_interval_ms: int = 90
+    keyboard_mode: str = "default"     # "default" | "pocketterm"
+    gpio_enabled: bool = True
 
 
 _ETC_OVERRIDE = Path("/etc/bigbox/buttons.toml")
@@ -50,9 +52,35 @@ def load_button_config(path: Path | None = None) -> ButtonConfig:
             # Unknown button name in the TOML — ignore so user typos don't crash.
             continue
     behavior = raw.get("behavior", {})
+    inp = raw.get("input", {})
     return ButtonConfig(
         pins=pins,
         debounce_ms=int(behavior.get("debounce_ms", 30)),
         repeat_delay_ms=int(behavior.get("repeat_delay_ms", 400)),
         repeat_interval_ms=int(behavior.get("repeat_interval_ms", 90)),
+        keyboard_mode=str(inp.get("keyboard_mode", "default")),
+        gpio_enabled=bool(inp.get("gpio_enabled", True)),
     )
+
+
+def pocketterm_keyboard_present(base: Path | None = None) -> bool:
+    """True when a Waveshare PocketTerm35 is detected.
+
+    The handheld's controls are an RP2040 that enumerates as a USB HID
+    keyboard with vendor 1209 / product 0001. When it's on the bus we switch
+    to the "pocketterm" keyboard profile and disable the (absent, pin-
+    clashing) GPIO driver automatically — no config file required.
+    """
+    base = base or Path("/sys/bus/usb/devices")
+    if not base.is_dir():
+        return False
+    for vf in base.glob("*/idVendor"):
+        try:
+            if vf.read_text().strip() != "1209":
+                continue
+            pf = vf.parent / "idProduct"
+            if pf.exists() and pf.read_text().strip() == "0001":
+                return True
+        except OSError:
+            continue
+    return False

@@ -41,6 +41,36 @@ KEYMAP: dict[int, Button] = {
     pygame.K_TAB: Button.SELECT,
 }
 
+# Snapshot of the default (PC / GamePi43) layout, used to rebuild the map
+# when a different keyboard profile is selected at runtime.
+_BASE_KEYMAP = dict(KEYMAP)
+
+
+def set_keyboard_mode(mode: str = "default") -> None:
+    """Swap the key->button map to match a physical keyboard profile.
+
+    "pocketterm": Waveshare PocketTerm35. Its D-pad and A/B/X/Y/L/R game
+    buttons are RP2040-mapped to keyboard scancodes — the face buttons
+    actually type the letters A, B, X, Y and the shoulders type L/R. So in
+    this mode the letter keys A/B/X/Y mean the matching face button, and the
+    WASD arrow bindings are dropped (they'd collide with the A button; the
+    D-pad already sends real arrow keys).
+    """
+    global KEYMAP
+    if mode != "pocketterm":
+        KEYMAP = _BASE_KEYMAP
+        return
+    m = _BASE_KEYMAP.copy()
+    # WASD directionals conflict with the face-button letters on this
+    # keyboard (physical A/B/X/Y type letters); the D-pad sends real arrows.
+    for k in (pygame.K_w, pygame.K_s, pygame.K_a, pygame.K_d):
+        m.pop(k, None)
+    m[pygame.K_a] = Button.A
+    m[pygame.K_b] = Button.B
+    m[pygame.K_x] = Button.X
+    m[pygame.K_y] = Button.Y
+    KEYMAP = m
+
 
 def translate(ev: pygame.event.Event, bus: EventBus) -> None:
     if ev.type == pygame.KEYDOWN:

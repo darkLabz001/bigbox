@@ -491,7 +491,7 @@ class WifiteView:
             surf.blit(self.f_tiny.render(line[:110], True, theme.ACCENT if "BSSID" in line or "SSID" in line else theme.FG), (log_rect.x + 10, log_rect.y + 8 + i * 18))
 
     def _render_targets(self, surf: pygame.Surface, head_h: int):
-        box = pygame.Rect(20, head_h + 10, 760, theme.SCREEN_H - head_h - 60)
+        box = pygame.Rect(20, head_h + 10, theme.SCREEN_W - 40, theme.SCREEN_H - head_h - 60)
         pygame.draw.rect(surf, theme.BG_ALT, box, border_radius=4); pygame.draw.rect(surf, theme.DIVIDER, box, 1)
         if not self.targets: surf.blit(self.f_main.render("WAITING_FOR_SIGNAL_LOCK...", True, theme.FG_DIM), (box.centerx - 100, box.centery)); return
         headers = [("ID", 40), ("SSID_IDENTIFIER", 200), ("BSSID", 150), ("CH", 40), ("ENCR", 80), ("PWR", 60), ("CLNT", 50)]
@@ -533,7 +533,7 @@ class WifiteView:
             surf.blit(self.f_tiny.render(f"> {line[:110]}", True, theme.FG), (log_rect.x+10, log_rect.y+8+i*18))
 
     def _render_loot(self, surf: pygame.Surface, head_h: int):
-        box = pygame.Rect(20, head_h + 10, 760, theme.SCREEN_H - head_h - 60)
+        box = pygame.Rect(20, head_h + 10, theme.SCREEN_W - 40, theme.SCREEN_H - head_h - 60)
         pygame.draw.rect(surf, theme.BG_ALT, box, border_radius=4); pygame.draw.rect(surf, theme.DIVIDER, box, 1)
         surf.blit(self.f_bold.render("SECURED_AUDIT_ARCHIVES", True, theme.ACCENT), (box.x + 20, box.y + 15))
         if not self.loot_list: surf.blit(self.f_main.render("NO_LOOT_IDENTIFIED", True, theme.FG_DIM), (box.centerx - 80, box.centery)); return

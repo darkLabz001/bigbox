@@ -462,8 +462,9 @@ class ProbeSnifferView(_MonitorModeView):
                       (body.x + 310, y))
             # Count + age (right-aligned column)
             tail = f"×{p.count}  {ago}s"
+            tail_w = f_small.size(tail)[0]
             surf.blit(f_small.render(tail, True, theme.FG_DIM),
-                      (body.x + 660, y))
+                      (body.right - tail_w - 8, y))
 
 
 # --------------------------------------------------------------------------

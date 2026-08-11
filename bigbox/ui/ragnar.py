@@ -476,7 +476,7 @@ class RagnarView:
         surf.blit(self.f_tiny.render(f"LAT: {random.randint(5, 45)}ms", True, theme.FG), (pane.right - 60, pane.bottom - 20))
 
     def _render_targets(self, surf: pygame.Surface, head_h: int):
-        box = pygame.Rect(20, head_h + 10, 760, theme.SCREEN_H - head_h - 60)
+        box = pygame.Rect(20, head_h + 10, theme.SCREEN_W - 40, theme.SCREEN_H - head_h - 60)
         pygame.draw.rect(surf, theme.BG_ALT, box, border_radius=4)
         pygame.draw.rect(surf, theme.DIVIDER, box, 1)
         
@@ -523,7 +523,7 @@ class RagnarView:
         if not self.targets: return
         t = self.targets[min(self.target_cursor, len(self.targets)-1)]
         
-        box = pygame.Rect(100, head_h + 30, 600, 320)
+        box = pygame.Rect(100, head_h + 30, theme.SCREEN_W - 200, 320)
         pygame.draw.rect(surf, theme.BG_ALT, box, border_radius=4)
         pygame.draw.rect(surf, theme.ACCENT, box, 1, border_radius=4)
         

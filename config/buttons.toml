@@ -17,3 +17,15 @@ HK     = 2
 debounce_ms = 30
 repeat_delay_ms    = 400
 repeat_interval_ms = 90
+
+[input]
+# "default"      = PC / GamePi43 (WASD + ZXCV letters, arrows)
+# "pocketterm"   = PocketTerm35 (A/B/X/Y letter keys are the face buttons,
+#                  WASD arrows dropped — its D-pad sends real arrows)
+keyboard_mode = "default"
+
+# The GamePi43's buttons are wired straight to the Pi's GPIO. On a handheld
+# like the PocketTerm35 there are no GPIO buttons (controls live on the RP2040
+# over USB), and the configured pins collide with the I2C bus used by the
+# touchscreen — so disable the GPIO driver there.
+gpio_enabled = true

@@ -318,6 +318,19 @@ class App:
 
         pygame.font.init()
 
+        # Fit the window to the real panel so a handheld whose native resolution
+        # differs from the theme default (PocketTerm35 = 640x480, GamePi43 =
+        # 800x480) needs no config. An explicit display.json override always wins.
+        if not self.dev_mode and not theme.DISPLAY_OVERRIDE:
+            try:
+                dinfo = pygame.display.Info()
+                if dinfo.current_w and dinfo.current_h:
+                    theme.SCREEN_W = dinfo.current_w
+                    theme.SCREEN_H = dinfo.current_h
+                    print(f"[bigbox] panel {theme.SCREEN_W}x{theme.SCREEN_H} (auto)")
+            except Exception:
+                pass
+
         # flags = 0 if self.dev_mode else pygame.FULLSCREEN
         flags = pygame.FULLSCREEN if not self.dev_mode else 0
         screen = pygame.display.set_mode((theme.SCREEN_W, theme.SCREEN_H), flags)
@@ -347,15 +360,35 @@ class App:
             return    # keyboard events are pulled via pygame's event queue in run()
         
         cfg = load_button_config()
-        from bigbox.input.gpio import GPIOInput
-        self._gpio = GPIOInput(self.bus, cfg)
-        try:
-            self._gpio.start()
-        except Exception as e:
-            # If GPIO can't init (wrong perms, not on a Pi), fall back to keyboard
-            # so the device is still recoverable via a USB keyboard.
-            print(f"[bigbox] GPIO init failed ({e}); keyboard input only")
-            self._gpio = None
+        # Auto-detect the PocketTerm35: its RP2040 controls (USB 1209:0001)
+        # mean the A/B/X/Y letter keys are the face buttons and there are no
+        # GPIO buttons. An explicit config selection always wins.
+        from dataclasses import replace
+        from bigbox.input.config import pocketterm_keyboard_present
+        if cfg.keyboard_mode == "default" and pocketterm_keyboard_present():
+            cfg = replace(cfg, keyboard_mode="pocketterm", gpio_enabled=False)
+            print("[bigbox] PocketTerm35 detected (RP2040 1209:0001)")
+
+        # Physical keyboard profile (e.g. PocketTerm35's A/B/X/Y letter keys).
+        from bigbox.input import keyboard as _kbd
+        _kbd.set_keyboard_mode(cfg.keyboard_mode)
+        
+        self._gpio = None
+        if not cfg.gpio_enabled:
+            # No GPIO buttons on this device (PocketTerm35: controls ride the
+            # RP2040 over USB, and the pins in buttons.toml would collide with
+            # the touchscreen's I2C bus). Keyboard-only input.
+            print(f"[bigbox] GPIO input disabled by config; keyboard input only (mode={cfg.keyboard_mode})")
+        else:
+            from bigbox.input.gpio import GPIOInput
+            self._gpio = GPIOInput(self.bus, cfg)
+            try:
+                self._gpio.start()
+            except Exception as e:
+                # If GPIO can't init (wrong perms, not on a Pi), fall back to keyboard
+                # so the device is still recoverable via a USB keyboard.
+                print(f"[bigbox] GPIO init failed ({e}); keyboard input only")
+                self._gpio = None
         
         self._start_web_server()
 

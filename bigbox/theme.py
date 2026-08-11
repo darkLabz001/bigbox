@@ -5,8 +5,13 @@ import os
 from pathlib import Path
 
 # Designed for the GamePi43's 800x480 panel.
+# The app auto-fits the window to the real panel at startup (so a
+# PocketTerm35's 640x480 panel "just works"), and an explicit
+# /etc/bigbox/display.json override always wins — see _load_display_config().
 SCREEN_W = 800
 SCREEN_H = 480
+# True once a display.json has been applied; app.py skips auto-detection then.
+DISPLAY_OVERRIDE = False
 
 # Default Palette — high-contrast, terminal-ish.
 BG          = (10, 12, 18)
@@ -84,4 +89,32 @@ def _load_active_theme():
                 print(f"[theme] Failed to load {p}: {e}")
 
 _load_active_theme()
+
+
+def _load_display_config():
+    """Override the logical screen size from JSON.
+
+    Lookup order: /etc/bigbox/display.json (survives OTA resets), then the
+    repo's config/display.json. Missing/absent values keep the defaults.
+    """
+    global SCREEN_W, SCREEN_H, DISPLAY_OVERRIDE
+    paths = [
+        Path("/etc/bigbox/display.json"),
+        Path(__file__).resolve().parents[1] / "config" / "display.json",
+    ]
+    for p in paths:
+        if not p.exists():
+            continue
+        try:
+            with p.open("r") as f:
+                data = json.load(f)
+            SCREEN_W = int(data.get("width", SCREEN_W))
+            SCREEN_H = int(data.get("height", SCREEN_H))
+            DISPLAY_OVERRIDE = True
+            print(f"[theme] display resolution {SCREEN_W}x{SCREEN_H} from {p}")
+            break
+        except Exception as e:
+            print(f"[theme] Failed to load {p}: {e}")
+
+_load_display_config()
 

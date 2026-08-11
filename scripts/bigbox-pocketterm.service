@@ -1,0 +1,34 @@
+[Unit]
+Description=bigbox pentesting firmware (PocketTerm35)
+After=multi-user.target network.target
+ConditionPathExists=/opt/bigbox/bigbox/__main__.py
+# If we crash 5 times within 5 minutes, stop trying — prevents a tight
+# flickering boot loop when the display/GPU isn't ready and lets a human
+# recover the device over SSH.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Root so raw sockets + reboot/poweroff actions just work.
+User=root
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/bigbox
+
+# No X11 on the PocketTerm35: bigbox auto-selects KMSDRM (/dev/dri/card*)
+# and renders fullscreen straight to the 640x480 panel on tty1.
+ExecStartPre=-/usr/bin/amixer sset PCM 100% unmute
+ExecStart=/opt/bigbox/.venv/bin/python -m bigbox
+
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

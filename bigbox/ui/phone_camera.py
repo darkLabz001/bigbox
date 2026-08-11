@@ -56,7 +56,7 @@ def _save_url(url: str) -> None:
 
 
 class PhoneCameraView:
-    VIEW_W = 760
+    VIEW_W = theme.SCREEN_W - 40
     VIEW_H = 380
 
     def __init__(self) -> None:
