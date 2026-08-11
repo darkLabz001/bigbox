@@ -28,8 +28,10 @@ cd "$INSTALL_DIR"
 echo "[2] Running bigbox installer..."
 bash scripts/install.sh
 
-echo "[3] Setting up Pocketer35 display/keyboard..."
-bash projects/pocketterm35-kali/scripts/provision.sh /boot/firmware || true
+echo "[3] Booting to console so bigbox owns the panel (no desktop)..."
+systemctl set-default multi-user.target || true
+# Display + keyboard need no OS provisioning: bigbox auto-detects the
+# PocketTerm35 (640x480 panel + RP2040 keyboard at USB 1209:0001) at runtime.
 
 echo "[4] Installing bigbox systemd service (Pocketer35)..."
 install -m 0644 scripts/bigbox-pocketterm.service /etc/systemd/system/bigbox.service
