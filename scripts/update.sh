@@ -246,24 +246,21 @@ apt_install() {
 
 if [ "${#NEEDED[@]}" -gt 0 ]; then
     echo "STATUS: Installing ${NEEDED[*]}..."
-    # 120s for apt-get update, 600s for install. Both run with stdin closed
-    # and conffile prompts pinned, so dpkg can't trip us into SIGTTIN.
-    if ! bounded 120 apt-get update; then
-        dump_apt_log
-        fail "apt-get update failed (network? see $LOG)"
-    fi
+    # apt-get update is best-effort: a slow/failed refresh must not abort the
+    # OTA (the core git update already applied and bigbox still needs to
+    # restart onto it).
+    bounded 120 apt-get update || { dump_apt_log; echo "STATUS: apt-get update failed, continuing"; }
     echo "PROGRESS: 40"
-    if ! apt_install "${NEEDED[@]}"; then
-        # Clear any half-configured packages and retry once. This handles
-        # transient breakage like a postinst that failed on the previous
-        # run; without it, every future OTA inherits the broken state.
-        echo "STATUS: Recovering dpkg state and retrying..."
-        silent dpkg --configure -a
-        if ! apt_install "${NEEDED[@]}"; then
-            dump_apt_log
-            fail "apt install failed (see $LOG for dpkg output)"
-        fi
-    fi
+    silent dpkg --configure -a
+    # Install each package best-effort. Some in the list don't exist on this
+    # arch/release (e.g. mgba-sdl/pcsxr/mednafen on Kali arm64) and a batch
+    # install fails atomically on the first missing one — installing nothing
+    # AND returning non-zero, which used to abort the whole OTA (so bigbox
+    # never restarted onto the new code). Per-package + best-effort avoids
+    # that: available packages install, unavailable ones are skipped.
+    for pkg in "${NEEDED[@]}"; do
+        apt_install "$pkg" || echo "skipped unavailable package: $pkg" >>"$LOG"
+    done
     echo "PROGRESS: 70"
 else
     echo "STATUS: System dependencies up to date"
@@ -273,9 +270,9 @@ fi
 # --- python packages -------------------------------------------------------
 echo "STATUS: Updating python packages..."
 if [ -f "requirements.txt" ] && [ -d "$REPO_DIR/.venv" ]; then
-    if ! bounded 180 "$REPO_DIR/.venv/bin/pip" install -q -r requirements.txt; then
-        fail "pip install failed"
-    fi
+    # best-effort: don't abort the OTA (and skip the restart) if pip hiccups.
+    bounded 180 "$REPO_DIR/.venv/bin/pip" install -q -r requirements.txt \
+        || echo "STATUS: pip install had errors, continuing" >>"$LOG"
 elif [ ! -d "$REPO_DIR/.venv" ]; then
     echo "Warning: .venv not found in $REPO_DIR. Skipping pip install." >>"$LOG"
 fi
