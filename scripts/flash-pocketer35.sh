@@ -16,8 +16,11 @@ set -euo pipefail
 
 # ---- config (override via env) ---------------------------------------------
 IMG="${IMG:-/home/greyhat/Downloads/kali-linux-2026.2-raspberry-pi-arm64.img.xz}"
-WIFI_SSID="${WIFI_SSID:-iPhone}"
-WIFI_PSK="${WIFI_PSK:-REDACTED}"
+# Wi-Fi to seed for first boot. Pass these on the command line, e.g.:
+#   sudo WIFI_SSID='MyNet' WIFI_PSK='secret' bash scripts/flash-pocketer35.sh /dev/sdX --yes
+# Never hardcode real credentials here — this file is committed to git.
+WIFI_SSID="${WIFI_SSID:-}"
+WIFI_PSK="${WIFI_PSK:-}"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # ---- args ------------------------------------------------------------------
@@ -149,10 +152,11 @@ install -d "$MNT/etc/systemd/system/multi-user.target.wants"
 ln -sf ../bigbox-firstboot.service \
     "$MNT/etc/systemd/system/multi-user.target.wants/bigbox-firstboot.service"
 
-# ---- 5. seed Wi-Fi + enable SSH -------------------------------------------
-echo "==> seeding Wi-Fi ($WIFI_SSID) and enabling SSH"
-install -d -m 0700 "$MNT/etc/NetworkManager/system-connections"
-cat > "$MNT/etc/NetworkManager/system-connections/${WIFI_SSID}.nmconnection" <<NM
+# ---- 5. seed Wi-Fi (only if provided) + enable SSH ------------------------
+if [[ -n "$WIFI_SSID" && -n "$WIFI_PSK" ]]; then
+    echo "==> seeding Wi-Fi ($WIFI_SSID) and enabling SSH"
+    install -d -m 0700 "$MNT/etc/NetworkManager/system-connections"
+    cat > "$MNT/etc/NetworkManager/system-connections/${WIFI_SSID}.nmconnection" <<NM
 [connection]
 id=$WIFI_SSID
 type=wifi
@@ -168,7 +172,10 @@ method=auto
 [ipv6]
 method=auto
 NM
-chmod 600 "$MNT/etc/NetworkManager/system-connections/${WIFI_SSID}.nmconnection"
+    chmod 600 "$MNT/etc/NetworkManager/system-connections/${WIFI_SSID}.nmconnection"
+else
+    echo "==> no WIFI_SSID/WIFI_PSK given — skipping Wi-Fi seed (pass them as env vars)"
+fi
 # enable ssh (Kali ships it installed; just make sure it starts)
 ln -sf /lib/systemd/system/ssh.service \
     "$MNT/etc/systemd/system/multi-user.target.wants/ssh.service" 2>/dev/null || true
