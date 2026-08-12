@@ -1,0 +1,28 @@
+[Unit]
+Description=bigbox pentesting firmware (PocketTerm35, under X)
+After=multi-user.target
+ConditionPathExists=/opt/bigbox/bigbox/__main__.py
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/bigbox
+ExecStartPre=-/usr/bin/amixer -c 1 sset PCM 100% unmute
+# Start a minimal X server on vt1 and run bigbox as the X session. Under X the
+# media players (mpv --vo=x11) and emulators (DISPLAY=:0) work; SDL uses the
+# x11 video driver and bigbox's pygame.SCALED still fits the panel.
+ExecStart=/usr/bin/xinit /opt/bigbox/scripts/bigbox-x-session.sh -- :0 vt1 -keeptty -nolisten tcp
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
