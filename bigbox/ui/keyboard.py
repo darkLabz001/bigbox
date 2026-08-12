@@ -126,27 +126,8 @@ class KeyboardView:
                 self.text += name
 
     def handle_touch(self, x: int, y: int) -> None:
-        """Press the on-screen key at canvas coords (x, y). Mirrors render()."""
-        kb_w = min(700, theme.SCREEN_W - 40)
-        kb_h = 360
-        kb_x = (theme.SCREEN_W - kb_w) // 2
-        kb_y = (theme.SCREEN_H - kb_h) // 2
-        key_start_y = (kb_y + 55 + 50) + 20   # input box bottom + 20
-        key_margin = 8
-        key_h = 40
-        layout = self._get_layout()
-        for r, row in enumerate(layout):
-            row_w = kb_w - 40
-            key_w = (row_w - (len(row) - 1) * key_margin) // len(row)
-            ky = key_start_y + r * (key_h + key_margin)
-            if not (ky <= y < ky + key_h):
-                continue
-            for c, key in enumerate(row):
-                kx = kb_x + 20 + c * (key_w + key_margin)
-                if kx <= x < kx + key_w:
-                    self.cursor_y, self.cursor_x = r, c
-                    self._press_key(key)
-                    return
+        # No on-screen grid anymore — text comes from the physical keyboard.
+        return
 
     def _press_key(self, key: str):
         if key == "SHIFT":
@@ -175,68 +156,36 @@ class KeyboardView:
                 self.mode = "lower"
 
     def render(self, surf: pygame.Surface) -> None:
-        # Darken background
+        # Dim background
         overlay = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
         surf.blit(overlay, (0, 0))
 
-        # Main Box
-        kb_w, kb_h = min(700, theme.SCREEN_W - 40), 360
-        kb_rect = pygame.Rect((theme.SCREEN_W - kb_w)//2, (theme.SCREEN_H - kb_h)//2, kb_w, kb_h)
-        pygame.draw.rect(surf, theme.BG, kb_rect, border_radius=10)
-        pygame.draw.rect(surf, theme.ACCENT, kb_rect, 2, border_radius=10)
+        # Compact input dialog — you type on the device's physical keyboard.
+        box_w = min(640, theme.SCREEN_W - 40)
+        box_h = 172
+        box = pygame.Rect((theme.SCREEN_W - box_w) // 2,
+                          (theme.SCREEN_H - box_h) // 2, box_w, box_h)
+        pygame.draw.rect(surf, theme.BG, box, border_radius=10)
+        pygame.draw.rect(surf, theme.ACCENT, box, 2, border_radius=10)
 
         # Title
-        f_title = pygame.font.Font(None, 32)
-        title_surf = f_title.render(self.title, True, theme.ACCENT)
-        surf.blit(title_surf, (kb_rect.x + 20, kb_rect.y + 15))
+        f_title = pygame.font.Font(None, 30)
+        surf.blit(f_title.render(self.title, True, theme.ACCENT), (box.x + 20, box.y + 18))
 
-        # Text Input Box
-        input_rect = pygame.Rect(kb_rect.x + 20, kb_rect.y + 55, kb_rect.width - 40, 50)
-        pygame.draw.rect(surf, theme.BG_ALT, input_rect, border_radius=5)
-        pygame.draw.rect(surf, theme.DIVIDER, input_rect, 1, border_radius=5)
-        
-        f_text = pygame.font.Font(None, 36)
-        display_text = self.text + ("_" if int(time.time()*2)%2 == 0 else " ")
-        text_surf = f_text.render(display_text, True, theme.FG)
-        surf.blit(text_surf, (input_rect.x + 10, input_rect.y + 10))
+        # Text field with blinking caret; scrolls to keep the caret visible.
+        input_rect = pygame.Rect(box.x + 20, box.y + 60, box.width - 40, 54)
+        pygame.draw.rect(surf, theme.BG_ALT, input_rect, border_radius=6)
+        pygame.draw.rect(surf, theme.DIVIDER, input_rect, 1, border_radius=6)
+        f_text = pygame.font.Font(None, 38)
+        shown = self.text + ("_" if int(time.time() * 2) % 2 == 0 else " ")
+        while f_text.size(shown)[0] > input_rect.width - 24 and len(shown) > 1:
+            shown = shown[1:]
+        surf.blit(f_text.render(shown, True, theme.FG), (input_rect.x + 12, input_rect.y + 12))
 
-        # Keys
-        layout = self._get_layout()
-        key_margin = 8
-        key_start_y = input_rect.bottom + 20
-        
-        for r, row in enumerate(layout):
-            row_w = kb_rect.width - 40
-            key_w = (row_w - (len(row)-1)*key_margin) // len(row)
-            key_h = 40
-            
-            for c, key in enumerate(row):
-                is_selected = (r == self.cursor_y and c == self.cursor_x)
-                
-                kx = kb_rect.x + 20 + c * (key_w + key_margin)
-                ky = key_start_y + r * (key_h + key_margin)
-                
-                # Dynamic width for bottom row
-                if r == 4:
-                    if key in ["SPACE", "DONE"]:
-                        # Space and Done are double wide in our logic? No, let's keep it simple for now.
-                        pass
-
-                k_rect = pygame.Rect(kx, ky, key_w, key_h)
-                
-                bg_color = theme.SELECTION_BG if is_selected else theme.BG_ALT
-                border_color = theme.ACCENT if is_selected else theme.DIVIDER
-                
-                pygame.draw.rect(surf, bg_color, k_rect, border_radius=5)
-                pygame.draw.rect(surf, border_color, k_rect, 2 if is_selected else 1, border_radius=5)
-                
-                f_key = pygame.font.Font(None, 24)
-                key_label = f_key.render(key, True, theme.ACCENT if is_selected else theme.FG)
-                surf.blit(key_label, (k_rect.centerx - key_label.get_width()//2, k_rect.centery - key_label.get_height()//2))
-
-        # Footer Hint
-        f_hint = pygame.font.Font(None, 18)
-        hint = f_hint.render("D-PAD: Navigate  A: Select  X: Backspace  B: Cancel", True, theme.FG_DIM)
-        surf.blit(hint, (kb_rect.x + 20, kb_rect.bottom - 25))
+        # Hint
+        f_hint = pygame.font.Font(None, 20)
+        hint = f_hint.render("Type on the keyboard    Enter: OK    Esc: Cancel",
+                             True, theme.FG_DIM)
+        surf.blit(hint, (box.x + 20, box.bottom - 28))
 import time
