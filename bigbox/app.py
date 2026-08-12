@@ -183,6 +183,31 @@ def _is_uconsole() -> bool:
     return False
 
 
+def _has_physical_keyboard() -> bool:
+    """True if a real multi-key keyboard input device is present (the uConsole's
+    QWERTY, a plugged-in USB keyboard, etc.). Distinguishes from HDMI-CEC 'kbd'
+    handlers and GPIO-only setups so the GamePi43 (no keyboard) stays False."""
+    try:
+        data = open("/proc/bus/input/devices").read()
+    except Exception:
+        return False
+    for block in data.split("\n\n"):
+        low = block.lower()
+        if "kbd" not in low:
+            continue
+        # skip HDMI-CEC consumer-control and GPIO button "keyboards"
+        if any(x in low for x in ("vc4-hdmi", "hdmi", "cec", "gpio-keys", "gpio_keys")):
+            continue
+        if "keyboard" in low:
+            return True
+        # a real keyboard exposes a long EV_KEY bitmap; a gamepad/power button
+        # only a short one.
+        for line in block.splitlines():
+            if line.startswith("B: KEY=") and len(line.split("=", 1)[1].split()) >= 4:
+                return True
+    return False
+
+
 class App:
     def __init__(self) -> None:
         self.dev_mode = bool(os.environ.get("BIGBOX_DEV"))
@@ -423,7 +448,9 @@ class App:
         # Devices with a real QWERTY (uConsole, or forced via BIGBOX_KEYBOARD)
         # can type straight into the on-screen keyboard's text field; the D-pad
         # still drives its grid. The GamePi43 (no keyboard) stays grid-only.
-        self._kb_can_type = bool(os.environ.get("BIGBOX_KEYBOARD") or _is_uconsole())
+        self._kb_can_type = bool(
+            os.environ.get("BIGBOX_KEYBOARD") or _is_uconsole() or _has_physical_keyboard()
+        )
         if self._kb_can_type:
             print("[bigbox] physical keyboard text entry enabled")
 
@@ -902,7 +929,11 @@ class App:
                             and getattr(self, "_kb_can_type", False)
                             and self.kb_view.type_key(ev)):
                         continue
-                    if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                    # Esc quits ONLY in dev mode (windowed on a PC). On a real
+                    # device it must not close bigbox — it falls through to the
+                    # keymap as Back (Button.B).
+                    if (self.dev_mode and ev.type == pygame.KEYDOWN
+                            and ev.key == pygame.K_ESCAPE):
                         self.running = False
                     # Always translate keyboard events (supports USB/BLE keyboards on device)
                     kbd_translate(ev, self.bus)
