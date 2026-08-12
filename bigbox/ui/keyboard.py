@@ -79,6 +79,47 @@ class KeyboardView:
             if len(self.text) > 0:
                 self.text = self.text[:-1]
 
+    _SHIFT_MAP = {
+        "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&",
+        "8": "*", "9": "(", "0": ")", "-": "_", "=": "+", "[": "{", "]": "}",
+        "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?", "`": "~",
+    }
+
+    def type_key(self, ev) -> bool:
+        """Physical-keyboard text entry (e.g. the uConsole's QWERTY). Returns
+        True if the key was consumed as text — so the caller skips game-button
+        translation — and False for arrows / non-text keys so the D-pad still
+        drives the on-screen grid. Uses pygame.key.name()+Shift because
+        ev.unicode is empty under the console/KMSDRM SDL backend."""
+        k = ev.key
+        if k in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.callback(self.text)
+            self.dismissed = True
+            return True
+        if k == pygame.K_ESCAPE:
+            self.callback(None)
+            self.dismissed = True
+            return True
+        if k == pygame.K_BACKSPACE:
+            self.text = self.text[:-1]
+            return True
+        if k in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT):
+            return False        # let the D-pad navigate the grid
+        name = pygame.key.name(k)
+        shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+        if name == "space":
+            self.text += " "
+            return True
+        if len(name) == 1:
+            if name.isalpha():
+                self.text += name.upper() if shift else name
+            elif shift and name in self._SHIFT_MAP:
+                self.text += self._SHIFT_MAP[name]
+            else:
+                self.text += name
+            return True
+        return False            # modifier/function keys: ignore, don't consume
+
     def _press_key(self, key: str):
         if key == "SHIFT":
             self.mode = "upper"

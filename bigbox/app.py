@@ -420,6 +420,13 @@ class App:
             cfg = replace(cfg, gpio_enabled=False)
             print("[bigbox] keyboard handheld (uConsole/no-GPIO) — GPIO buttons disabled")
 
+        # Devices with a real QWERTY (uConsole, or forced via BIGBOX_KEYBOARD)
+        # can type straight into the on-screen keyboard's text field; the D-pad
+        # still drives its grid. The GamePi43 (no keyboard) stays grid-only.
+        self._kb_can_type = bool(os.environ.get("BIGBOX_KEYBOARD") or _is_uconsole())
+        if self._kb_can_type:
+            print("[bigbox] physical keyboard text entry enabled")
+
         # Physical keyboard profile (e.g. PocketTerm35's A/B/X/Y letter keys).
         from bigbox.input import keyboard as _kbd
         _kbd.set_keyboard_mode(cfg.keyboard_mode)
@@ -889,6 +896,12 @@ class App:
                 if ev.type == pygame.QUIT:
                     self.running = False
                 elif ev.type in (pygame.KEYDOWN, pygame.KEYUP):
+                    # Keyboard devices (uConsole): type QWERTY straight into the
+                    # on-screen keyboard; arrows/gamepad still drive its grid.
+                    if (ev.type == pygame.KEYDOWN and self.kb_view is not None
+                            and getattr(self, "_kb_can_type", False)
+                            and self.kb_view.type_key(ev)):
+                        continue
                     if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                         self.running = False
                     # Always translate keyboard events (supports USB/BLE keyboards on device)
