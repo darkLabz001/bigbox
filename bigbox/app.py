@@ -322,21 +322,42 @@ class App:
         # with a different native size (PocketTerm35 = 640x480) we render to that
         # design-size canvas and scale it to the panel when presenting, so every
         # view fits and fills the screen without per-view layout rewrites.
-        # Render at the 800x480 design resolution and let pygame.SCALED fit it
-        # to the real panel (e.g. 640x480 on the PocketTerm35). SCALED scales
-        # EVERY present (boot splash, games, menus) and maps input coords back
-        # to this logical space automatically, so no view needs per-panel
-        # layout work and direct display.flip() calls keep working.
-        flags = pygame.SCALED
-        if not self.dev_mode:
-            flags |= pygame.FULLSCREEN
-        screen = pygame.display.set_mode((theme.SCREEN_W, theme.SCREEN_H), flags)
-        self._display = screen
-        self._canvas = screen
-        self._scale_x = self._scale_y = 1.0   # SCALED maps input coords for us
-        if not self.dev_mode:
-            print(f"[bigbox] logical {theme.SCREEN_W}x{theme.SCREEN_H} "
-                  f"(pygame.SCALED to panel)")
+        # The UI is laid out for an 800x480 canvas but the PocketTerm35 panel is
+        # 640x480. pygame.SCALED only UPscales a small canvas to a big display;
+        # it can't shrink 800x480 onto 640x480 (it just clips the overflow off
+        # the panel). So render to an 800x480 logical canvas and DOWNSCALE it
+        # onto the real panel on every present.
+        panel_w, panel_h = theme.SCREEN_W, theme.SCREEN_H
+        if not self.dev_mode and not theme.DISPLAY_OVERRIDE:
+            try:
+                dinfo = pygame.display.Info()
+                if dinfo.current_w and dinfo.current_h:
+                    panel_w, panel_h = dinfo.current_w, dinfo.current_h
+            except Exception:
+                pass
+
+        flags = pygame.FULLSCREEN if not self.dev_mode else 0
+        self._display = pygame.display.set_mode((panel_w, panel_h), flags)
+        # Map touch/mouse (panel px) back to logical canvas coords.
+        self._scale_x = theme.SCREEN_W / panel_w
+        self._scale_y = theme.SCREEN_H / panel_h
+
+        if (panel_w, panel_h) != (theme.SCREEN_W, theme.SCREEN_H):
+            self._canvas = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H))
+            # Patch display.flip so EVERY present — boot splash, games, menus,
+            # all of which call pygame.display.flip() — downscales the canvas
+            # onto the panel first. Everything renders to self._canvas.
+            _disp, _canv = self._display, self._canvas
+            _orig_flip = pygame.display.flip
+            def _scaled_flip(*a, **k):
+                pygame.transform.smoothscale(_canv, _disp.get_size(), _disp)
+                _orig_flip()
+            pygame.display.flip = _scaled_flip
+            print(f"[bigbox] panel {panel_w}x{panel_h}; canvas "
+                  f"{theme.SCREEN_W}x{theme.SCREEN_H} (downscaled present)")
+        else:
+            self._canvas = self._display
+        screen = self._canvas
         
         # Disable screen blanking for the current session.
         try:
