@@ -168,6 +168,21 @@ def save_idle_thresholds(dim_secs: int, off_secs: int) -> bool:
         return False
 
 
+def _is_uconsole() -> bool:
+    """Best-effort detect a ClockworkPi uConsole / DevTerm so the GamePi43 GPIO
+    button scanning is skipped on it (it has a built-in keyboard, not those
+    buttons, and driving the pins causes spurious presses)."""
+    for p in ("/proc/device-tree/model", "/proc/device-tree/compatible"):
+        try:
+            with open(p, "rb") as f:
+                s = f.read().decode("utf-8", "ignore").lower()
+            if "clockwork" in s or "uconsole" in s or "devterm" in s:
+                return True
+        except Exception:
+            pass
+    return False
+
+
 class App:
     def __init__(self) -> None:
         self.dev_mode = bool(os.environ.get("BIGBOX_DEV"))
@@ -338,25 +353,42 @@ class App:
 
         flags = pygame.FULLSCREEN if not self.dev_mode else 0
         self._display = pygame.display.set_mode((panel_w, panel_h), flags)
-        # Map touch/mouse (panel px) back to logical canvas coords.
-        self._scale_x = theme.SCREEN_W / panel_w
-        self._scale_y = theme.SCREEN_H / panel_h
+        self._panel = (panel_w, panel_h)
 
         if (panel_w, panel_h) != (theme.SCREEN_W, theme.SCREEN_H):
             self._canvas = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H))
-            # Patch display.flip so EVERY present — boot splash, games, menus,
-            # all of which call pygame.display.flip() — downscales the canvas
-            # onto the panel first. Everything renders to self._canvas.
-            _disp, _canv = self._display, self._canvas
+            # How the 800x480 canvas maps onto the panel: STRETCH to fill when
+            # the panel aspect is close to the design (keeps small ~4:3 panels
+            # like the PocketTerm35's 640x480 edge-to-edge — unchanged). For a
+            # very different aspect (e.g. the uConsole's 1280x480 ultrawide),
+            # preserve aspect and pillar/letterbox so nothing is grossly
+            # stretched.
+            design_aspect = theme.SCREEN_W / theme.SCREEN_H
+            panel_aspect = panel_w / panel_h
+            if abs(panel_aspect - design_aspect) <= 0.5:
+                self._present_dst = (0, 0, panel_w, panel_h)            # fill
+            else:
+                sc = min(panel_w / theme.SCREEN_W, panel_h / theme.SCREEN_H)
+                dw, dh = int(theme.SCREEN_W * sc), int(theme.SCREEN_H * sc)
+                self._present_dst = ((panel_w - dw) // 2, (panel_h - dh) // 2, dw, dh)
+            # Patch display.flip so EVERY present (splash, games, menus, all of
+            # which call pygame.display.flip()) maps the canvas onto the panel.
+            _disp, _canv, _dst = self._display, self._canvas, self._present_dst
             _orig_flip = pygame.display.flip
             def _scaled_flip(*a, **k):
-                pygame.transform.smoothscale(_canv, _disp.get_size(), _disp)
+                dx, dy, dw, dh = _dst
+                if (dx, dy) == (0, 0) and (dw, dh) == _disp.get_size():
+                    pygame.transform.smoothscale(_canv, (dw, dh), _disp)
+                else:
+                    _disp.fill((0, 0, 0))
+                    _disp.blit(pygame.transform.smoothscale(_canv, (dw, dh)), (dx, dy))
                 _orig_flip()
             pygame.display.flip = _scaled_flip
             print(f"[bigbox] panel {panel_w}x{panel_h}; canvas "
-                  f"{theme.SCREEN_W}x{theme.SCREEN_H} (downscaled present)")
+                  f"{theme.SCREEN_W}x{theme.SCREEN_H} -> dst {self._present_dst}")
         else:
             self._canvas = self._display
+            self._present_dst = (0, 0, panel_w, panel_h)
         screen = self._canvas
         
         # Disable screen blanking for the current session.
@@ -392,6 +424,13 @@ class App:
         if cfg.keyboard_mode == "default" and pocketterm_keyboard_present():
             cfg = replace(cfg, keyboard_mode="pocketterm", gpio_enabled=False)
             print("[bigbox] PocketTerm35 detected (RP2040 1209:0001)")
+
+        # uConsole / DevTerm (and anyone who sets BIGBOX_NO_GPIO): keyboard
+        # handhelds with no GamePi GPIO buttons — disable GPIO so it doesn't
+        # drive the wrong pins / emit phantom presses. Keyboard input only.
+        if cfg.gpio_enabled and (os.environ.get("BIGBOX_NO_GPIO") or _is_uconsole()):
+            cfg = replace(cfg, gpio_enabled=False)
+            print("[bigbox] keyboard handheld (uConsole/no-GPIO) — GPIO buttons disabled")
 
         # Physical keyboard profile (e.g. PocketTerm35's A/B/X/Y letter keys).
         from bigbox.input import keyboard as _kbd
@@ -696,6 +735,15 @@ class App:
     def get_input(self, title: str, callback: Callable[[str | None], None], initial: str = "") -> None:
         self.kb_view = KeyboardView(title, callback, initial)
 
+    def _panel_to_canvas(self, px: float, py: float) -> tuple[float, float]:
+        """Map panel pixel coords to logical 800x480 canvas coords, honoring
+        the present rectangle (edge-to-edge fill, or a letterboxed fit)."""
+        dx, dy, dw, dh = getattr(self, "_present_dst", (0, 0, theme.SCREEN_W, theme.SCREEN_H))
+        if dw <= 0 or dh <= 0:
+            return px, py
+        return ((px - dx) * theme.SCREEN_W / dw,
+                (py - dy) * theme.SCREEN_H / dh)
+
     def _handle_tap(self, x: float, y: float) -> None:
         """Route a touchscreen tap (in logical canvas coords) to a view.
 
@@ -895,12 +943,11 @@ class App:
                     # Always translate keyboard events (supports USB/BLE keyboards on device)
                     kbd_translate(ev, self.bus)
                 elif ev.type == pygame.FINGERDOWN:
-                    # Touchscreen: normalized (0..1) coords -> logical canvas.
-                    self._handle_tap(ev.x * theme.SCREEN_W, ev.y * theme.SCREEN_H)
+                    # Touchscreen: normalized (0..1) of the panel -> panel px.
+                    pw, ph = self._panel
+                    self._handle_tap(*self._panel_to_canvas(ev.x * pw, ev.y * ph))
                 elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-                    # Panel-pixel coords -> logical canvas via present scale.
-                    self._handle_tap(ev.pos[0] * self._scale_x,
-                                     ev.pos[1] * self._scale_y)
+                    self._handle_tap(*self._panel_to_canvas(ev.pos[0], ev.pos[1]))
 
             # 2. Drain logical button events; route to the foreground screen.
             for bev in self.bus.drain():
