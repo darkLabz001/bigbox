@@ -168,6 +168,21 @@ def save_idle_thresholds(dim_secs: int, off_secs: int) -> bool:
         return False
 
 
+def _is_uconsole() -> bool:
+    """Best-effort detect a ClockworkPi uConsole / DevTerm so the GamePi43 GPIO
+    button scanning is skipped on it (it has a built-in keyboard, not those
+    buttons, and driving the pins causes spurious presses)."""
+    for p in ("/proc/device-tree/model", "/proc/device-tree/compatible"):
+        try:
+            with open(p, "rb") as f:
+                s = f.read().decode("utf-8", "ignore").lower()
+            if "clockwork" in s or "uconsole" in s or "devterm" in s:
+                return True
+        except Exception:
+            pass
+    return False
+
+
 class App:
     def __init__(self) -> None:
         self.dev_mode = bool(os.environ.get("BIGBOX_DEV"))
@@ -318,22 +333,51 @@ class App:
 
         pygame.font.init()
 
-        # Fit the window to the real panel so a handheld whose native resolution
-        # differs from the theme default (PocketTerm35 = 640x480, GamePi43 =
-        # 800x480) needs no config. An explicit display.json override always wins.
+        # Render the UI at the 800x480 design resolution and map it onto the
+        # real panel. Panels that match the design (GamePi43 800x480) are
+        # untouched; smaller panels (PocketTerm35 640x480) downscale, and very
+        # different aspects (uConsole 1280x480 ultrawide) pillar/letterbox
+        # instead of stretching. An explicit display.json override wins.
+        panel_w, panel_h = theme.SCREEN_W, theme.SCREEN_H
         if not self.dev_mode and not theme.DISPLAY_OVERRIDE:
             try:
                 dinfo = pygame.display.Info()
                 if dinfo.current_w and dinfo.current_h:
-                    theme.SCREEN_W = dinfo.current_w
-                    theme.SCREEN_H = dinfo.current_h
-                    print(f"[bigbox] panel {theme.SCREEN_W}x{theme.SCREEN_H} (auto)")
+                    panel_w, panel_h = dinfo.current_w, dinfo.current_h
             except Exception:
                 pass
 
-        # flags = 0 if self.dev_mode else pygame.FULLSCREEN
         flags = pygame.FULLSCREEN if not self.dev_mode else 0
-        screen = pygame.display.set_mode((theme.SCREEN_W, theme.SCREEN_H), flags)
+        self._display = pygame.display.set_mode((panel_w, panel_h), flags)
+        self._panel = (panel_w, panel_h)
+
+        if (panel_w, panel_h) != (theme.SCREEN_W, theme.SCREEN_H):
+            self._canvas = pygame.Surface((theme.SCREEN_W, theme.SCREEN_H))
+            design_aspect = theme.SCREEN_W / theme.SCREEN_H
+            panel_aspect = panel_w / panel_h
+            if abs(panel_aspect - design_aspect) <= 0.5:
+                self._present_dst = (0, 0, panel_w, panel_h)            # fill
+            else:
+                sc = min(panel_w / theme.SCREEN_W, panel_h / theme.SCREEN_H)
+                dw, dh = int(theme.SCREEN_W * sc), int(theme.SCREEN_H * sc)
+                self._present_dst = ((panel_w - dw) // 2, (panel_h - dh) // 2, dw, dh)
+            _disp, _canv, _dst = self._display, self._canvas, self._present_dst
+            _orig_flip = pygame.display.flip
+            def _scaled_flip(*a, **k):
+                dx, dy, dw, dh = _dst
+                if (dx, dy) == (0, 0) and (dw, dh) == _disp.get_size():
+                    pygame.transform.smoothscale(_canv, (dw, dh), _disp)
+                else:
+                    _disp.fill((0, 0, 0))
+                    _disp.blit(pygame.transform.smoothscale(_canv, (dw, dh)), (dx, dy))
+                _orig_flip()
+            pygame.display.flip = _scaled_flip
+            print(f"[bigbox] panel {panel_w}x{panel_h}; canvas "
+                  f"{theme.SCREEN_W}x{theme.SCREEN_H} -> dst {self._present_dst}")
+        else:
+            self._canvas = self._display
+            self._present_dst = (0, 0, panel_w, panel_h)
+        screen = self._canvas
         
         # Disable screen blanking for the current session.
         try:
@@ -368,6 +412,13 @@ class App:
         if cfg.keyboard_mode == "default" and pocketterm_keyboard_present():
             cfg = replace(cfg, keyboard_mode="pocketterm", gpio_enabled=False)
             print("[bigbox] PocketTerm35 detected (RP2040 1209:0001)")
+
+        # uConsole / DevTerm (or anyone who sets BIGBOX_NO_GPIO): keyboard
+        # handhelds with no GamePi GPIO buttons — disable GPIO so it doesn't
+        # drive the wrong pins / emit phantom presses. Keyboard input only.
+        if cfg.gpio_enabled and (os.environ.get("BIGBOX_NO_GPIO") or _is_uconsole()):
+            cfg = replace(cfg, gpio_enabled=False)
+            print("[bigbox] keyboard handheld (uConsole/no-GPIO) — GPIO buttons disabled")
 
         # Physical keyboard profile (e.g. PocketTerm35's A/B/X/Y letter keys).
         from bigbox.input import keyboard as _kbd
