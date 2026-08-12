@@ -54,7 +54,7 @@ fail() {
 # Mark the repo as safe globally for the running user (works around git's
 # "dubious ownership" check when the service runs as root but the working
 # tree was checked out by another user). Idempotent and never fatal.
-git config --global --add safe.directory "$REPO_DIR" >>"$LOG" 2>&1 || true
+git config --system --add safe.directory "$REPO_DIR" >>"$LOG" 2>&1 || true
 
 echo "STATUS: Initializing..."
 echo "PROGRESS: 2"
@@ -92,10 +92,9 @@ preflight_initramfs
 # which breaks HTTPS and Git (SSL certificate validation fails).
 if command -v timedatectl >/dev/null 2>&1; then
     echo "STATUS: Syncing system time..."
-    # Try to wait for NTP sync if it's enabled but not synced.
-    if ! bounded 15 timedatectl wait-sync; then
-        echo "Warning: timedatectl wait-sync timed out." >>"$LOG"
-    fi
+    # Just enable NTP; `wait-sync` isn't supported on this timedatectl and only
+    # times out. The year check below force-syncs via sntp when it matters.
+    timedatectl set-ntp true >>"$LOG" 2>&1 || true
 fi
 
 # Sanity check: if the year is 1970, HTTPS fetch WILL fail.
