@@ -29,6 +29,10 @@ from typing import Optional
 
 from bigbox.captive_portal import CaptivePortal
 
+# Where bettercap captures / dead-drop content lands. Module-local so this
+# package has no hidden dependency on captive_portal's loot dir.
+LOOT_DIR = Path("loot/eviltwin")
+
 
 AP_IP = "192.168.45.1"
 AP_NETMASK = "255.255.255.0"
@@ -215,6 +219,9 @@ class EvilTwinSession:
     channel: int = 6
     is_proxy: bool = False
     campaign: str = "generic"
+    # Run hostapd+dnsmasq and DNAT http(s)->:80 but DON'T stand up the
+    # CaptivePortal. Used by Dead Drop, which serves its own app on :80.
+    skip_portal: bool = False
 
     portal: Optional[CaptivePortal] = None
     hostapd_proc: Optional[subprocess.Popen] = None
@@ -302,7 +309,7 @@ class EvilTwinSession:
             self.stop()
             return False, self.error
 
-        # 6. Captive portal OR Bettercap
+        # 6. Captive portal OR Bettercap OR nothing (Dead Drop serves :80)
         if self.is_proxy:
             # Bettercap Transparent Proxy
             if shutil.which("bettercap"):
@@ -325,6 +332,10 @@ class EvilTwinSession:
                     self.last_status = f"AP Up, but Bettercap failed: {e}"
             else:
                 self.last_status = f"AP Up (Normal NAT, no Bettercap)"
+        elif self.skip_portal:
+            # Rogue-AP-only session (Dead Drop): iptables already DNATs
+            # http(s) on the AP iface to :80 where the caller serves content.
+            self.last_status = f"AP Up, no captive portal"
         else:
             self.portal = CaptivePortal(ssid=self.ssid, campaign=self.campaign)
             ok, msg = self.portal.start()
@@ -334,8 +345,7 @@ class EvilTwinSession:
                 return False, msg
 
         self.started_at = time.time()
-        mode_str = "PROXY" if self.is_proxy else "PORTAL"
-        self.last_status = f"Evil Twin ({mode_str}) '{self.ssid}' active"
+        self.last_status = f"Evil Twin ('{self.ssid}') active"
         return True, self.last_status
 
     def stop(self) -> None:

@@ -292,6 +292,26 @@ def get_internet_iface() -> str | None:
     return None
 
 
+def preferred_wifi_iface(avoid_internet: bool = False) -> str | None:
+    """Best managed Wi-Fi iface for client-mode work (external/USB first).
+
+    list_wifi_clients() already returns USB/Alfa adapters before internal
+    ones, so clients[0] is the preferred pick. When avoid_internet is set,
+    skip the iface currently holding the default route so a scan doesn't
+    disturb the box's own connectivity. Returns None if there is no wlan
+    client interface at all.
+    """
+    clients = list_wifi_clients()
+    if not clients:
+        return None
+    if avoid_internet:
+        net = get_internet_iface()
+        non_net = [c for c in clients if c != net]
+        if non_net:
+            return non_net[0]
+    return clients[0]
+
+
 def list_monitor_capable_interfaces() -> list[WifiInterface]:
     """Subset of list_wifi_interfaces() filtered to monitor-mode-capable ifaces."""
     return [i for i in list_wifi_interfaces() if iface_supports_monitor(i.name)]

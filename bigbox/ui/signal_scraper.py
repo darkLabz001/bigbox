@@ -221,7 +221,7 @@ class SignalScraperView:
                 sorted_devs = sorted(self.devices.values(), key=lambda d: d.last_seen, reverse=True)
                 if sorted_devs and self.cursor < len(sorted_devs):
                     d = sorted_devs[self.cursor]
-                    ctx.show_foxhunter(d.mac, d.type)
+                    ctx.show_foxhunter(d.mac, d.type, self.mon_iface)
 
     def _enable_monitor(self, iface: str):
         self.phase = PHASE_ENABLING

@@ -70,7 +70,7 @@ class DataSniperView:
         
         self.ifaces = hardware.list_wifi_clients()
         self.iface_idx = 0
-        self.selected_iface = "wlan0"
+        self.selected_iface = self.ifaces[0] if self.ifaces else "wlan0"
         
         self.creds: List[Credential] = []
         self.cred_cursor = 0

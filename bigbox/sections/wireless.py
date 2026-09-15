@@ -1,9 +1,14 @@
 """Wireless — Wi-Fi recon (requires root for monitor-mode actions)."""
 from __future__ import annotations
 
+from bigbox import hardware
 from bigbox.runner import run_capture
 from bigbox.sections._icons import load as load_icon, load_background
 from bigbox.ui import Action, Section, SectionContext
+
+
+def _iface() -> str:
+    return hardware.preferred_wifi_iface() or "wlan0"
 
 
 def _wifi_interfaces(ctx: SectionContext) -> None:
@@ -11,12 +16,14 @@ def _wifi_interfaces(ctx: SectionContext) -> None:
 
 
 def _wifi_scan(ctx: SectionContext) -> None:
-    # Default Pi 4 onboard adapter is wlan0; user with external should adjust.
-    ctx.run_streaming("scan · wlan0", ["sudo", "iw", "dev", "wlan0", "scan"])
+    # Prefer a USB/Alfa adapter if attached; fall back to wlan0.
+    iface = _iface()
+    ctx.run_streaming(f"scan · {iface}", ["sudo", "iw", "dev", iface, "scan"])
 
 
 def _link(ctx: SectionContext) -> None:
-    ctx.show_result("link", run_capture(["iw", "dev", "wlan0", "link"]))
+    iface = _iface()
+    ctx.show_result("link", run_capture(["iw", "dev", iface, "link"]))
 
 
 def _handshake_deauth(ctx: SectionContext) -> None:
@@ -95,7 +102,7 @@ def build() -> Section:
             Action("Karma-lite", _karma_lite, "broadcast SSIDs phones are probing for"),
             Action("List Wi-Fi interfaces", _wifi_interfaces),
             Action("Current link", _link),
-            Action("Scan APs (wlan0)", _wifi_scan, "iw dev wlan0 scan"),
+            Action("Scan APs", _wifi_scan, "iw dev <iface> scan"),
             Action("airodump-ng (instructions)", _airodump_hint),
         ],
     )

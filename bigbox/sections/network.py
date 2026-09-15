@@ -1,6 +1,7 @@
 """Network — interfaces, routes, DNS."""
 from __future__ import annotations
 
+from bigbox import hardware
 from bigbox.runner import run_capture
 from bigbox.sections._icons import load as load_icon, load_background
 from bigbox.ui import Action, Section, SectionContext
@@ -41,10 +42,11 @@ def _data_sniper(ctx: SectionContext) -> None:
 
 
 def _random_mac(ctx: SectionContext) -> None:
+    iface = hardware.preferred_wifi_iface() or "wlan0"
     # Down interface, randomize, up interface
-    cmd = "sudo ip link set wlan0 down && sudo macchanger -r wlan0 && sudo ip link set wlan0 up"
+    cmd = f"sudo ip link set {iface} down && sudo macchanger -r {iface} && sudo ip link set {iface} up"
     out = run_capture(["sh", "-c", cmd])
-    ctx.show_result("random MAC", out)
+    ctx.show_result(f"random MAC · {iface}", out)
 
 
 def build() -> Section:
@@ -60,7 +62,7 @@ def build() -> Section:
             Action("DNS config", _resolv),
             Action("Public IP", _public_ip),
             Action("Anon Surf (Stealth)", _anonsurf, "Route all traffic via Tor"),
-            Action("Random MAC (wlan0)", _random_mac, "Randomize hardware address"),
+            Action("Random MAC", _random_mac, "Randomize hardware address"),
             Action("Bettercap Dashboard", _bettercap, "Real-time network monitoring"),
             Action("Data Sniper", _data_sniper, "Extract credentials and POST data"),
         ],

@@ -22,7 +22,8 @@ from bigbox.ui.section import SectionContext
 
 
 class FoxhunterView:
-    def __init__(self, target_mac: str, target_type: str = "WIFI") -> None:
+    def __init__(self, target_mac: str, target_type: str = "WIFI",
+                 mon_iface: str | None = None) -> None:
         self.dismissed = False
         self.mac = target_mac.lower()
         self.type = target_type
@@ -30,7 +31,13 @@ class FoxhunterView:
         self.current_rssi = -100
         self.last_seen = 0.0
         self.status_msg = "Starting..."
-        self.mon_iface = "wlan0mon"
+        # Use the monitor iface the caller already brought up; otherwise
+        # pick one, falling back to the conventional airmon-ng name.
+        self.mon_iface = (
+            mon_iface
+            or hardware.preferred_monitor_iface()
+            or "wlan0mon"
+        )
         self._stop = False
         self._thread: threading.Thread | None = None
         

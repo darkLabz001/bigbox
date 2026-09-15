@@ -32,11 +32,9 @@ class DeadDropView:
         self.body_font = pygame.font.Font(None, 24)
 
     def _find_iface(self) -> str:
-        # Prefer wlan1 (external Alfa) if present, else wlan0
-        for i in ("wlan1", "wlan0"):
-            if os.path.exists(f"/sys/class/net/{i}"):
-                return i
-        return "wlan0"
+        # Prefer a USB/Alfa adapter for the rogue AP, else the internal one.
+        from bigbox import hardware
+        return hardware.preferred_wifi_iface() or "wlan0"
 
     def handle(self, ev: ButtonEvent, ctx: App) -> None:
         if not ev.pressed: return

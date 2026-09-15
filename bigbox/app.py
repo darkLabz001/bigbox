@@ -603,9 +603,9 @@ class App:
     def show_pager(self) -> None:
         self.pager_view = PagerView()
 
-    def show_foxhunter(self, mac: str, device_type: str) -> None:
+    def show_foxhunter(self, mac: str, device_type: str, iface: str | None = None) -> None:
         from bigbox.ui.foxhunter import FoxhunterView
-        self.foxhunter_view = FoxhunterView(mac, device_type)
+        self.foxhunter_view = FoxhunterView(mac, device_type, iface)
 
     def show_mission_report(self) -> None:
         self.mission_report_view = MissionReportView()

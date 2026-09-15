@@ -36,6 +36,36 @@ PHASE_LOOT = "loot"
 GAMIFICATION_PATH = "/opt/ragnar/data/gamification.json"
 LOOT_DIRS = ["loot/handshakes", "hs", "/root/hs", "handshakes"]
 
+
+def _resolve_dict() -> Optional[str]:
+    """Path to a usable password dict, or None if none is installed.
+
+    Kali ships rockyou compressed (rockyou.txt.gz); expand it once so
+    aircrack-ng — which can't read .gz — has a real file to work with.
+    Returning None (rather than a bogus path) lets wifite run its capture
+    phase without the auto-crack step failing on a missing dictionary.
+    """
+    plain = Path("/usr/share/wordlists/rockyou.txt")
+    if plain.is_file():
+        return str(plain)
+    gz = Path("/usr/share/wordlists/rockyou.txt.gz")
+    if gz.is_file():
+        try:
+            import gzip
+            with gzip.open(gz, "rb") as src, open(plain, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            return str(plain)
+        except Exception:
+            return None
+    for alt in (
+        "/usr/share/wordlists/rockyou",
+        "/usr/share/seclists/Passwords/Common-Credentials/"
+        "10-million-password-list-top-1000000.txt",
+    ):
+        if Path(alt).is_file():
+            return alt
+    return None
+
 @dataclass
 class WifiteTarget:
     id: int
@@ -165,7 +195,10 @@ class WifiteView:
         self.loot_list = sorted(list(set(self.loot_list)), key=lambda p: p.stat().st_mtime, reverse=True)
 
     def _get_full_args(self) -> List[str]:
-        args = ["--dict", "/usr/share/wordlists/rockyou.txt", "--hs-dir", "loot/handshakes"]
+        args = ["--hs-dir", "loot/handshakes"]
+        dict_path = _resolve_dict()
+        if dict_path:
+            args += ["--dict", dict_path]
         if self.opt_5ghz: args.append("-5")
         if self.opt_wps: args.append("--wps")
         else: args.append("--no-wps")
