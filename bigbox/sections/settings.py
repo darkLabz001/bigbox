@@ -31,12 +31,11 @@ def _emulator_audio_card(ctx: SectionContext) -> None:
     """Pick which ALSA card emulators should send audio to. Persists
     to /etc/bigbox/emulator_audio.json so it survives bigbox restarts
     and OTA updates."""
+    from bigbox import audio
     from bigbox import emulator as _emu
     current = _emu._emulator_audio_card()
-    options = [
-        ("HDMI (Card 0)",       0),
-        ("Headphones (Card 1)", 1),
-    ]
+    cards = audio.list_alsa_cards() or [(0, "Card 0"), (1, "Card 1")]
+    options = [(f"{name} (Card {n})", n) for n, name in cards]
     actions = []
     for label, card in options:
         marker = " ●" if card == current else ""
@@ -52,30 +51,29 @@ def _emulator_audio_card(ctx: SectionContext) -> None:
 
 
 def _audio_test(ctx: SectionContext) -> None:
-    """Play a short tone on each ALSA card in turn so the user can
-    identify which one actually drives the GamePi43's built-in
-    speaker. Runs in a background thread so the UI stays responsive
-    while aplay blocks on each playback."""
+    """Play a short tone on each detected ALSA card in turn so the user can
+    identify which one actually drives the device's speaker. Runs in a
+    background thread so the UI stays responsive while aplay blocks on each
+    playback."""
     import subprocess
     import threading
     from pathlib import Path
 
-    candidates = [
-        ("HDMI (Card 0)",       "plughw:0,0"),
-        ("Headphones (Card 1)", "plughw:1,0"),
-    ]
+    from bigbox import audio
+    cards = audio.list_alsa_cards() or [(0, "Card 0")]
+    candidates = [(f"{name} (Card {n})", f"plughw:{n},0") for n, name in cards]
     wav = Path("/usr/share/sounds/alsa/Front_Center.wav")
     if not wav.is_file():
         ctx.toast(f"missing test wav: {wav}")
         return
 
     def _worker():
-        # Pre-bump both cards so a quiet mixer doesn't mask a working
+        # Pre-bump all cards so a quiet mixer doesn't mask a working
         # output. Best-effort.
-        for c in (0, 1):
+        for n, _name in cards:
             try:
                 subprocess.run(
-                    ["amixer", "-c", str(c), "sset", "PCM", "100%", "unmute"],
+                    ["amixer", "-c", str(n), "sset", "PCM", "100%", "unmute"],
                     capture_output=True, timeout=2,
                 )
             except Exception:

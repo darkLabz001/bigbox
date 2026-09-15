@@ -969,8 +969,9 @@ class App:
                 try:
                     # Fire-and-forget: amixer occasionally hangs when the card is busy,
                     # and blocking the render loop for that is worse than missing one nudge.
+                    from bigbox import audio as _audio
                     subprocess.Popen(
-                        ["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"],
+                        ["amixer", "-c", str(_audio.output_card()), "sset", "PCM", "100%", "unmute"],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )

@@ -14,7 +14,8 @@ Public API:
     toggle_mute() -> bool | None        # returns new mute state
 
 Each function autodetects the running daemon. ALSA fallback uses
-amixer on Card 1 (Headphones), matching the previous bigbox behavior.
+amixer on the detected analog output card (see :func:`output_card`),
+matching the previous bigbox behavior.
 """
 from __future__ import annotations
 
@@ -30,6 +31,42 @@ class Sink:
     name: str          # pulse sink internal name
     description: str   # human label
     is_default: bool
+
+
+def list_alsa_cards() -> list[tuple[int, str]]:
+    """Enumerate ALSA cards via `aplay -l`: [(card_index, pretty_name), ...].
+
+    Empty on systems without aplay or with no sound hardware."""
+    try:
+        out = subprocess.check_output(
+            ["aplay", "-l"], text=True, stderr=subprocess.DEVNULL, timeout=3,
+        )
+    except Exception:
+        return []
+    cards: list[tuple[int, str]] = []
+    for line in out.splitlines():
+        m = re.match(r"card\s+(\d+):\s+\S+\s*\[(.*?)\]", line.strip())
+        if m:
+            cards.append((int(m.group(1)), m.group(2).strip()))
+    return cards
+
+
+# Historical default: the Pi's 3.5 mm jack is card 1; card 0 is HDMI.
+_DEFAULT_CARD = 1
+
+
+def output_card() -> int:
+    """Best ALSA card for the device's own speaker/headphones.
+
+    Picks the first card that isn't display audio (HDMI / vc4 / Display
+    Port), which is the correct analog output on both the PocketTerm35 and
+    the uConsole. Falls back to card 1 (the old hardcoded Pi default) when
+    aplay can't tell us anything, so behavior on existing installs that
+    already work is unchanged.
+    """
+    analog = [num for num, name in list_alsa_cards()
+              if not any(x in name.lower() for x in ("hdmi", "vc4", "display"))]
+    return analog[0] if analog else _DEFAULT_CARD
 
 
 def _audio_daemon_running() -> bool:
@@ -216,7 +253,7 @@ def get_volume_percent() -> Optional[int]:
     # ALSA fallback
     try:
         out = subprocess.check_output(
-            ["amixer", "-c", "1", "sget", "PCM"],
+            ["amixer", "-c", str(output_card()), "sget", "PCM"],
             text=True, stderr=subprocess.DEVNULL, timeout=2,
         )
         m = re.search(r"\[(\d+)%\]", out)
@@ -232,7 +269,7 @@ def set_volume_percent(pct: int) -> bool:
         return ok
     try:
         subprocess.run(
-            ["amixer", "-c", "1", "sset", "PCM", f"{pct}%"],
+            ["amixer", "-c", str(output_card()), "sset", "PCM", f"{pct}%"],
             check=False, timeout=2,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
@@ -263,13 +300,13 @@ def toggle_mute() -> Optional[bool]:
         return None
     try:
         subprocess.run(
-            ["amixer", "-c", "1", "sset", "PCM", "toggle"],
+            ["amixer", "-c", str(output_card()), "sset", "PCM", "toggle"],
             check=False, timeout=2,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         # Best-effort: read back the new state.
         out = subprocess.check_output(
-            ["amixer", "-c", "1", "sget", "PCM"],
+            ["amixer", "-c", str(output_card()), "sget", "PCM"],
             text=True, stderr=subprocess.DEVNULL, timeout=2,
         )
         return "[off]" in out

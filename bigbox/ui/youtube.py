@@ -115,7 +115,8 @@ class YouTubeView:
         try:
             # Re-enforce volume
             if shutil.which("amixer"):
-                subprocess.run(["amixer", "-c", "1", "sset", "PCM", "100%", "unmute"], capture_output=True)
+                from bigbox import audio as _a
+                subprocess.run(["amixer", "-c", str(_a.output_card()), "sset", "PCM", "100%", "unmute"], capture_output=True)
             self.playing_proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.DEVNULL,

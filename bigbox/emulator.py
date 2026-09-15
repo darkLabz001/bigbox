@@ -287,20 +287,29 @@ _DEFAULT_EMULATOR_CARD = 1   # Headphones (3.5 mm jack)
 def _emulator_audio_card() -> int:
     """Which ALSA card emulators should output to. Override via
     /etc/bigbox/emulator_audio.json — `{"alsa_card": 0}` for HDMI,
-    `{"alsa_card": 1}` for Headphones. Default 1."""
+    `{"alsa_card": 1}` for Headphones. Defaults to the detected analog
+    output card."""
+    import json
+    from bigbox import audio
     try:
-        import json
         with EMULATOR_AUDIO_CFG.open() as f:
             data = json.load(f)
         n = int(data.get("alsa_card", _DEFAULT_EMULATOR_CARD))
-        return n if n in (0, 1) else _DEFAULT_EMULATOR_CARD
     except Exception:
+        n = _DEFAULT_EMULATOR_CARD
+    detected = [num for num, _name in audio.list_alsa_cards()]
+    if detected and n in detected:
+        return n
+    if not detected:
         return _DEFAULT_EMULATOR_CARD
+    return audio.output_card()
 
 
 def set_emulator_audio_card(card: int) -> bool:
     """Persist the user's choice of ALSA card for emulator audio."""
-    if card not in (0, 1):
+    from bigbox import audio
+    detected = [num for num, _name in audio.list_alsa_cards()]
+    if detected and card not in detected:
         return False
     try:
         import json
@@ -454,9 +463,10 @@ def save_audio_volume() -> dict:
         except Exception:
             pass
         return {"kind": "pulse"}
+    from bigbox import audio as _a
     try:
         out = subprocess.check_output(
-            ["amixer", "-c", "1", "sget", "PCM"],
+            ["amixer", "-c", str(_a.output_card()), "sget", "PCM"],
             text=True, stderr=subprocess.DEVNULL, timeout=2,
         )
         import re
@@ -484,8 +494,9 @@ def restore_audio_volume(ctx: dict | None) -> None:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         elif kind == "alsa":
+            from bigbox import audio as _a
             subprocess.run(
-                ["amixer", "-c", "1", "sset", "PCM", f"{vol}%"],
+                ["amixer", "-c", str(_a.output_card()), "sset", "PCM", f"{vol}%"],
                 check=False, timeout=2,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
@@ -586,9 +597,10 @@ def launch(system_key: str, rom_filename: str) -> tuple[subprocess.Popen | None,
     #
     # Card selection: read from /etc/bigbox/emulator_audio.json
     # ({"alsa_card": 0} for HDMI / {"alsa_card": 1} for Headphones).
-    # Defaults to Card 1 (Headphones) because handheld bigbox
-    # normally drives a 3.5 mm jack output; Audio Test action lets
-    # the user verify which one actually drives the GamePi43 speaker.
+    # Defaults to the detected analog output card (audio.output_card())
+    # because handheld bigbox normally drives a 3.5 mm jack output;
+    # Audio Test action lets the user verify which one actually drives
+    # the device speaker.
     card = _emulator_audio_card()
     dev = f"plughw:{card},0"
     env["SDL_AUDIODRIVER"] = "alsa"
