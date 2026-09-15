@@ -87,6 +87,40 @@ rsync -a --delete \
     --exclude='.venv' --exclude='__pycache__' --exclude='.git' \
     --exclude='*.pyc' "$REPO_DIR"/ "$MNT/opt/bigbox/"
 
+# ---- 3b. PocketTerm35 keyboard fixes ---------------------------------------
+# The RP2040 keyboard is a CircuitPython USB-HID at 1209:0001. Linux autosuspends
+# it ~2s after boot and the keyboard goes dead; disable autosuspend via udev.
+# Also pin bigbox's input profile so A/B/X/Y/L/R map to the face/shoulder buttons
+# and the GPIO driver (absent and pin-clashing on this device) stays off.
+echo "==> enabling PocketTerm35 I2C + USB-C-OTG-host overlays in config.txt"
+if ! grep -q 'dtoverlay=dwc2,dr_mode=host' "$BMT/config.txt" 2>/dev/null; then
+    cat >> "$BMT/config.txt" <<'CFG'
+
+[all]
+# Waveshare PocketTerm35 (RPi 4 / RPi 5)
+# Touchscreen + fuel gauge I2C on GPIO2/3
+dtparam=i2c_arm=on
+# Expose the USB-C/OTG port as a USB host so the on-board RP2040
+# keyboard (1209:0001) enumerates on the Raspberry Pi 4.
+dtoverlay=dwc2,dr_mode=host
+CFG
+else
+    echo "(dwc2/OTG overlay already present)"
+fi
+
+echo "==> wiring 99-usb-no-autosuspend.rules + PocketTerm35 input profile"
+install -d -m 0755 "$MNT/etc/udev/rules.d"
+cat > "$MNT/etc/udev/rules.d/99-usb-no-autosuspend.rules" <<'RULE'
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="0001", ATTR{power/control}="on", ATTR{power/autosuspend_delay_ms}="-1"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="0001", ATTR{power/autosuspend}="-1"
+RULE
+install -d -m 0755 "$MNT/etc/bigbox"
+cat > "$MNT/etc/bigbox/buttons.toml" <<'CFG'
+[input]
+keyboard_mode = "pocketterm"
+gpio_enabled = false
+CFG
+
 # ---- 4. first-boot installer ----------------------------------------------
 echo "==> installing first-boot auto-setup service"
 install -d "$MNT/usr/local/sbin"
@@ -113,9 +147,9 @@ done
 cd /opt/bigbox || exit 1
 bash scripts/install.sh || echo "WARN: install.sh returned non-zero"
 
-# 4. boot to console + install the PocketTerm35 unit (KMSDRM fullscreen tty1)
+# 4. boot to console + install the PocketTerm35 unit (X-based, 640x480 tty1)
 systemctl set-default multi-user.target || true
-install -m 0644 scripts/bigbox-pocketterm.service /etc/systemd/system/bigbox.service
+install -m 0644 scripts/bigbox-x.service /etc/systemd/system/bigbox.service
 systemctl daemon-reload
 systemctl enable bigbox.service
 
