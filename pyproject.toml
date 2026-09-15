@@ -10,8 +10,6 @@ requires-python = ">=3.10"
 readme = "README.md"
 dependencies = [
   "pygame>=2.5,<3",
-  "gpiozero>=2.0",
-  "lgpio>=0.2",
   "tomli>=2.0; python_version < '3.11'",
   "requests",
   "PyTurboJPEG",
@@ -27,7 +25,6 @@ dependencies = [
   "bcrypt",
   "pynacl",
   "rich>=13.0.0",
-  "netifaces==0.11.0",
   "ping3>=4.0.0",
   "get-mac>=0.9.0",
   "smbprotocol>=1.10.0",
@@ -48,6 +45,16 @@ dependencies = [
   "protobuf>=3.20",
   "pyserial>=3.5",
   "bleak>=0.20.0",
+  "meshtastic>=2.3,<3",
+  "paho-mqtt>=1.6",
+]
+
+[project.optional-dependencies]
+# Opt-in GPIO support for users adding a 40-pin GamePi-style button hat.
+# PocketTerm35 controls ride the RP2040 over USB, so this is not required.
+gpio = [
+  "gpiozero>=2.0",
+  "lgpio>=0.2",
 ]
 
 [project.scripts]

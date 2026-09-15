@@ -44,6 +44,28 @@ KEYMAP: dict[int, Button] = {
 # Snapshot of the default (PC / GamePi43) layout, used to rebuild the map
 # when a different keyboard profile is selected at runtime.
 _BASE_KEYMAP = dict(KEYMAP)
+_DEFAULTS = dict(KEYMAP)
+
+
+def default_keymap() -> dict[int, Button]:
+    """Return a fresh copy of the bundled default keymap."""
+    return dict(_DEFAULTS)
+
+
+def set_keymap(km: dict[int, Button]) -> None:
+    """Replace the entire active keymap. Mutates KEYMAP in place."""
+    KEYMAP.clear()
+    KEYMAP.update(km)
+
+
+def apply_keymap_overrides(overrides: dict[int, Button]) -> None:
+    """Merge user-supplied keysym→Button overrides on top of the active map.
+
+    Used at startup when /etc/bigbox/buttons.toml carries a [keymap] section
+    written by the in-app Button Mapper (Settings → System → Button Mapper).
+    """
+    if overrides:
+        KEYMAP.update(overrides)
 
 
 def set_keyboard_mode(mode: str = "default") -> None:

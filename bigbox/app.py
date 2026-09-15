@@ -93,6 +93,7 @@ _VIEWS: tuple[tuple[str, int], ...] = (
     ("qflipper_view", 2),
     ("terminal_view", 2),
     ("theme_manager_view", 2),
+    ("button_mapper_view", 2),
     ("shop_view", 2),
     ("wardrive_view", 2),
     ("pwnagotchi_view", 2),
@@ -457,6 +458,9 @@ class App:
         # Physical keyboard profile (e.g. PocketTerm35's A/B/X/Y letter keys).
         from bigbox.input import keyboard as _kbd
         _kbd.set_keyboard_mode(cfg.keyboard_mode)
+        if cfg.keymap:
+            _kbd.apply_keymap_overrides(cfg.keymap)
+            print("[bigbox] applied user keymap overrides from buttons.toml")
         
         self._gpio = None
         if not cfg.gpio_enabled:
@@ -743,6 +747,10 @@ class App:
     def show_theme_manager(self) -> None:
         self.theme_manager_view = ThemeManagerView()
 
+    def show_button_mapper(self) -> None:
+        from bigbox.ui.button_mapper import ButtonMapperView
+        self.button_mapper_view = ButtonMapperView()
+
     def show_shop(self) -> None:
         self.shop_view = ShopView()
 
@@ -758,6 +766,7 @@ class App:
         self.kb_view = KeyboardView(title, callback, initial)
 
     def go_back(self) -> None:
+        self.raw_capture_callback = None
         self.result_view = None
         self.update_view = None
         self.cctv_view = None
@@ -802,6 +811,7 @@ class App:
         self.qflipper_view = None
         self.terminal_view = None
         self.theme_manager_view = None
+        self.button_mapper_view = None
         self.shop_view = None
         self.wardrive_view = None
         self.harvester_view = None
@@ -923,6 +933,14 @@ class App:
                 if ev.type == pygame.QUIT:
                     self.running = False
                 elif ev.type in (pygame.KEYDOWN, pygame.KEYUP):
+                    # One-shot raw keysym capture, set by the Button Mapper
+                    # (Settings → System → Button Mapper). The callback receives
+                    # the pygame keysym int on KEYDOWN and None on KEYDOWN-ESC.
+                    if ev.type == pygame.KEYDOWN:
+                        cb = getattr(self, "raw_capture_callback", None)
+                        if cb is not None:
+                            cb(None if ev.key == pygame.K_ESCAPE else ev.key)
+                            continue
                     # Keyboard devices (uConsole): type QWERTY straight into the
                     # on-screen keyboard; arrows/gamepad still drive its grid.
                     if (ev.type == pygame.KEYDOWN and self.kb_view is not None

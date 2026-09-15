@@ -87,7 +87,6 @@ echo "STATUS: Installing Python dependencies..."
 echo "PROGRESS: 80"
 pip install --no-cache-dir \
   rich>=13.0.0 \
-  netifaces==0.11.0 \
   ping3>=4.0.0 \
   get-mac>=0.9.0 \
   paramiko>=3.0.0 \
@@ -134,7 +133,6 @@ mods = [
     "rich",
     "pandas",
     "numpy",
-    "netifaces",
     "ping3",
     "getmac",
     "paramiko",

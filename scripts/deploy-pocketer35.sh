@@ -29,7 +29,16 @@ echo "[2] Running bigbox installer..."
 bash scripts/install.sh
 
 echo "[3] Setting up Pocketer35 display/keyboard..."
-bash projects/pocketterm35-kali/scripts/provision.sh /boot/firmware || true
+# Display/touch/keyboard provisioning lives in its own repo (bootstrap
+# config: waveshare-35dpi-5b overlay, i2c for the GT911 touch, dwc2 for the
+# RP2040). Fetch it and apply to the mounted boot partition.
+BOOT="${BOOT_MOUNT:-/boot/firmware}"
+PROVISION_REPO="https://github.com/darkLabz001/pocketterm35-kali.git"
+if [[ ! -d /opt/pocketterm35-kali/.git ]]; then
+    rm -rf /opt/pocketterm35-kali
+    git clone "$PROVISION_REPO" /opt/pocketterm35-kali
+fi
+bash /opt/pocketterm35-kali/scripts/provision.sh "$BOOT" || true
 
 echo "[4] Installing bigbox systemd service (Pocketer35)..."
 install -m 0644 scripts/bigbox-pocketterm.service /etc/systemd/system/bigbox.service

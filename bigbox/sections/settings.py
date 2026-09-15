@@ -333,6 +333,7 @@ def _system_menu(ctx: SectionContext) -> None:
     ctx.show_menu("System", [
         ("Bash Terminal",          lambda: ctx.show_terminal()),
         ("Theme Manager",          lambda: ctx.show_theme_manager()),
+        ("Button Mapper",          lambda: ctx.show_button_mapper()),
         ("Hardware Config",        lambda: _hardware_menu(ctx)),
         ("Toolbox",                lambda: _toolbox_menu(ctx)),
         ("Check for updates (OTA)", lambda: _update(ctx)),

@@ -113,6 +113,10 @@ VIEW_CASES: list[tuple[str, str, str, object]] = [
     ("karma_view",         "bigbox.ui.wifi_lite",        "KarmaLiteView",         None),
     ("update_view",        "bigbox.ui.update",           "UpdateView",            None),  # takes argv
     ("result_view",        "bigbox.ui.widgets",          "ResultView",            lambda C: C("Test", "Body")),
+    ("mesh_view",          "bigbox.ui.mesh",             "MeshtasticView",        None),
+    ("qflipper_view",      "bigbox.ui.qflipper",        "QFlipperView",          None),
+    ("pwnagotchi_view",    "bigbox.ui.pwnagotchi",      "PwnagotchiView",        None),
+    ("button_mapper_view", "bigbox.ui.button_mapper",   "ButtonMapperView",      None),
 ]
 
 

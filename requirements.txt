@@ -1,6 +1,6 @@
 pygame>=2.5,<3
-gpiozero>=2.0
-lgpio>=0.2
+# GPIO is opt-in. PocketTerm35 controls ride the RP2040 over USB, so gpiozero
+# isn't needed on the standard unit. Install with: pip install gpiozero lgpio
 tomli>=2.0; python_version < "3.11"
 requests
 PyTurboJPEG
@@ -16,7 +16,6 @@ cryptography
 bcrypt
 pynacl
 rich>=13.0.0
-netifaces==0.11.0
 ping3>=4.0.0
 get-mac>=0.9.0
 smbprotocol>=1.10.0

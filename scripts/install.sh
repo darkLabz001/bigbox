@@ -52,6 +52,41 @@ for pkg in \
         || echo "  (skipping unavailable package: $pkg)"
 done
 
+# Tool-support packages bigbox views exec directly. Same best-effort rules
+# (a missing package must not abort the install on a given arch/release).
+for pkg in \
+    hostapd dnsmasq \
+    tor \
+    ffmpeg exiftool whois \
+    hcxtools hcxdumptool \
+    wordlists \
+    pulseaudio-utils sqlite3 traceroute dnsutils iputils-ping \
+    net-tools; do
+    apt-get install -y --no-install-recommends "$pkg" \
+        || echo "  (skipping unavailable package: $pkg)"
+done
+
+# SDR suite (Waveform section). Needs an RTL-SDR dongle to be useful, so
+# strictly optional, but install the tooling so the section runs when one is
+# plugged in. rtlamr / dump1090 / gpredict ship as source in some repos and
+# are simply skipped here if apt can't provide them.
+for pkg in \
+    rtl-sdr rtl-433 rtl-ais rtlsdr-scanner \
+    multimon-ng dump1090-mutability gpredict \
+    sox; do
+    apt-get install -y --no-install-recommends "$pkg" \
+        || echo "  (skipping unavailable package: $pkg)"
+done
+
+# wordlists ships compressed as rockyou.txt.gz on Kali — expand it so
+# wifite/crack-handshake find the dictionary at /usr/share/wordlists/rockyou.txt.
+if [[ -f /usr/share/wordlists/rockyou.txt.gz ]] && \
+   [[ ! -f /usr/share/wordlists/rockyou.txt ]]; then
+    echo "==> expanding rockyou wordlist"
+    zcat /usr/share/wordlists/rockyou.txt.gz > /usr/share/wordlists/rockyou.txt \
+        || echo "  (couldn't expand rockyou — install wordlists manually)"
+fi
+
 # --- 1b. tailscale (best-effort) ---------------------------------------------
 if ! command -v tailscale >/dev/null 2>&1; then
     echo "==> tailscale"
